@@ -520,6 +520,16 @@
     });
   }
 
+  function syncAccountTabs(message) {
+    if (!window.OwlisticSheet || typeof window.OwlisticSheet.ensureTabs !== "function") return;
+    const accounts = store.getAccounts();
+    window.OwlisticSheet.ensureTabs(accounts).then(function (result) {
+      if (message && accounts.length && !(result && result.skipped)) {
+        showToast(message);
+      }
+    }).catch(function () {});
+  }
+
   function openAccountModal() {
     lastFocus = document.activeElement;
     fillAccountEditor(null);
@@ -527,6 +537,7 @@
     accountModal.hidden = false;
     document.body.classList.add("modal-open");
     document.getElementById("account-name").focus();
+    syncAccountTabs(store.getAccounts().length ? "Sheet tabs created for each account" : "");
   }
 
   function closeAccountModal() {
@@ -691,7 +702,7 @@
     applyAccount(saved);
     fillAccountEditor(saved);
     renderAccountList();
-    showToast("Account saved");
+    syncAccountTabs("Account saved. Sheet tab created.");
   });
 
   document.getElementById("check-prices").addEventListener("click", openPriceModal);
@@ -840,7 +851,7 @@
     panel.classList.toggle("is-connected", connected);
     input.value = window.OwlisticSheet.getWebAppUrl();
     status.textContent = connected
-      ? "Connected to Ashar Orders Management System. Submitted orders will appear in the sheet."
+      ? "Connected to Ashar Orders Management System. Each account gets its own tab; submitted orders go to that tab."
       : "Google needs a one-time Apps Script deploy. Copy the script, deploy it as a web app, then paste the URL here.";
   }
 

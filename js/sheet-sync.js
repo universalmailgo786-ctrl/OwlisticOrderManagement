@@ -2,7 +2,7 @@
   const URL_KEY = "owlistic.sheetWebAppUrl";
   const SPREADSHEET_ID = "1nZuMePQFJA9lCQ6C48d9MUC3Fwn00ao6Kilap5rbFfQ";
   const DEFAULT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxc9UyzIdr73zkuzHH-8R2tWxOmr3Rc88ApfrVA2RnKObATD3J8PSCJuwtF9FahSmIq/exec";
-  const store = global.OwlisticStore;
+  const store = global.OwlisticStore || global.OwlisticStore;
 
   const HEADERS = [
     "Order ID",
@@ -32,6 +32,14 @@
     "Overall Status"
   ];
 
+  function callStore(primary, fallback) {
+    const fn = (store && store[primary]) || (store && store[fallback]);
+    if (typeof fn === "function") {
+      return fn.apply(store, Array.prototype.slice.call(arguments, 2));
+    }
+    return undefined;
+  }
+
   function getWebAppUrl() {
     try {
       return (localStorage.getItem(URL_KEY) || DEFAULT_WEB_APP_URL || "").trim();
@@ -46,7 +54,7 @@
 
   function isConfigured() {
     const url = getWebAppUrl();
-    return /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec\/?$/.test(url);
+    return /^https:\/\/script\.google\.com\/(?:macros\/s|a\/macros\/s)\/.+/i.test(url) && /\/exec\/?$/i.test(url);
   }
 
   function formatDate(iso) {
@@ -76,9 +84,24 @@
   }
 
   function paymentLabel(order) {
-    if (order.paymentStatus === "paid" || order.paymentStatus === "paid") return "Paid";
-    if (order.paymentStatus === "unpaid" || order.paymentStatus === "unpaid") return "Unpaid";
+    const value = order && (order.paymentStatus || order.paymentStatus);
+    if (value === "paid" || value === "Paid") return "Paid";
+    if (value === "unpaid" || value === "Unpaid") return "Unpaid";
     return "";
+  }
+
+  function accountNameOf(orderOrAccount) {
+    if (!orderOrAccount) return "";
+    if (orderOrAccount.accountName) return orderOrAccount.accountName;
+    const labeled = callStore("accountLabel", "accountLabel", orderOrAccount);
+    if (labeled && labeled !== "No account" && labeled !== "No account") return labeled;
+    return orderOrAccount.name || "";
+  }
+
+  function tabNameOf(name) {
+    const value = String(name || "").trim();
+    if (!value || /^(no account|no account)$/i.test(value)) return "";
+    return value;
   }
 
   function latestMessage(rounds, role) {
@@ -96,37 +119,39 @@
   }
 
   function revisionHistory(order) {
-    const rounds = store.normalizeRevisions(order.revisions || []);
+    const rounds = callStore("normalizeRevisions", "normalizeRevisions", order.revisions || []) || [];
     return rounds.map(function (round) {
       const messages = (round.messages || []).map(function (message) {
         const role = message.role === "seller" || message.kind === "seller" ? "Seller" : "Buyer";
-        const stamp = formatDateTime(message.createdAt);
+        const stamp = formatDateTime(message.createdAt || message.createdAt);
         const parts = [role + (stamp ? " (" + stamp + ")" : ""), (message.text || "").trim() || "(no text)"];
         const files = fileNames(message.files);
         if (files) parts.push("Files: " + files);
         return parts.join(" — ");
       });
-      return "Revision " + round.number + (messages.length ? ": " + messages.join(" | ") : ": (empty)");
+      return "Revision " + (round.number || "") + (messages.length ? ": " + messages.join(" | ") : ": (empty)");
     }).join("\n");
   }
 
   function toRow(order) {
-    const rounds = store.normalizeRevisions(order.revisions || []);
-    const current = store.currentRevision(order);
-    const status = store.computeStatus(order);
+    const rounds = callStore("normalizeRevisions", "normalizeRevisions", order.revisions || []) || [];
+    const current = callStore("currentRevision", "currentRevision", order);
+    const status = callStore("computeStatus", "computeStatus", order);
+    const typeLabel = callStore("orderTypeLabel", "orderTypeLabel", order) || "";
+    const statusLabel = callStore("statusLabel", "statusLabel", status) || String(status || "");
     return [
       order.id || "",
-      formatDate(order.createdAt),
-      formatTime(order.createdAt),
-      formatDate(order.updatedAt),
-      formatTime(order.updatedAt),
-      order.accountName || "",
+      formatDate(order.createdAt || order.createdAt),
+      formatTime(order.createdAt || order.createdAt),
+      formatDate(order.updatedAt || order.updatedAt),
+      formatTime(order.updatedAt || order.updatedAt),
+      accountNameOf(order),
       order.whatsapp || "",
       order.name || "",
       order.orderValue || order.orderValue || "",
       paymentLabel(order),
       order.searchKeyword || order.searchKeyword || "",
-      store.orderTypeLabel(order),
+      typeLabel,
       order.messageText || order.messageText || "",
       order.directRequirements || order.directRequirements || "",
       fileNames(order.requirementFiles || order.requirementFiles),
@@ -139,66 +164,53 @@
       latestMessage(rounds, "buyer"),
       latestMessage(rounds, "seller"),
       order.readyToApprove || order.readyToApprove ? "Ready to Approve" : "Not Ready",
-      store.statusLabel(status)
+      statusLabel
     ];
   }
 
-  function scriptSource() {
-    return [
-      'var SPREADSHEET_ID = "' + SPREADSHEET_ID + '";',
-      'var HEADERS = ' + JSON.stringify(HEADERS) + ';',
-      'function doGet() { return json_({ ok: true, service: "Ashar Orders Management System" }); }',
-      'function doPost(e) {',
-      '  try {',
-      '    var data = JSON.parse((e.postData && e.postData.contents) || "{}");',
-      '    var row = data.row || [];',
-      '    var orderId = String(data.orderId || row[0] || "");',
-      '    var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheets()[0];',
-      '    ensureHeaders_(sheet);',
-      '    while (row.length < HEADERS.length) row.push("");',
-      '    var last = sheet.getLastRow();',
-      '    if (last > 1 && orderId) {',
-      '      var ids = sheet.getRange(2, 1, last - 1, 1).getValues();',
-      '      for (var i = 0; i < ids.length; i++) {',
-      '        if (String(ids[i][0]) === orderId) {',
-      '          sheet.getRange(i + 2, 1, 1, HEADERS.length).setValues([row.slice(0, HEADERS.length)]);',
-      '          return json_({ ok: true, updated: true, orderId: orderId });',
-      '        }',
-      '      }',
-      '    }',
-      '    sheet.appendRow(row.slice(0, HEADERS.length));',
-      '    return json_({ ok: true, created: true, orderId: orderId });',
-      '  } catch (err) { return json_({ ok: false, error: String(err) }); }',
-      '}',
-      'function ensureHeaders_(sheet) {',
-      '  sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);',
-      '  sheet.setFrozenRows(1);',
-      '  var header = sheet.getRange(1, 1, 1, HEADERS.length);',
-      '  header.setFontWeight("bold");',
-      '  header.setWrap(true);',
-      '  header.setBackground("#223829");',
-      '  header.setFontColor("#ffffff");',
-      '  header.setVerticalAlignment("middle");',
-      '  sheet.setRowHeight(1, 36);',
-      '}',
-      'function json_(obj) { return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }'
-    ].join("\n");
-  }
-
-  function sync(order) {
-    if (!isConfigured() || !order) {
-      return Promise.resolve({ skipped: true, skipped: true });
+  function postPayload(payload) {
+    if (!isConfigured()) {
+      return Promise.resolve({ skipped: true });
     }
     return fetch(getWebAppUrl(), {
       method: "POST",
       mode: "no-cors",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        orderId: order.id,
-        row: toRow(order)
-      })
+      body: JSON.stringify(payload)
     }).then(function () {
       return { ok: true };
+    });
+  }
+
+  function ensureTabs(accounts) {
+    const tabs = (accounts || []).map(function (account) {
+      return {
+        id: account.id || "",
+        name: tabNameOf(accountNameOf(account))
+      };
+    }).filter(function (item) {
+      return item.name;
+    });
+    if (!tabs.length) {
+      return Promise.resolve({ skipped: true, empty: true });
+    }
+    return postPayload({
+      action: "ensureTabs",
+      accounts: tabs
+    });
+  }
+
+  function sync(order) {
+    if (!order) {
+      return Promise.resolve({ skipped: true });
+    }
+    const tabName = tabNameOf(accountNameOf(order));
+    return postPayload({
+      action: "upsert",
+      orderId: order.id,
+      accountName: accountNameOf(order),
+      tabName: tabName,
+      row: toRow(order)
     });
   }
 
@@ -206,12 +218,13 @@
     HEADERS: HEADERS,
     SPREADSHEET_ID: SPREADSHEET_ID,
     sync: sync,
+    ensureTabs: ensureTabs,
     toRow: toRow,
     isConfigured: isConfigured,
     getWebAppUrl: getWebAppUrl,
     setWebAppUrl: setWebAppUrl,
     get scriptSource() {
-      return scriptSource();
+      return "";
     }
   };
 })(window);
