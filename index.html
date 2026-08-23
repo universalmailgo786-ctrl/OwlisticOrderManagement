@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Order Questionnaire Form</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css?v=rev3" />
+</head>
+<body>
+  <nav class="app-nav">
+    <a class="app-nav-link is-active" href="index.html">Order Questionnaire</a>
+    <a class="app-nav-link" href="records.html">Order Records</a>
+  </nav>
+
+  <div class="page" id="page">
+    <svg class="botanical botanical-tl" viewBox="0 0 280 260" aria-hidden="true">
+      <ellipse cx="36" cy="48" rx="70" ry="46" fill="#dce5d0" opacity="0.55"/>
+      <ellipse cx="78" cy="22" rx="52" ry="34" fill="#ead7cf" opacity="0.45"/>
+      <path d="M18 230c22-78 48-128 96-168" fill="none" stroke="#8fa07a" stroke-width="1.3"/>
+      <path d="M42 198c28-62 58-104 108-132" fill="none" stroke="#9baa86" stroke-width="1.1"/>
+      <path d="M28 168c6-18 18-34 38-48 4 16-4 34-18 50-8 10-16 18-20 22z" fill="#9baa86" opacity="0.55"/>
+      <path d="M48 132c8-22 24-40 48-54 2 18-10 36-28 52-8 7-16 12-20 14z" fill="#b7c4a4" opacity="0.7"/>
+      <path d="M72 96c10-24 28-42 54-54-4 20-18 36-38 50-6 5-12 9-16 12z" fill="#8fa07a" opacity="0.48"/>
+      <path d="M102 58c12-20 30-34 54-42-10 16-26 28-44 38-4 2-8 5-10 8z" fill="#cbb7ae" opacity="0.5"/>
+      <path d="M128 34c10-16 26-26 46-32-10 12-24 20-38 28z" fill="#e8c4b8" opacity="0.48"/>
+      <circle cx="148" cy="18" r="1.6" fill="#8a7b72" opacity="0.45"/>
+      <circle cx="158" cy="28" r="1.2" fill="#8a7b72" opacity="0.35"/>
+      <circle cx="138" cy="30" r="1.1" fill="#8a7b72" opacity="0.3"/>
+      <circle cx="168" cy="16" r="1" fill="#8a7b72" opacity="0.28"/>
+    </svg>
+
+    <svg class="botanical botanical-tr" viewBox="0 0 280 260" aria-hidden="true">
+      <ellipse cx="244" cy="44" rx="72" ry="48" fill="#ead7cf" opacity="0.5"/>
+      <ellipse cx="208" cy="18" rx="50" ry="32" fill="#dce5d0" opacity="0.42"/>
+      <path d="M262 230c-22-78-48-128-96-168" fill="none" stroke="#8fa07a" stroke-width="1.3"/>
+      <path d="M238 198c-28-62-58-104-108-132" fill="none" stroke="#9baa86" stroke-width="1.1"/>
+      <path d="M252 168c-6-18-18-34-38-48-4 16 4 34 18 50 8 10 16 18 20 22z" fill="#9baa86" opacity="0.5"/>
+      <path d="M232 132c-8-22-24-40-48-54-2 18 10 36 28 52 8 7 16 12 20 14z" fill="#b7c4a4" opacity="0.65"/>
+      <path d="M208 96c-10-24-28-42-54-54 4 20 18 36 38 50 6 5 12 9 16 12z" fill="#8fa07a" opacity="0.42"/>
+      <path d="M178 58c-12-20-30-34-54-42 10 16 26 28 44 38 4 2 8 5 10 8z" fill="#cbb7ae" opacity="0.48"/>
+      <path d="M152 34c-10-16-26-26-46-32 10 12 24 20 38 28z" fill="#e8c4b8" opacity="0.45"/>
+      <circle cx="132" cy="18" r="1.6" fill="#8a7b72" opacity="0.4"/>
+      <circle cx="122" cy="28" r="1.2" fill="#8a7b72" opacity="0.32"/>
+      <circle cx="142" cy="30" r="1.1" fill="#8a7b72" opacity="0.28"/>
+    </svg>
+
+    <header class="form-header">
+      <h1>Order Questionnaire Form</h1>
+      <p class="form-subtitle">
+        <span class="subtitle-leaf" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 18c6-2 10-8 12-14-8 4-12 10-12 14z" fill="#9BAA86"/><path d="M7 16c4-1 7-5 8-9" stroke="#7F9270" stroke-width="0.8" fill="none"/></svg>
+        </span>
+        PLEASE FILL OUT ALL DETAILS CAREFULLY
+        <span class="subtitle-leaf subtitle-leaf-right" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M20 18c-6-2-10-8-12-14 8 4 12 10 12 14z" fill="#9BAA86"/><path d="M17 16c-4-1-7-5-8-9" stroke="#7F9270" stroke-width="0.8" fill="none"/></svg>
+        </span>
+      </p>
+      <div class="header-rule">
+        <span class="header-heart" aria-hidden="true">♡</span>
+      </div>
+    </header>
+
+    <div class="status-banner" id="status-banner" hidden>
+      <p class="status-banner-title" id="status-banner-title"></p>
+      <p class="status-banner-text" id="status-banner-text"></p>
+    </div>
+
+    <section class="account-panel" aria-labelledby="select-account-title">
+      <div class="account-panel-copy">
+        <h2 id="select-account-title">Select Account</h2>
+        <p>Choose a saved account to auto-fill WhatsApp, name, payment status, and Fiverr details.</p>
+      </div>
+      <div class="account-panel-controls">
+        <label class="sr-only" for="account-select">Select Account</label>
+        <select class="account-select" id="account-select">
+          <option value="">Select an account</option>
+        </select>
+        <button type="button" class="ghost-btn" id="manage-accounts">Manage Accounts</button>
+      </div>
+    </section>
+
+    <section class="sheet-connect" id="sheet-connect" aria-labelledby="sheet-connect-title">
+      <div class="sheet-connect-copy">
+        <h2 id="sheet-connect-title">Google Sheet</h2>
+        <p id="sheet-connect-status">Paste your Apps Script web app URL once. After that, every Submit Form row goes to Ashar Orders Management System.</p>
+      </div>
+      <div class="sheet-connect-controls">
+        <input class="account-select" type="url" id="sheet-web-app-url" placeholder="https://script.google.com/macros/s/.../exec" />
+        <button type="button" class="ghost-btn" id="copy-sheet-script">Copy Script</button>
+        <button type="button" class="ghost-btn" id="save-sheet-url">Connect</button>
+      </div>
+    </section>
+
+    <p class="edit-meta" id="edit-meta" hidden></p>
+
+    <form class="questionnaire" id="order-questionnaire" novalidate>
+      <input type="hidden" id="order-id" name="orderId" />
+      <!-- 1. WhatsApp Number -->
+      <div class="form-row">
+        <div class="row-identity">
+          <span class="row-number tone-sage">1</span>
+          <div class="row-icon tone-sage" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M12.1 3.4c-4.6 0-8.4 3.6-8.4 8.1 0 1.4.4 2.8 1.1 4L3.6 20.4l5.1-1.3c1.1.6 2.3.9 3.4.9 4.6 0 8.4-3.6 8.4-8.1s-3.8-8.5-8.4-8.5z" fill="none" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M8.6 9.4c.9-1.8 2.6-2.4 3.8-1.4.4.3.5.8.3 1.2l-.7 1.2c-.2.3 0 .7.3.9l.8.5c.3.2.4.6.2.9l-.6.9c-.3.4-.8.5-1.2.3-1.4-.7-2.8-2.4-2.9-4.5z" fill="currentColor"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <label for="whatsapp">WhatsApp Number</label>
+            <span class="helper">Include country code</span>
+          </div>
+        </div>
+        <div class="row-control">
+          <input class="line-input" type="tel" id="whatsapp" name="whatsapp" placeholder="+923333403942" autocomplete="tel" />
+        </div>
+      </div>
+
+      <!-- 2. Your Name -->
+      <div class="form-row">
+        <div class="row-identity">
+          <span class="row-number tone-terracotta">2</span>
+          <div class="row-icon tone-terracotta" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <circle cx="12" cy="8.2" r="3.2" fill="none" stroke="currentColor" stroke-width="1.7"/>
+              <path d="M5.2 19.2c.8-3.4 3.2-5.2 6.8-5.2s6 1.8 6.8 5.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <label for="name">Your Name</label>
+          </div>
+        </div>
+        <div class="row-control">
+          <input class="line-input" type="text" id="name" name="name" autocomplete="name" />
+        </div>
+      </div>
+
+      <!-- 3. Order Value -->
+      <div class="form-row">
+        <div class="row-identity">
+          <span class="row-number tone-blue">3</span>
+          <div class="row-icon tone-blue" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M11.2 4.2h5.6l5 5v5.6l-8.8 8.8-10.6-10.6V9.2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+              <circle cx="15.2" cy="9.4" r="1.35" fill="currentColor"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <label for="orderValue">Order Value</label>
+          </div>
+        </div>
+        <div class="row-control">
+          <input class="line-input" type="number" id="orderValue" name="orderValue" min="0" step="0.01" inputmode="decimal" />
+        </div>
+      </div>
+
+      <!-- 4. Payment Status -->
+      <div class="form-row">
+        <div class="row-identity">
+          <span class="row-number tone-sage">4</span>
+          <div class="row-icon tone-sage" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="3.4" y="6.2" width="17.2" height="11.6" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/>
+              <path d="M3.4 10.2h17.2" stroke="currentColor" stroke-width="1.7"/>
+              <path d="M7 15.2h4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <span class="field-title" id="payment-status-label">Payment Status</span>
+            <span class="helper">(Paid / Unpaid)</span>
+          </div>
+        </div>
+        <div class="row-control row-control-split">
+          <fieldset class="choice-group" role="radiogroup" aria-labelledby="payment-status-label">
+            <legend class="sr-only">Payment Status</legend>
+            <label class="choice choice-paid">
+              <input type="radio" name="paymentStatus" id="payment-paid" value="paid" />
+              <span class="choice-mark"></span>
+              <span>Paid</span>
+            </label>
+            <label class="choice choice-unpaid">
+              <input type="radio" name="paymentStatus" id="payment-unpaid" value="unpaid" />
+              <span class="choice-mark"></span>
+              <span>Unpaid</span>
+            </label>
+          </fieldset>
+          <button type="button" class="check-prices-btn" id="check-prices" aria-haspopup="dialog">
+            Check Prices
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="2" y="5" width="9" height="9" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+              <path d="M6.2 3.2H13v6.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              <path d="M12.8 3.2 7 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 5. Search Keyword -->
+      <div class="form-row">
+        <div class="row-identity">
+          <span class="row-number tone-terracotta">5</span>
+          <div class="row-icon tone-terracotta" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="6.2" fill="none" stroke="currentColor" stroke-width="1.7"/>
+              <path d="M15.8 15.8 20 20" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <label for="searchKeyword">Search Keyword</label>
+            <span class="helper">(Mention Keyword &amp; Page Number)</span>
+          </div>
+        </div>
+        <div class="row-control">
+          <input class="line-input" type="text" id="searchKeyword" name="searchKeyword" />
+        </div>
+      </div>
+
+      <!-- 6. Custom (Message) Order or Direct -->
+      <div class="form-row">
+        <div class="row-identity">
+          <span class="row-number tone-blue">6</span>
+          <div class="row-icon tone-blue" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="4" y="4" width="6.4" height="6.4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+              <rect x="13.6" y="4" width="6.4" height="6.4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+              <rect x="4" y="13.6" width="6.4" height="6.4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+              <rect x="13.6" y="13.6" width="6.4" height="6.4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <span class="field-title field-title-wrap" id="order-type-label">Custom (Message)<br>Order or Direct</span>
+          </div>
+        </div>
+        <div class="row-control">
+          <fieldset class="choice-group" role="radiogroup" aria-labelledby="order-type-label">
+            <legend class="sr-only">Custom (Message) Order or Direct</legend>
+            <label class="choice choice-custom">
+              <input type="radio" name="orderType" id="order-custom" value="custom" />
+              <span class="choice-mark"></span>
+              <span>Custom (Message)</span>
+            </label>
+            <label class="choice choice-direct">
+              <input type="radio" name="orderType" id="order-direct" value="direct" />
+              <span class="choice-mark"></span>
+              <span>Direct</span>
+            </label>
+          </fieldset>
+        </div>
+      </div>
+
+      <!-- 7. Message Text -->
+      <div class="form-row form-row-tall">
+        <div class="row-identity">
+          <span class="row-number tone-sage">7</span>
+          <div class="row-icon tone-sage" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M5.2 18.6 7 13.4 16.8 3.6c.8-.8 2.2-.8 3 0l.8.8c.8.8.8 2.2 0 3L10.8 17.2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+              <path d="M15.6 5 19 8.4" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M5 21h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <label for="messageText">Message Text</label>
+          </div>
+        </div>
+        <div class="row-control">
+          <textarea class="area-input" id="messageText" name="messageText" rows="3"></textarea>
+        </div>
+      </div>
+
+      <!-- 8. Direct Order Requirements -->
+      <div class="form-row form-row-tall">
+        <div class="row-identity">
+          <span class="row-number tone-terracotta">8</span>
+          <div class="row-icon tone-terracotta" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="5" y="3.8" width="14" height="16.4" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M8.4 3.8v2.6h7.2V3.8" fill="none" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M8.6 10.4h6.8M8.6 13.6h6.8M8.6 16.8h4.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <label for="directRequirements">Direct Order Requirements</label>
+          </div>
+        </div>
+        <div class="row-control">
+          <textarea class="area-input" id="directRequirements" name="directRequirements" rows="4"></textarea>
+        </div>
+      </div>
+
+      <!-- 9. Requirement File -->
+      <div class="form-row form-row-upload">
+        <div class="row-identity">
+          <span class="row-number tone-blue">9</span>
+          <div class="row-icon tone-blue" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M7.2 16.2c-2.4 0-4.2-1.8-4.2-4 0-1.8 1.2-3.4 3-3.9.4-2.6 2.6-4.5 5.4-4.5 2.4 0 4.4 1.4 5.2 3.5 2.4.2 4.2 2.2 4.2 4.6 0 2.4-2 4.4-4.4 4.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              <path d="M12 17.8V11M9.2 13.2 12 10.4l2.8 2.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <label for="requirementFile">Requirement File</label>
+            <span class="helper">(Upload if Any)</span>
+          </div>
+        </div>
+        <div class="row-control">
+          <label class="upload-drop" id="upload-drop" for="requirementFile">
+            <input type="file" id="requirementFile" name="requirementFile" multiple />
+            <svg class="upload-cloud" viewBox="0 0 48 48" aria-hidden="true">
+              <path d="M14 32c-4.4 0-8-3.4-8-7.6 0-3.6 2.4-6.6 5.8-7.4C12.6 12.2 16.8 9 22 9c4.6 0 8.6 2.6 10.2 6.4 4.4.4 8 4 8 8.4 0 4.6-3.8 8.2-8.4 8.2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M24 34V22M19 26.5 24 21.5 29 26.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="upload-copy">
+              Drag &amp; Drop your file here or <span class="upload-link">click to upload</span>
+            </span>
+            <span class="upload-filename" id="upload-filename"></span>
+          </label>
+          <ul class="file-list" id="requirement-file-list"></ul>
+        </div>
+      </div>
+
+      <!-- 10. Fiverr ID Name -->
+      <div class="form-row">
+        <div class="row-identity">
+          <span class="row-number tone-sage">10</span>
+          <div class="row-icon tone-sage" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <circle cx="12" cy="8.2" r="3.2" fill="none" stroke="currentColor" stroke-width="1.7"/>
+              <path d="M5.2 19.2c.8-3.4 3.2-5.2 6.8-5.2s6 1.8 6.8 5.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <label for="fiverrId">Fiverr ID Name</label>
+          </div>
+        </div>
+        <div class="row-control">
+          <input class="line-input" type="text" id="fiverrId" name="fiverrId" autocomplete="username" />
+        </div>
+      </div>
+
+      <!-- 11. Fiverr GIG URL -->
+      <div class="form-row">
+        <div class="row-identity">
+          <span class="row-number tone-terracotta">11</span>
+          <div class="row-icon tone-terracotta" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M9.6 14.4a4.4 4.4 0 0 1 0-6.2l2.6-2.6a4.4 4.4 0 0 1 6.2 6.2l-1.4 1.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              <path d="M14.4 9.6a4.4 4.4 0 0 1 0 6.2l-2.6 2.6a4.4 4.4 0 1 1-6.2-6.2l1.4-1.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <label for="fiverrGigUrl">Fiverr GIG URL</label>
+          </div>
+        </div>
+        <div class="row-control">
+          <input class="line-input" type="text" id="fiverrGigUrl" name="fiverrGigUrl" placeholder="https://" inputmode="url" />
+        </div>
+      </div>
+
+      <!-- 12. Review Text (Feedback) -->
+      <div class="form-row form-row-tall">
+        <div class="row-identity">
+          <span class="row-number tone-blue">12</span>
+          <div class="row-icon tone-blue" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 4.2 14.3 9l5.3.6-3.9 3.6.1 5.3L12 16.4 8.2 18.5l.1-5.3L4.4 9.6 9.7 9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <label for="reviewText">Review Text (Feedback)</label>
+          </div>
+        </div>
+        <div class="row-control">
+          <textarea class="area-input area-input-lg" id="reviewText" name="reviewText" rows="5"></textarea>
+        </div>
+      </div>
+
+      <section class="revisions-panel" aria-labelledby="revisions-title">
+        <div class="revisions-head">
+          <div>
+            <h2 id="revisions-title">Revisions</h2>
+            <p>Each row is Buyer Message 1 with Seller Message 1, then 2, 3, and so on. Fill the current pair, then use the button under the row to add the next.</p>
+            <p class="revisions-count" id="revisions-count">0 revisions</p>
+          </div>
+          <button type="button" class="ghost-btn" id="add-revision">+ Add Revision</button>
+        </div>
+        <div class="revisions-list" id="revisions-list"></div>
+      </section>
+
+      <div class="form-row">
+        <div class="row-identity">
+          <span class="row-number tone-sage">13</span>
+          <div class="row-icon tone-sage" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" stroke-width="1.7"/>
+              <path d="M8.2 12.2 10.8 14.8 16 9.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <span class="field-title" id="ready-label">Ready to Approve</span>
+            <span class="helper" id="ready-helper">Not Ready</span>
+          </div>
+        </div>
+        <div class="row-control">
+          <label class="switch">
+            <input type="checkbox" id="ready-to-approve" name="readyToApprove" />
+            <span class="switch-track" aria-hidden="true"></span>
+            <span class="switch-text" id="ready-switch-text">Not Ready</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="ghost-btn" id="new-order-btn">New Order</button>
+        <button type="submit" class="submit-btn" id="submit-form">Submit Form</button>
+      </div>
+    </form>
+
+    <footer class="form-footer">
+      <div class="footer-botanicals">
+        <svg class="footer-sprig" viewBox="0 0 90 40" aria-hidden="true">
+          <path d="M86 22c-18-2-32-12-42-22" fill="none" stroke="#9BAA86" stroke-width="1.2"/>
+          <path d="M78 20c-4-8-2-14 2-18" fill="none" stroke="#C9B7B0" stroke-width="1.1"/>
+          <ellipse cx="62" cy="14" rx="6" ry="3.2" transform="rotate(-18 62 14)" fill="#9BAA86" opacity="0.55"/>
+          <ellipse cx="50" cy="10" rx="5.2" ry="2.8" transform="rotate(-28 50 10)" fill="#B7C4A4" opacity="0.7"/>
+          <ellipse cx="70" cy="18" rx="5" ry="2.6" transform="rotate(-8 70 18)" fill="#E8C4B8" opacity="0.55"/>
+        </svg>
+        <div class="footer-copy">
+          <p class="thank-you">Thank you! ♡</p>
+          <p class="footer-note">WE APPRECIATE YOUR TIME AND DETAILS.</p>
+        </div>
+        <svg class="footer-sprig footer-sprig-right" viewBox="0 0 90 40" aria-hidden="true">
+          <path d="M4 22c18-2 32-12 42-22" fill="none" stroke="#9BAA86" stroke-width="1.2"/>
+          <path d="M12 20c4-8 2-14-2-18" fill="none" stroke="#C9B7B0" stroke-width="1.1"/>
+          <ellipse cx="28" cy="14" rx="6" ry="3.2" transform="rotate(18 28 14)" fill="#9BAA86" opacity="0.55"/>
+          <ellipse cx="40" cy="10" rx="5.2" ry="2.8" transform="rotate(28 40 10)" fill="#B7C4A4" opacity="0.7"/>
+          <ellipse cx="20" cy="18" rx="5" ry="2.6" transform="rotate(8 20 18)" fill="#E8C4B8" opacity="0.55"/>
+        </svg>
+      </div>
+    </footer>
+  </div>
+
+  <div class="price-modal" id="price-modal" role="dialog" aria-modal="true" aria-labelledby="price-modal-title" hidden>
+    <div class="price-modal-backdrop" data-close-modal></div>
+    <div class="price-modal-panel">
+      <button type="button" class="price-modal-close" id="price-modal-close" aria-label="Close price chart">&times;</button>
+      <h2 id="price-modal-title" class="sr-only">Order Required and Payoneer pricing chart</h2>
+      <img src="assets/pricing-chart.png" alt="Pricing chart showing Order Required dollars and corresponding Payoneer dollars" />
+    </div>
+  </div>
+
+  <div class="app-modal" id="account-modal" hidden>
+    <div class="app-modal-backdrop" data-close-accounts></div>
+    <div class="app-modal-panel" role="dialog" aria-modal="true" aria-labelledby="account-modal-title">
+      <div class="app-modal-head">
+        <h2 id="account-modal-title">Manage Accounts</h2>
+        <button type="button" class="price-modal-close" id="account-modal-close" aria-label="Close account manager">&times;</button>
+      </div>
+      <div class="account-modal-grid">
+        <div class="account-list" id="account-list"></div>
+        <form class="account-editor" id="account-editor">
+          <input type="hidden" id="account-edit-id" />
+          <label>
+            Account Name
+            <input class="line-input" type="text" id="account-name" required />
+          </label>
+          <label>
+            WhatsApp Number
+            <input class="line-input" type="tel" id="account-whatsapp" />
+          </label>
+          <label>
+            Your Name
+            <input class="line-input" type="text" id="account-person-name" />
+          </label>
+          <fieldset class="choice-group">
+            <legend>Payment Status</legend>
+            <label class="choice choice-paid">
+              <input type="radio" name="accountPaymentStatus" id="account-paid" value="paid" />
+              <span class="choice-mark"></span>
+              <span>Paid</span>
+            </label>
+            <label class="choice choice-unpaid">
+              <input type="radio" name="accountPaymentStatus" id="account-unpaid" value="unpaid" />
+              <span class="choice-mark"></span>
+              <span>Unpaid</span>
+            </label>
+          </fieldset>
+          <label>
+            Fiverr ID Name
+            <input class="line-input" type="text" id="account-fiverr-id" />
+          </label>
+          <label>
+            Fiverr GIG URL
+            <input class="line-input" type="text" id="account-fiverr-url" placeholder="https://" inputmode="url" />
+          </label>
+          <div class="form-actions compact">
+            <button type="button" class="ghost-btn" id="account-reset">New Account</button>
+            <button type="submit" class="submit-btn">Save Account</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="js/storage.js?v=sheet1"></script>
+  <script src="js/sheet-sync.js?v=sheet1"></script>
+  <script src="js/form.js?v=sheet1"></script>
+</body>
+</html>
