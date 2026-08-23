@@ -1,5 +1,11 @@
 (function () {
   const store = window.OwlisticStore;
+  const auth = window.OwlisticAuth;
+  const session = auth.requirePage();
+  if (!session) return;
+  auth.ensureLocalAccount(session);
+  auth.bindNav();
+
   const form = document.getElementById("order-questionnaire");
   const page = document.getElementById("page");
   const toast = document.getElementById("toast");
@@ -22,6 +28,7 @@
   let requirementFiles = [];
   let revisions = [];
   let persistTimer = null;
+  let isSubmitting = false;
 
   function showToast(message) {
     toast.textContent = message;
@@ -53,7 +60,7 @@
     banner.hidden = true;
     banner.classList.remove("is-revision", "is-ready");
 
-    if (status === "revision-pending") {
+    if (status === "revision-pending" || status === "revision-pending") {
       page.classList.add("has-revision");
       banner.hidden = false;
       banner.classList.add("is-revision");
@@ -73,6 +80,7 @@
   }
 
   function maybePersist() {
+    if (isSubmitting) return;
     if (!document.getElementById("order-id").value) return;
     window.clearTimeout(persistTimer);
     persistTimer = window.setTimeout(function () {
@@ -450,10 +458,35 @@
     if (pruned) maybePersist();
   }
 
+  function isAdmin() {
+    return auth.isSuperAdmin();
+  }
+
+  function lockedAccount() {
+    if (isAdmin()) return store.getAccount(accountSelect.value);
+    return auth.visibleAccounts()[0] || store.getAccount(accountSelect.value);
+  }
+
+  function lockAccountUi() {
+    if (isAdmin()) {
+      accountSelect.disabled = false;
+      return;
+    }
+    const match = auth.visibleAccounts()[0];
+    if (match) accountSelect.value = match.id;
+    accountSelect.disabled = true;
+    const title = document.getElementById("select-account-title");
+    if (title) title.textContent = "Your Account";
+    const copy = document.querySelector(".account-panel-copy p");
+    if (copy) copy.textContent = "You can fill the form and view records for this account only.";
+  }
+
   function populateAccounts(selectedId) {
-    const accounts = store.getAccounts();
+    const accounts = auth.visibleAccounts();
     const current = selectedId || accountSelect.value;
-    accountSelect.innerHTML = '<option value="">Select an account</option>';
+    accountSelect.innerHTML = isAdmin()
+      ? '<option value="">Select an account</option>'
+      : "";
     accounts.forEach(function (account) {
       const option = document.createElement("option");
       option.value = account.id;
@@ -463,6 +496,7 @@
     if (current && accounts.some(function (account) { return account.id === current; })) {
       accountSelect.value = current;
     }
+    lockAccountUi();
   }
 
   function applyAccount(account) {
@@ -521,6 +555,7 @@
   }
 
   function syncAccountTabs(message) {
+    if (!isAdmin()) return;
     if (!window.OwlisticSheet || typeof window.OwlisticSheet.ensureTabs !== "function") return;
     const accounts = store.getAccounts();
     window.OwlisticSheet.ensureTabs(accounts).then(function (result) {
@@ -531,6 +566,7 @@
   }
 
   function openAccountModal() {
+    if (!isAdmin()) return;
     lastFocus = document.activeElement;
     fillAccountEditor(null);
     renderAccountList();
@@ -579,11 +615,37 @@
     updateStatusUI();
   }
 
+  function goToDefaultPage() {
+    window.clearTimeout(persistTimer);
+    persistTimer = null;
+    clearOrderSpecific();
+    document.getElementById("whatsapp").value = "";
+    document.getElementById("name").value = "";
+    setPayment("paymentStatus", "");
+    document.getElementById("fiverrId").value = "";
+    document.getElementById("fiverrGigUrl").value = "";
+    populateAccounts();
+    if (isAdmin()) {
+      accountSelect.value = "";
+    } else {
+      lockAccountUi();
+      applyAccount(lockedAccount());
+    }
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, "", "index.html");
+    }
+    window.scrollTo(0, 0);
+    if (isAdmin() && accountSelect && typeof accountSelect.focus === "function") {
+      accountSelect.focus();
+    }
+  }
+
   function collectOrder() {
-    const account = store.getAccount(accountSelect.value);
+    const account = lockedAccount();
+    if (account) accountSelect.value = account.id;
     return {
       id: document.getElementById("order-id").value || undefined,
-      accountId: accountSelect.value || "",
+      accountId: account && account.id ? account.id : "",
       accountName: store.accountLabel(account),
       whatsapp: document.getElementById("whatsapp").value.trim(),
       name: document.getElementById("name").value.trim(),
@@ -619,18 +681,16 @@
       if (window.history && window.history.replaceState) {
         window.history.replaceState({}, "", "index.html?order=" + encodeURIComponent(saved.id));
       }
-      return (window.OwlisticSheet ? window.OwlisticSheet.sync(saved) : Promise.resolve()).then(function (result) {
+      return (window.OwlisticSheet ? window.OwlisticSheet.sync(saved) : Promise.resolve({ skipped: true })).then(function (result) {
         if (!silent) {
-          if (result && (result.skipped || result.skipped)) {
+          if (result && result.skipped) {
             showToast("Order " + saved.id + " saved locally. Connect Google Sheet to sync.");
-          } else {
-            showToast("Order " + saved.id + " saved to Google Sheet");
           }
         }
-        return saved;
+        return { saved: saved, sheet: result || { ok: true } };
       }).catch(function () {
         if (!silent) showToast("Order " + saved.id + " saved locally, but Google Sheet sync failed");
-        return saved;
+        return { saved: saved, sheetFailed: true };
       });
     });
   }
@@ -670,7 +730,14 @@
   const existingId = new URLSearchParams(window.location.search).get("order");
   if (existingId) {
     const existing = store.getOrder(existingId);
-    if (existing) loadOrder(existing);
+    if (existing && auth.canSeeOrder(existing)) {
+      loadOrder(existing);
+    } else if (existing) {
+      showToast("You can only open orders for your account.");
+      goToDefaultPage();
+    }
+  } else if (!isAdmin()) {
+    applyAccount(lockedAccount());
   }
 
   accountSelect.addEventListener("change", function () {
@@ -689,6 +756,7 @@
   });
   accountEditor.addEventListener("submit", function (event) {
     event.preventDefault();
+    if (!isAdmin()) return;
     const saved = store.upsertAccount({
       id: document.getElementById("account-edit-id").value || undefined,
       name: document.getElementById("account-name").value.trim(),
@@ -886,8 +954,28 @@
 
   form.addEventListener("submit", function (event) {
     event.preventDefault();
-    saveOrder(false).catch(function () {
+    if (isSubmitting) return;
+    isSubmitting = true;
+    window.clearTimeout(persistTimer);
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Saving to Google Sheet…";
+    saveOrder(false).then(function (outcome) {
+      const saved = outcome && outcome.saved;
+      if (!outcome || outcome.sheetFailed || (outcome.sheet && outcome.sheet.skipped)) {
+        return;
+      }
+      goToDefaultPage();
+      showToast("Order " + saved.id + " saved to Google Sheet");
+    }).catch(function () {
       showToast("Could not save this order");
+    }).then(function () {
+      isSubmitting = false;
+      submitBtn.disabled = false;
+      if (!document.getElementById("order-id").value) {
+        submitBtn.textContent = "Submit Form";
+      } else {
+        submitBtn.textContent = "Save Changes";
+      }
     });
   });
 })();

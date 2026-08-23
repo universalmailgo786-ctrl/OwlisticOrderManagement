@@ -1,7 +1,11 @@
 (function (global) {
   const URL_KEY = "owlistic.sheetWebAppUrl";
   const SPREADSHEET_ID = "1nZuMePQFJA9lCQ6C48d9MUC3Fwn00ao6Kilap5rbFfQ";
-  const DEFAULT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxc9UyzIdr73zkuzHH-8R2tWxOmr3Rc88ApfrVA2RnKObATD3J8PSCJuwtF9FahSmIq/exec";
+  const DEFAULT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbytKcOqCtxVNXpPWmD6hQ7inpefem-MIf2ThOQEmCqKKgDLQVk1IlHIfIXstFznpwwM/exec";
+  const STALE_WEB_APP_URLS = [
+    "https://script.google.com/macros/s/AKfycbxc9UyzIdr73zkuzHH-8R2tWxOmr3Rc88ApfrVA2RnKObATD3J8PSCJuwtF9FahSmIq/exec",
+    "https://script.google.com/macros/s/AKfycbyLFBc8mr5QL_Hz3wpIfelJfyv_SbDUfbu1plPvzmUbClJzXF_MuHbPijOwzl9wPLuELw/exec"
+  ];
   const store = global.OwlisticStore || global.OwlisticStore;
 
   const HEADERS = [
@@ -42,7 +46,12 @@
 
   function getWebAppUrl() {
     try {
-      return (localStorage.getItem(URL_KEY) || DEFAULT_WEB_APP_URL || "").trim();
+      const stored = (localStorage.getItem(URL_KEY) || "").trim();
+      if (!stored || STALE_WEB_APP_URLS.indexOf(stored) >= 0) {
+        if (stored) localStorage.setItem(URL_KEY, DEFAULT_WEB_APP_URL);
+        return DEFAULT_WEB_APP_URL;
+      }
+      return stored;
     } catch (err) {
       return DEFAULT_WEB_APP_URL;
     }
@@ -171,6 +180,9 @@
   function postPayload(payload) {
     if (!isConfigured()) {
       return Promise.resolve({ skipped: true });
+    }
+    if (global.OwlisticAuth && typeof global.OwlisticAuth.sheetAuth === "function") {
+      payload = global.OwlisticAuth.sheetAuth(payload);
     }
     return fetch(getWebAppUrl(), {
       method: "POST",

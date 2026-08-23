@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in · Order Questionnaire</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css?v=auth2" />
+</head>
+<body class="login-page">
+  <div class="page login-shell">
+    <header class="form-header">
+      <h1>Order Questionnaire</h1>
+      <p class="form-subtitle">
+        <span class="subtitle-leaf" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 18c6-2 10-8 12-14-8 4-12 10-12 14z" fill="#9BAA86"/><path d="M7 16c4-1 7-5 8-9" stroke="#7F9270" stroke-width="0.8" fill="none"/></svg>
+        </span>
+        SIGN IN TO CONTINUE
+        <span class="subtitle-leaf subtitle-leaf-right" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M20 18c-6-2-10-8-12-14 8 4 12 10 12 14z" fill="#9BAA86"/><path d="M17 16c-4-1-7-5-8-9" stroke="#7F9270" stroke-width="0.8" fill="none"/></svg>
+        </span>
+      </p>
+      <div class="header-rule">
+        <span class="header-heart" aria-hidden="true">♡</span>
+      </div>
+    </header>
+
+    <form class="login-card" id="login-form">
+      <label>
+        Username
+        <input class="line-input" type="text" id="login-username" name="username" autocomplete="username" required />
+      </label>
+      <label>
+        Password
+        <input class="line-input" type="password" id="login-password" name="password" autocomplete="current-password" required />
+      </label>
+      <p class="login-error" id="login-error" hidden></p>
+      <button type="submit" class="submit-btn" id="login-submit">Sign in</button>
+      <p class="login-hint">Use the username and password from the users sheet. Super Admin sees every account. Account users only see their own tab.</p>
+    </form>
+  </div>
+
+  <script src="js/storage.js?v=auth2"></script>
+  <script src="js/sheet-sync.js?v=auth2"></script>
+  <script src="js/auth.js?v=auth2"></script>
+  <script>
+    (function () {
+      const auth = window.OwlisticAuth;
+      if (auth.getSession()) {
+        window.location.replace(auth.nextPath());
+        return;
+      }
+      const form = document.getElementById("login-form");
+      const error = document.getElementById("login-error");
+      const button = document.getElementById("login-submit");
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        error.hidden = true;
+        button.disabled = true;
+        button.textContent = "Signing in…";
+        auth.login(
+          document.getElementById("login-username").value.trim(),
+          document.getElementById("login-password").value
+        ).then(function (result) {
+          if (!result || !result.ok) {
+            error.hidden = false;
+            error.textContent = (result && result.error) || "Could not sign in.";
+            button.disabled = false;
+            button.textContent = "Sign in";
+            return;
+          }
+          window.location.replace(auth.nextPath());
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

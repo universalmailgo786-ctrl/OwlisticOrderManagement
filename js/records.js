@@ -1,17 +1,29 @@
 (function () {
   const store = window.OwlisticStore;
+  const auth = window.OwlisticAuth;
+  const session = auth.requirePage();
+  if (!session) return;
+  auth.bindNav();
+
   const body = document.getElementById("records-body");
   const countEl = document.getElementById("records-count");
   const search = document.getElementById("records-search");
   const dateFilter = document.getElementById("filter-date");
   const accountFilter = document.getElementById("filter-account");
   const paymentFilter = document.getElementById("filter-payment");
-  const statusFilter = document.getElementById("filter-status");
   const revisionFilter = document.getElementById("filter-revision");
   const readyFilter = document.getElementById("filter-ready");
+  const tabButtons = Array.prototype.slice.call(document.querySelectorAll(".records-tab"));
+  const TAB_LABELS = {
+    "in-progress": "in progress",
+    completed: "completed",
+    "on-revision": "on revision"
+  };
+
+  let activeTab = "in-progress";
 
   function badge(status, label) {
-    const cls = status === "revision-pending" ? "badge-red"
+    const cls = status === "revision-pending" || status === "revision-pending" || status === "on-revision" ? "badge-red"
       : status === "ready-to-approve" || status === "completed" ? "badge-green"
       : status === "paid" ? "badge-green"
       : status === "unpaid" ? "badge-red"
@@ -41,23 +53,35 @@
     return '<div class="records-stack"><strong>' + escapeHtml(primary || "—") + "</strong><span>" + escapeHtml(secondary || "—") + "</span></div>";
   }
 
+  function tabOf(order) {
+    if (typeof store.recordTab === "function") return store.recordTab(order);
+    const status = store.computeStatus(order);
+    if (status === "ready-to-approve") return "completed";
+    if (status === "revision-pending" || status === "revision-pending") return "on-revision";
+    return "in-progress";
+  }
+
   function renderAccountFilter() {
-    store.getAccounts().forEach(function (account) {
+    const accounts = auth.visibleAccounts();
+    accounts.forEach(function (account) {
       const option = document.createElement("option");
       option.value = account.id;
       option.textContent = store.accountLabel(account);
       accountFilter.appendChild(option);
     });
+    if (!auth.isSuperAdmin()) {
+      const field = document.getElementById("filter-account-field");
+      if (field) field.hidden = true;
+      if (accounts[0]) accountFilter.value = accounts[0].id;
+    }
   }
 
-  function matches(order) {
+  function matchesFilters(order) {
     const query = (search.value || "").trim().toLowerCase();
-    const status = store.computeStatus(order);
     const created = order.createdAt ? order.createdAt.slice(0, 10) : "";
     if (dateFilter.value && created !== dateFilter.value) return false;
     if (accountFilter.value && order.accountId !== accountFilter.value) return false;
     if (paymentFilter.value && order.paymentStatus !== paymentFilter.value) return false;
-    if (statusFilter.value && status !== statusFilter.value) return false;
     const revisionRounds = store.normalizeRevisions(order.revisions || []);
     const hasRevisions = revisionRounds.length > 0;
     if (revisionFilter.value === "pending" && !hasRevisions) return false;
@@ -72,22 +96,46 @@
     return haystack.indexOf(query) !== -1;
   }
 
+  function setActiveTab(tab) {
+    activeTab = tab;
+    tabButtons.forEach(function (button) {
+      const selected = button.getAttribute("data-tab") === tab;
+      button.classList.toggle("is-active", selected);
+      button.setAttribute("aria-selected", selected ? "true" : "false");
+    });
+    render();
+  }
+
+  function updateTabCounts(all) {
+    const counts = { "in-progress": 0, completed: 0, "on-revision": 0 };
+    all.forEach(function (order) {
+      const tab = tabOf(order);
+      if (counts[tab] != null) counts[tab] += 1;
+    });
+    document.querySelectorAll("[data-tab-count]").forEach(function (el) {
+      const key = el.getAttribute("data-tab-count");
+      el.textContent = String(counts[key] || 0);
+    });
+  }
+
   function render() {
-    const all = store.getOrders();
+    const all = auth.visibleOrders();
+    updateTabCounts(all);
     const orders = all.slice().sort(function (a, b) {
       return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
-    }).filter(matches);
+    }).filter(function (order) {
+      return tabOf(order) === activeTab && matchesFilters(order);
+    });
 
     const noun = orders.length === 1 ? "order" : "orders";
-    countEl.textContent = orders.length === all.length
-      ? orders.length + " " + noun
-      : orders.length + " of " + all.length + " " + noun;
+    const tabLabel = TAB_LABELS[activeTab] || activeTab;
+    countEl.textContent = orders.length + " " + noun;
 
     if (!orders.length) {
       body.innerHTML =
         '<tr><td colspan="10"><div class="empty-state">' +
-          "<strong>No matching orders</strong>" +
-          "<p>Try another search, or clear a filter to see saved questionnaires.</p>" +
+          "<strong>No " + tabLabel + " orders</strong>" +
+          "<p>Orders in this category will appear here. Try another tab, or clear a filter.</p>" +
         "</div></td></tr>";
       return;
     }
@@ -114,8 +162,13 @@
   }
 
   renderAccountFilter();
+  tabButtons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      setActiveTab(button.getAttribute("data-tab"));
+    });
+  });
   render();
-  [search, dateFilter, accountFilter, paymentFilter, statusFilter, revisionFilter, readyFilter].forEach(function (input) {
+  [search, dateFilter, accountFilter, paymentFilter, revisionFilter, readyFilter].forEach(function (input) {
     input.addEventListener("input", render);
     input.addEventListener("change", render);
   });

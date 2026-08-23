@@ -226,6 +226,15 @@
 
   function computeStatus(order) {
     if (order && (order.readyToApprove || order.readyToApprove)) return "ready-to-approve";
+    const revisions = normalizeRevisions((order && order.revisions) || []);
+    if (revisions.length) return "revision-pending";
+    return "in-progress";
+  }
+
+  function recordTab(order) {
+    const status = computeStatus(order);
+    if (status === "ready-to-approve") return "completed";
+    if (status === "revision-pending" || status === "revision-pending") return "on-revision";
     return "in-progress";
   }
 
@@ -274,8 +283,8 @@
   }
 
   function statusLabel(status) {
-    if (status === "revision-pending") return "Revision Pending";
-    if (status === "ready-to-approve") return "Ready to Approve";
+    if (status === "revision-pending" || status === "revision-pending") return "On Revision";
+    if (status === "ready-to-approve") return "Completed";
     return "In Progress";
   }
 
@@ -314,6 +323,7 @@
     upsertOrder: upsertOrder,
     computeStatus: computeStatus,
     computeStatus: computeStatus,
+    recordTab: recordTab,
     currentRevision: currentRevision,
     currentRevision: currentRevision,
     normalizeRevisions: normalizeRevisions,

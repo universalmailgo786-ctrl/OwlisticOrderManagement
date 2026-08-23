@@ -7,12 +7,18 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=rev3" />
+  <link rel="stylesheet" href="css/styles.css?v=auth2" />
 </head>
 <body>
   <nav class="app-nav">
-    <a class="app-nav-link is-active" href="index.html">Order Questionnaire</a>
-    <a class="app-nav-link" href="records.html">Order Records</a>
+    <div class="app-nav-links">
+      <a class="app-nav-link is-active" href="index.html">Order Questionnaire</a>
+      <a class="app-nav-link" href="records.html">Order Records</a>
+    </div>
+    <div class="nav-user" id="nav-user" hidden>
+      <span id="nav-who"></span>
+      <button type="button" class="ghost-btn" id="logout-btn">Log out</button>
+    </div>
   </nav>
 
   <div class="page" id="page">
@@ -78,11 +84,11 @@
         <select class="account-select" id="account-select">
           <option value="">Select an account</option>
         </select>
-        <button type="button" class="ghost-btn" id="manage-accounts">Manage Accounts</button>
+        <button type="button" class="ghost-btn admin-only" id="manage-accounts">Manage Accounts</button>
       </div>
     </section>
 
-    <section class="sheet-connect" id="sheet-connect" aria-labelledby="sheet-connect-title">
+    <section class="sheet-connect admin-only" id="sheet-connect" aria-labelledby="sheet-connect-title">
       <div class="sheet-connect-copy">
         <h2 id="sheet-connect-title">Google Sheet</h2>
         <p id="sheet-connect-status">Connected to Ashar Orders Management System. Each account gets its own tab; submitted orders go to that tab.</p>
@@ -506,8 +512,9 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="js/storage.js?v=tabs1"></script>
-  <script src="js/sheet-sync.js?v=tabs1"></script>
-  <script src="js/form.js?v=tabs1"></script>
+  <script src="js/storage.js?v=auth2"></script>
+  <script src="js/sheet-sync.js?v=auth2"></script>
+  <script src="js/auth.js?v=auth2"></script>
+  <script src="js/form.js?v=auth2"></script>
 </body>
 </html>
