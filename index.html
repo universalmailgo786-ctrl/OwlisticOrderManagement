@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=auth2" />
+  <link rel="stylesheet" href="css/styles.css?v=files1" />
 </head>
 <body>
   <nav class="app-nav">
@@ -473,6 +473,15 @@
             <input class="line-input" type="text" id="account-name" required />
           </label>
           <label>
+            Login Username
+            <input class="line-input" type="text" id="account-username" autocomplete="off" />
+          </label>
+          <label>
+            Login Password
+            <input class="line-input" type="password" id="account-username-password" autocomplete="new-password" />
+            <span class="field-note">Saved to the Users credentials sheet. Required for a new user; leave blank when editing to keep the current password.</span>
+          </label>
+          <label>
             WhatsApp Number
             <input class="line-input" type="tel" id="account-whatsapp" />
           </label>
@@ -512,9 +521,9 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="js/storage.js?v=auth2"></script>
-  <script src="js/sheet-sync.js?v=auth2"></script>
-  <script src="js/auth.js?v=auth2"></script>
-  <script src="js/form.js?v=auth2"></script>
+  <script src="js/storage.js?v=files1"></script>
+  <script src="js/sheet-sync.js?v=files1"></script>
+  <script src="js/auth.js?v=files1"></script>
+  <script src="js/form.js?v=files1"></script>
 </body>
 </html>

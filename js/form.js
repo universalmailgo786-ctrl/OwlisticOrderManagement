@@ -88,6 +88,48 @@
     }, 250);
   }
 
+  function storedBlob(record) {
+    return record && (record.blob || record.blob);
+  }
+
+  function openRequirementFile(file) {
+    if (file && file.url) {
+      window.open(file.url, "_blank", "noopener");
+      return;
+    }
+    if (!file || !file.id) return;
+    store.getFile(file.id).then(function (record) {
+      const blob = storedBlob(record);
+      if (!blob) return;
+      window.open(URL.createObjectURL(blob), "_blank", "noopener");
+    });
+  }
+
+  function downloadRequirementFile(file) {
+    if (file && file.url) {
+      const link = document.createElement("a");
+      link.href = file.url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.download = file.name || "file";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      return;
+    }
+    if (!file || !file.id) return;
+    store.getFile(file.id).then(function (record) {
+      const blob = storedBlob(record);
+      if (!blob) return;
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = file.name || (record && record.name) || "file";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    });
+  }
+
   function renderFileList(target, files, onChange) {
     target.innerHTML = "";
     files.forEach(function (file, index) {
@@ -96,17 +138,22 @@
       info.textContent = file.name + (file.uploadedAt ? " · " + store.formatDateTime(file.uploadedAt) : "");
       const actions = document.createElement("span");
 
-      if (file.id) {
+      if (file.id || file.url) {
         const openBtn = document.createElement("button");
         openBtn.type = "button";
         openBtn.textContent = "Open";
         openBtn.addEventListener("click", function () {
-          store.getFile(file.id).then(function (record) {
-            if (!record || !record.blob) return;
-            window.open(URL.createObjectURL(record.blob), "_blank", "noopener");
-          });
+          openRequirementFile(file);
         });
         actions.appendChild(openBtn);
+
+        const downloadBtn = document.createElement("button");
+        downloadBtn.type = "button";
+        downloadBtn.textContent = "Download";
+        downloadBtn.addEventListener("click", function () {
+          downloadRequirementFile(file);
+        });
+        actions.appendChild(downloadBtn);
       }
 
       const removeBtn = document.createElement("button");
@@ -681,13 +728,38 @@
       if (window.history && window.history.replaceState) {
         window.history.replaceState({}, "", "index.html?order=" + encodeURIComponent(saved.id));
       }
-      return (window.OwlisticSheet ? window.OwlisticSheet.sync(saved) : Promise.resolve({ skipped: true })).then(function (result) {
-        if (!silent) {
-          if (result && result.skipped) {
-            showToast("Order " + saved.id + " saved locally. Connect Google Sheet to sync.");
+      const sheet = window.OwlisticSheet;
+      const syncPromise = sheet
+        ? sheet.sync(saved, { forceUploads: !silent })
+        : Promise.resolve({ skipped: true });
+      return syncPromise.then(function (result) {
+        const afterSync = (!silent && sheet && typeof sheet.fetchOrders === "function")
+          ? sheet.fetchOrders().then(function (list) {
+            if (list && list.ok && list.orders) {
+              store.importOrders(list.orders);
+              const updated = store.getOrder(saved.id);
+              if (updated && updated.requirementFiles) {
+                requirementFiles = updated.requirementFiles.slice();
+                refreshRequirementFiles();
+              }
+            }
+            return result;
+          }).catch(function () {
+            return result;
+          })
+          : Promise.resolve(result);
+        return afterSync.then(function (sheetResult) {
+          if (!silent) {
+            if (sheetResult && sheetResult.skipped) {
+              showToast("Order " + saved.id + " saved locally. Connect Google Sheet to sync.");
+            } else if (sheetResult && sheetResult.skippedLarge && sheetResult.skippedLarge.length) {
+              showToast("Saved. Files over 8 MB were kept on this device only.");
+            } else {
+              showToast("Order " + saved.id + " saved");
+            }
           }
-        }
-        return { saved: saved, sheet: result || { ok: true } };
+          return { saved: saved, sheet: sheetResult || { ok: true } };
+        });
       }).catch(function () {
         if (!silent) showToast("Order " + saved.id + " saved locally, but Google Sheet sync failed");
         return { saved: saved, sheetFailed: true };
@@ -722,22 +794,35 @@
     updateStatusUI();
   }
 
-  populateAccounts();
-  refreshRequirementFiles();
-  renderRevisions();
-  updateStatusUI();
+  function bootForm() {
+    populateAccounts();
+    refreshRequirementFiles();
+    renderRevisions();
+    updateStatusUI();
 
-  const existingId = new URLSearchParams(window.location.search).get("order");
-  if (existingId) {
-    const existing = store.getOrder(existingId);
-    if (existing && auth.canSeeOrder(existing)) {
-      loadOrder(existing);
-    } else if (existing) {
-      showToast("You can only open orders for your account.");
-      goToDefaultPage();
+    const existingId = new URLSearchParams(window.location.search).get("order");
+    if (existingId) {
+      const existing = store.getOrder(existingId);
+      if (existing && auth.canSeeOrder(existing)) {
+        loadOrder(existing);
+      } else if (existing) {
+        showToast("You can only open orders for your account.");
+        goToDefaultPage();
+      }
+    } else if (!isAdmin()) {
+      applyAccount(lockedAccount());
     }
-  } else if (!isAdmin()) {
-    applyAccount(lockedAccount());
+  }
+
+  if (window.OwlisticSheet && typeof window.OwlisticSheet.fetchOrders === "function") {
+    window.OwlisticSheet.fetchOrders().then(function (result) {
+      if (result && result.orders && result.orders.length) {
+        store.importOrders(result.orders);
+      }
+      bootForm();
+    }).catch(bootForm);
+  } else {
+    bootForm();
   }
 
   accountSelect.addEventListener("change", function () {

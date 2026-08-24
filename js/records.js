@@ -3,6 +3,7 @@
   const auth = window.OwlisticAuth;
   const session = auth.requirePage();
   if (!session) return;
+  auth.ensureLocalAccount(session);
   auth.bindNav();
 
   const body = document.getElementById("records-body");
@@ -62,6 +63,8 @@
   }
 
   function renderAccountFilter() {
+    const previous = accountFilter.value;
+    accountFilter.innerHTML = '<option value="">All accounts</option>';
     const accounts = auth.visibleAccounts();
     accounts.forEach(function (account) {
       const option = document.createElement("option");
@@ -72,7 +75,9 @@
     if (!auth.isSuperAdmin()) {
       const field = document.getElementById("filter-account-field");
       if (field) field.hidden = true;
-      if (accounts[0]) accountFilter.value = accounts[0].id;
+      accountFilter.value = "";
+    } else if (previous) {
+      accountFilter.value = previous;
     }
   }
 
@@ -156,9 +161,34 @@
         "<td>" + badge(rounds.length ? "completed" : "in-progress", revisionLabel) + "</td>" +
         "<td>" + badge(order.readyToApprove ? "ready-to-approve" : "in-progress", order.readyToApprove ? "Ready" : "Not Ready") + "</td>" +
         "<td>" + badge(status, store.statusLabel(status)) + "</td>" +
-        '<td><a class="open-link" href="index.html?order=' + encodeURIComponent(order.id) + '">Open</a></td>' +
+        '<td class="records-actions">' +
+          '<a class="open-link" href="index.html?order=' + encodeURIComponent(order.id) + '">Edit</a>' +
+          '<button type="button" class="ghost-btn is-danger" data-delete-order="' + escapeHtml(order.id) + '">Delete</button>' +
+        "</td>" +
       "</tr>";
     }).join("");
+  }
+
+  function loadFromSheet() {
+    if (!window.OwlisticSheet || typeof window.OwlisticSheet.fetchOrders !== "function") {
+      render();
+      return;
+    }
+    countEl.textContent = "Loading…";
+    window.OwlisticSheet.fetchOrders().then(function (result) {
+      if (result && result.orders && result.orders.length) {
+        store.importOrders(result.orders);
+      }
+      renderAccountFilter();
+      render();
+      if (result && result.error && !auth.visibleOrders().length) {
+        body.innerHTML =
+          '<tr><td colspan="10"><div class="empty-state">' +
+            "<strong>Could not load sheet orders</strong>" +
+            "<p>" + escapeHtml(result.error) + "</p>" +
+          "</div></td></tr>";
+      }
+    });
   }
 
   renderAccountFilter();
@@ -167,7 +197,20 @@
       setActiveTab(button.getAttribute("data-tab"));
     });
   });
-  render();
+  loadFromSheet();
+  body.addEventListener("click", function (event) {
+    const button = event.target.closest("[data-delete-order]");
+    if (!button) return;
+    const id = button.getAttribute("data-delete-order");
+    const order = store.getOrder(id);
+    if (!order || !auth.canSeeOrder(order)) return;
+    if (!window.confirm("Delete order " + id + "? This removes it from Order Records and the Google Sheet.")) return;
+    store.deleteOrder(id);
+    if (window.OwlisticSheet && typeof window.OwlisticSheet.deleteOrder === "function") {
+      window.OwlisticSheet.deleteOrder(order);
+    }
+    render();
+  });
   [search, dateFilter, accountFilter, paymentFilter, revisionFilter, readyFilter].forEach(function (input) {
     input.addEventListener("input", render);
     input.addEventListener("change", render);

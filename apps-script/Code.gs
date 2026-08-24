@@ -42,7 +42,8 @@ var GOLD = "#f4ead0";
 var GOLD_TEXT = "#6b5420";
 var SKY = "#e4eef4";
 var SKY_TEXT = "#1f4f66";
-var COL_WIDTHS = [118, 122, 108, 140, 128, 150, 150, 150, 108, 132, 140, 150, 240, 220, 160, 140, 200, 200, 92, 260, 140, 220, 220, 168, 168];
+var COL_WIDTHS = [118, 122, 108, 140, 128, 150, 150, 150, 108, 132, 140, 150, 240, 220, 220, 140, 200, 200, 92, 260, 140, 220, 220, 168, 168];
+var FILES_FOLDER_NAME = "Owlistic Order Files";
 var TAB_COLORS = ["#9baa86", "#c4a574", "#4e91b1", "#e98a5f", "#708b55", "#8b6b4a"];
 var FORMAT_ROWS = 300;
 
@@ -55,6 +56,9 @@ function doGet(e) {
   if (action === "setupUsers") {
     return json_(setupUsersSheet_());
   }
+  if (action === "listOrders") {
+    return json_(listOrders_(params));
+  }
   return json_({ ok: true, service: "Ashar Orders Management System" });
 }
 
@@ -66,6 +70,12 @@ function doPost(e) {
     }
     if (data.action === "setupUsers") {
       return json_(setupUsersSheet_());
+    }
+    if (data.action === "upsertUser") {
+      if (isRestrictedUser_(data)) {
+        return json_({ ok: false, error: "Only Super Admin can add login users." });
+      }
+      return json_(upsertUser_(data));
     }
 
     var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -81,6 +91,9 @@ function doPost(e) {
         return json_({ ok: false, error: "Only Super Admin can format the workbook." });
       }
       return json_(formatWorkbook_(ss));
+    }
+    if (data.action === "deleteOrder") {
+      return json_(deleteOrder_(ss, data));
     }
 
     return json_(upsertOrder_(ss, data));
@@ -135,6 +148,329 @@ function forcedAccount_(data) {
   return tabName_(data.userAccount || data.account || "");
 }
 
+function listOrders_(params) {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var forced = "";
+  var role = String((params && params.role) || "").toLowerCase().replace(/\s+/g, "");
+  if (role === "user" || role === "account") {
+    forced = tabName_((params && (params.userAccount || params.account)) || "");
+    if (!forced) {
+      return { ok: false, error: "This user has no Account assigned." };
+    }
+  }
+  var sheets = ss.getSheets();
+  var orders = [];
+  for (var i = 0; i < sheets.length; i++) {
+    var sheet = sheets[i];
+    var name = sheet.getName();
+    if (name === "Users") continue;
+    if (String(sheet.getRange(1, 1).getValue() || "").trim() !== "Order ID") continue;
+    var last = sheet.getLastRow();
+    if (last < 2) continue;
+    var cols = Math.max(sheet.getLastColumn(), 1);
+    var values = sheet.getRange(2, 1, last - 1, cols).getValues();
+    var fileRich = [];
+    try {
+      fileRich = sheet.getRange(2, 15, last - 1, 1).getRichTextValues();
+    } catch (err) {
+      fileRich = [];
+    }
+    for (var r = 0; r < values.length; r++) {
+      var row = values[r];
+      while (row.length < HEADERS.length) row.push("");
+      var id = String(row[0] || "").trim();
+      if (!id) continue;
+      if (forced && !rowBelongsToAccount_(row, name, forced)) continue;
+      var rich = fileRich[r] && fileRich[r][0];
+      orders.push(orderFromRow_(row, name, filesFromCell_(rich, row[14])));
+    }
+  }
+  return { ok: true, action: "listOrders", count: orders.length, orders: orders };
+}
+
+function isoFrom_(datePart, timePart) {
+  if (datePart instanceof Date && !isNaN(datePart.getTime())) {
+    var combined = new Date(datePart.getTime());
+    if (timePart instanceof Date && !isNaN(timePart.getTime())) {
+      combined.setHours(timePart.getHours(), timePart.getMinutes(), timePart.getSeconds(), 0);
+    }
+    return combined.toISOString();
+  }
+  var dateText = String(datePart || "").trim();
+  if (!dateText) return "";
+  var timeText = "";
+  if (timePart instanceof Date && !isNaN(timePart.getTime())) {
+    timeText = Utilities.formatDate(timePart, Session.getScriptTimeZone(), "HH:mm:ss");
+  } else {
+    timeText = String(timePart || "").trim();
+  }
+  var parsed = new Date(dateText + (timeText ? " " + timeText : ""));
+  return isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+}
+
+function cellText_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  }
+  return String(value == null ? "" : value).trim();
+}
+
+function parseFiles_(text) {
+  var raw = String(text == null ? "" : text).replace(/\r/g, "").trim();
+  if (!raw) return [];
+  var chunks = raw.split(/\n|;/).map(function (part) { return String(part || "").trim(); }).filter(function (part) { return part; });
+  if (chunks.length === 1 && chunks[0].indexOf("|") === -1 && !/https?:\/\//i.test(chunks[0])) {
+    chunks = chunks[0].split(/\s*,\s*/).map(function (part) { return String(part || "").trim(); }).filter(function (part) { return part; });
+  }
+  var files = [];
+  for (var i = 0; i < chunks.length; i++) {
+    var chunk = chunks[i];
+    var pipe = chunk.indexOf("|");
+    if (pipe >= 0) {
+      files.push({
+        id: "",
+        name: chunk.slice(0, pipe).trim(),
+        url: chunk.slice(pipe + 1).trim()
+      });
+      continue;
+    }
+    var match = chunk.match(/^(.*)\s+(https?:\/\/\S+)\s*$/i);
+    if (match) {
+      files.push({ id: "", name: String(match[1] || "").trim(), url: String(match[2] || "").trim() });
+    } else {
+      files.push({ id: "", name: chunk, url: "" });
+    }
+  }
+  return files.filter(function (file) { return file.name; });
+}
+
+function filesFromCell_(rich, fallbackText) {
+  if (rich) {
+    var runs = [];
+    try {
+      runs = rich.getRuns() || [];
+    } catch (err) {
+      runs = [];
+    }
+    var files = [];
+    var buffer = "";
+    var bufferUrl = "";
+    function flush() {
+      var name = String(buffer || "").replace(/\s+/g, " ").trim();
+      if (name) files.push({ id: "", name: name, url: bufferUrl || "" });
+      buffer = "";
+      bufferUrl = "";
+    }
+    for (var i = 0; i < runs.length; i++) {
+      var text = String(runs[i].getText() || "");
+      var url = "";
+      try {
+        url = runs[i].getLinkUrl() || "";
+      } catch (err2) {
+        url = "";
+      }
+      if (text === "\n" || text === "\r\n") {
+        flush();
+        continue;
+      }
+      if (url && buffer && bufferUrl && url !== bufferUrl) flush();
+      buffer += text;
+      if (url) bufferUrl = url;
+    }
+    flush();
+    if (files.length) return files;
+    try {
+      return parseFiles_(rich.getText() || fallbackText);
+    } catch (err3) {}
+  }
+  return parseFiles_(fallbackText);
+}
+
+function filesFolder_() {
+  var folders = DriveApp.getFoldersByName(FILES_FOLDER_NAME);
+  if (folders.hasNext()) return folders.next();
+  return DriveApp.createFolder(FILES_FOLDER_NAME);
+}
+
+function orderFolder_(orderId) {
+  var root = filesFolder_();
+  var name = String(orderId || "order").replace(/[\\/:*?"<>|]+/g, "-").trim() || "order";
+  var folders = root.getFoldersByName(name);
+  if (folders.hasNext()) return folders.next();
+  return root.createFolder(name);
+}
+
+function driveUrl_(fileId) {
+  return "https://drive.google.com/uc?export=download&id=" + fileId;
+}
+
+function saveUploads_(orderId, uploads) {
+  var list = uploads || [];
+  var saved = [];
+  if (!list.length) return saved;
+  var folder = orderFolder_(orderId);
+  for (var i = 0; i < list.length; i++) {
+    var item = list[i] || {};
+    var data = String(item.data || "").replace(/\s+/g, "");
+    if (!data) continue;
+    var bytes = Utilities.base64Decode(data);
+    var name = String(item.name || "file").replace(/[\\/:*?"<>|]+/g, "-") || "file";
+    var blob = Utilities.newBlob(bytes, item.mimeType || "application/octet-stream", name);
+    var file = folder.createFile(blob);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (err) {}
+    saved.push({
+      name: file.getName(),
+      id: file.getId(),
+      url: driveUrl_(file.getId())
+    });
+  }
+  return saved;
+}
+
+function writeFilesCell_(range, files) {
+  if (!files || !files.length) {
+    range.clearContent();
+    return;
+  }
+  var names = [];
+  var links = [];
+  var pos = 0;
+  for (var i = 0; i < files.length; i++) {
+    if (i) {
+      names.push("\n");
+      pos += 1;
+    }
+    var name = String(files[i].name || "file");
+    names.push(name);
+    if (files[i].url) {
+      links.push({ start: pos, end: pos + name.length, url: files[i].url });
+    }
+    pos += name.length;
+  }
+  var text = names.join("");
+  if (!links.length) {
+    range.setValue(text);
+    return;
+  }
+  var builder = SpreadsheetApp.newRichTextValue().setText(text);
+  for (var j = 0; j < links.length; j++) {
+    builder.setLinkUrl(links[j].start, links[j].end, links[j].url);
+  }
+  range.setRichTextValue(builder.build());
+}
+
+function mergeRequirementFiles_(existingRich, existingText, incomingText, uploads, orderId) {
+  var existing = filesFromCell_(existingRich, existingText);
+  var incoming = parseFiles_(incomingText);
+  var saved = [];
+  try {
+    saved = saveUploads_(orderId, uploads);
+  } catch (err) {
+    saved = [];
+  }
+  if (!incoming.length && existing.length && !saved.length) return existing;
+
+  var out = [];
+  var savedAt = 0;
+  for (var i = 0; i < incoming.length; i++) {
+    var file = {
+      id: "",
+      name: incoming[i].name,
+      url: incoming[i].url || ""
+    };
+    if (!file.url) {
+      for (var e = 0; e < existing.length; e++) {
+        if (existing[e].name === file.name && existing[e].url) {
+          file.url = existing[e].url;
+          break;
+        }
+      }
+    }
+    if (!file.url && savedAt < saved.length && saved[savedAt].name === file.name) {
+      file.url = saved[savedAt].url;
+      file.id = saved[savedAt].id;
+      savedAt += 1;
+    } else if (!file.url) {
+      for (var s = savedAt; s < saved.length; s++) {
+        if (saved[s].name === file.name) {
+          file.url = saved[s].url;
+          file.id = saved[s].id;
+          saved.splice(s, 1);
+          break;
+        }
+      }
+    }
+    out.push(file);
+  }
+  return out;
+}
+
+function writeOrderRow_(sheet, rowIndex, row, files) {
+  sheet.getRange(rowIndex, 1, 1, HEADERS.length).setValues([row]);
+  styleDataRow_(sheet, rowIndex);
+  writeFilesCell_(sheet.getRange(rowIndex, 15), files);
+  if (files && files.length > 1) {
+    sheet.setRowHeight(rowIndex, Math.min(28 + files.length * 16, 96));
+  }
+}
+
+function orderFromRow_(row, tabName, files) {
+  var paymentText = String(row[9] || "").toLowerCase();
+  var paymentStatus = "";
+  if (/unpaid/.test(paymentText)) paymentStatus = "unpaid";
+  else if (/paid/.test(paymentText)) paymentStatus = "paid";
+  var readyText = String(row[23] || "").toLowerCase();
+  var readyToApprove = /ready to approve/.test(readyText) && readyText.indexOf("not ready") === -1;
+  var typeText = String(row[11] || "").toLowerCase();
+  if (!files) files = parseFiles_(row[14]);
+  var history = String(row[19] || "").trim();
+  var revisionCount = Number(row[18] || 0) || 0;
+  var revisions = [];
+  if (revisionCount > 0 || history || String(row[21] || "").trim() || String(row[22] || "").trim()) {
+    var messages = [];
+    if (String(row[21] || "").trim()) {
+      messages.push({ id: "msg_buyer", role: "buyer", text: String(row[21]).trim(), createdAt: isoFrom_(row[3], row[4]) });
+    }
+    if (String(row[22] || "").trim()) {
+      messages.push({ id: "msg_seller", role: "seller", text: String(row[22]).trim(), createdAt: isoFrom_(row[3], row[4]) });
+    }
+    if (!messages.length && history) {
+      messages.push({ id: "msg_history", role: "buyer", text: history, createdAt: isoFrom_(row[1], row[2]) });
+    }
+    revisions.push({
+      id: "rev_sheet",
+      number: Math.max(revisionCount, 1),
+      createdAt: isoFrom_(row[1], row[2]),
+      messages: messages
+    });
+  }
+  return {
+    id: String(row[0] || "").trim(),
+    accountName: String(row[5] || tabName || "").trim(),
+    tabName: tabName,
+    whatsapp: String(row[6] || "").trim(),
+    name: String(row[7] || "").trim(),
+    orderValue: row[8] === "" || row[8] == null ? "" : row[8],
+    paymentStatus: paymentStatus,
+    searchKeyword: String(row[10] || "").trim(),
+    orderTypeCustom: typeText.indexOf("custom") >= 0 || typeText.indexOf("message") >= 0,
+    orderTypeDirect: typeText.indexOf("direct") >= 0,
+    messageText: String(row[12] || ""),
+    directRequirements: String(row[13] || ""),
+    requirementFiles: files,
+    fiverrId: String(row[15] || "").trim(),
+    fiverrGigUrl: String(row[16] || "").trim(),
+    reviewText: String(row[17] || ""),
+    revisions: revisions,
+    readyToApprove: readyToApprove,
+    overallStatus: String(row[24] || "").trim(),
+    createdAt: isoFrom_(row[1], row[2]),
+    updatedAt: isoFrom_(row[3], row[4]) || isoFrom_(row[1], row[2])
+  };
+}
+
 function upsertOrder_(ss, data) {
   var row = data.row || [];
   var orderId = String(data.orderId || row[0] || "");
@@ -155,24 +491,49 @@ function upsertOrder_(ss, data) {
   }
 
   var found = findOrder_(ss, orderId);
+  var existingRich = null;
+  var existingText = "";
+  if (found) {
+    existingRich = found.sheet.getRange(found.row, 15).getRichTextValue();
+    existingText = found.sheet.getRange(found.row, 15).getDisplayValue();
+  }
+  var files = mergeRequirementFiles_(existingRich, existingText, row[14], data.uploads || data.files || [], orderId);
+  row[14] = (files || []).map(function (file) { return file.name; }).join("\n");
+
   if (found) {
     if (forced && tabName_(found.sheet.getName()) !== forced) {
       return { ok: false, error: "You can only edit orders on the " + forced + " tab." };
     }
     if (found.sheet.getSheetId() === target.getSheetId()) {
-      target.getRange(found.row, 1, 1, HEADERS.length).setValues([row]);
-      styleDataRow_(target, found.row);
+      writeOrderRow_(target, found.row, row, files);
       return { ok: true, updated: true, orderId: orderId, tab: target.getName() };
     }
     target.appendRow(row);
-    styleDataRow_(target, target.getLastRow());
+    writeOrderRow_(target, target.getLastRow(), row, files);
     found.sheet.deleteRow(found.row);
     return { ok: true, moved: true, orderId: orderId, tab: target.getName() };
   }
 
   target.appendRow(row);
-  styleDataRow_(target, target.getLastRow());
+  writeOrderRow_(target, target.getLastRow(), row, files);
   return { ok: true, created: true, orderId: orderId, tab: target.getName() };
+}
+
+function deleteOrder_(ss, data) {
+  var orderId = String((data && (data.orderId || data.id)) || "").trim();
+  if (!orderId) {
+    return { ok: false, error: "Order ID is required." };
+  }
+  var found = findOrder_(ss, orderId);
+  if (!found) {
+    return { ok: true, action: "deleteOrder", orderId: orderId, missing: true };
+  }
+  var forced = forcedAccount_(data);
+  if (forced && tabName_(found.sheet.getName()) !== forced) {
+    return { ok: false, error: "You can only delete orders on the " + forced + " tab." };
+  }
+  found.sheet.deleteRow(found.row);
+  return { ok: true, action: "deleteOrder", orderId: orderId, tab: found.sheet.getName() };
 }
 
 function findOrder_(ss, orderId) {
@@ -190,6 +551,27 @@ function findOrder_(ss, orderId) {
     }
   }
   return null;
+}
+
+function accountKey_(raw) {
+  return tabName_(raw).toLowerCase();
+}
+
+function sheetMatchesAccount_(sheetName, account) {
+  var forced = accountKey_(account);
+  var name = accountKey_(sheetName);
+  if (!forced || !name) return false;
+  if (name === forced) return true;
+  return name.indexOf(forced + " ") === 0;
+}
+
+function rowBelongsToAccount_(row, tabName, account) {
+  var forced = accountKey_(account);
+  if (!forced) return true;
+  if (sheetMatchesAccount_(tabName, account)) return true;
+  var cell = accountKey_(row[5]);
+  if (cell === forced || cell.indexOf(forced + " ") === 0) return true;
+  return false;
 }
 
 function tabName_(raw) {
@@ -254,7 +636,7 @@ function styleSheet_(ss, sheet) {
     "Custom message, Direct, or both.",
     "Buyer message / brief.",
     "Direct-order requirements.",
-    "Attached requirement file names.",
+    "Uploaded requirement files. Click a file name to download it.",
     "Fiverr username.",
     "Link to the Fiverr gig.",
     "Review or feedback text.",
@@ -492,4 +874,57 @@ function setupUsersSheetIfNeeded_() {
   var sheet = ss.getSheets()[0];
   var first = String(sheet.getRange(1, 1).getValue() || "").trim().toLowerCase();
   if (first !== "username") setupUsersSheet_();
+}
+
+function upsertUser_(data) {
+  setupUsersSheetIfNeeded_();
+  var username = String((data && data.username) || "").trim();
+  var password = String((data && data.password) || "");
+  var account = tabName_((data && (data.account || data.userAccount)) || "");
+  var displayName = String((data && (data.displayName || data.name)) || username).trim();
+  var active = (data && (data.active === false || data.active === "No" || data.active === "no")) ? "No" : "Yes";
+  if (!username) {
+    return { ok: false, error: "Username is required." };
+  }
+  if (!account) {
+    return { ok: false, error: "Account is required for a user login." };
+  }
+  var ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
+  var sheet = ss.getSheets()[0];
+  var last = Math.max(sheet.getLastRow(), 1);
+  var found = 0;
+  if (last >= 2) {
+    var names = sheet.getRange(2, 1, last - 1, 1).getValues();
+    var wanted = username.toLowerCase();
+    for (var i = 0; i < names.length; i++) {
+      if (String(names[i][0] || "").trim().toLowerCase() === wanted) {
+        found = i + 2;
+        break;
+      }
+    }
+  }
+  if (!found && !password) {
+    return { ok: false, error: "Password is required for a new user." };
+  }
+  if (found) {
+    var existing = sheet.getRange(found, 1, 1, USER_HEADERS.length).getValues()[0];
+    sheet.getRange(found, 1, 1, USER_HEADERS.length).setValues([[
+      username,
+      password ? password : existing[1],
+      "user",
+      account,
+      displayName || existing[4] || username,
+      active
+    ]]);
+    return { ok: true, action: "upsertUser", username: username, account: account, updated: true };
+  }
+  sheet.getRange(last + 1, 1, 1, USER_HEADERS.length).setValues([[
+    username,
+    password,
+    "user",
+    account,
+    displayName || username,
+    active
+  ]]);
+  return { ok: true, action: "upsertUser", username: username, account: account, created: true };
 }

@@ -35,6 +35,16 @@
     return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
   }
 
+  function belongsToAccount(orderOrName, account) {
+    const wanted = String(account || "").trim().toLowerCase();
+    const name = String(orderOrName || "").trim().toLowerCase();
+    if (!wanted || !name) return false;
+    if (name === wanted) return true;
+    if (name.indexOf(wanted + " ") === 0) return true;
+    if (wanted.indexOf(name + " ") === 0) return true;
+    return false;
+  }
+
   function loginUrl(username, password) {
     const base = (global.OwlisticSheet && global.OwlisticSheet.getWebAppUrl()) || "";
     const join = base.indexOf("?") >= 0 ? "&" : "?";
@@ -121,9 +131,11 @@
     if (!current) return false;
     if (isSuperAdmin(current)) return true;
     const wanted = accountName(current);
-    if (sameAccount(order && order.accountName, wanted)) return true;
+    if (sameAccount(order && order.accountName, wanted) || belongsToAccount(order && order.accountName, wanted)) return true;
     return visibleAccounts(current).some(function (account) {
-      return order && order.accountId && order.accountId === account.id;
+      return (order && order.accountId && order.accountId === account.id) ||
+        belongsToAccount(order && order.accountName, account.name) ||
+        belongsToAccount(order && order.accountName, store.accountLabel(account));
     });
   }
 

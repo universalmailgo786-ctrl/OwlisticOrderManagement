@@ -92,6 +92,59 @@
     return (files || []).map(function (file) { return file.name; }).filter(Boolean).join(", ");
   }
 
+  const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+  const sentFileIds = {};
+
+  function blobToBase64(blob) {
+    return new Promise(function (resolve, reject) {
+      const reader = new FileReader();
+      reader.onload = function () {
+        const text = String(reader.result || "");
+        const comma = text.indexOf(",");
+        resolve(comma >= 0 ? text.slice(comma + 1) : text);
+      };
+      reader.onerror = function () {
+        reject(reader.error);
+      };
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function collectUploads(files, options) {
+    const force = options && options.forceUploads;
+    const skippedLarge = [];
+    const pending = (files || []).filter(function (file) {
+      if (!file || file.url || !file.id) return false;
+      if (!force && sentFileIds[file.id]) return false;
+      return true;
+    });
+    return Promise.all(pending.map(function (file) {
+      const getFile = store && (store.getFile || store.getFile);
+      if (typeof getFile !== "function") return Promise.resolve(null);
+      return getFile(file.id).then(function (record) {
+        const blob = record && (record.blob || record.blob);
+        if (!blob) return null;
+        const size = blob.size || file.size || 0;
+        if (size > MAX_UPLOAD_BYTES) {
+          skippedLarge.push(file.name || "file");
+          return null;
+        }
+        return blobToBase64(blob).then(function (data) {
+          return {
+            name: file.name || record.name || "file",
+            mimeType: record.type || file.type || blob.type || "application/octet-stream",
+            data: data,
+            localId: file.id
+          };
+        });
+      }).catch(function () {
+        return null;
+      });
+    })).then(function (list) {
+      return { uploads: list.filter(Boolean), skippedLarge: skippedLarge };
+    });
+  }
+
   function paymentLabel(order) {
     const value = order && (order.paymentStatus || order.paymentStatus);
     if (value === "paid" || value === "Paid") return "Paid";
@@ -212,17 +265,101 @@
     });
   }
 
-  function sync(order) {
+  function deleteOrder(order) {
+    if (!order || !order.id) {
+      return Promise.resolve({ skipped: true });
+    }
+    return postPayload({
+      action: "deleteOrder",
+      orderId: order.id,
+      accountName: accountNameOf(order),
+      tabName: tabNameOf(accountNameOf(order))
+    });
+  }
+
+  function upsertUser(user) {
+    if (!user || !user.username) {
+      return Promise.resolve({ skipped: true, empty: true });
+    }
+    return postPayload({
+      action: "upsertUser",
+      username: String(user.username || "").trim(),
+      password: String(user.password || ""),
+      account: tabNameOf(user.account || user.accountName || ""),
+      displayName: String(user.displayName || user.name || user.username || "").trim(),
+      active: user.active === false ? "No" : "Yes"
+    });
+  }
+
+  function sync(order, options) {
     if (!order) {
       return Promise.resolve({ skipped: true });
     }
     const tabName = tabNameOf(accountNameOf(order));
-    return postPayload({
-      action: "upsert",
-      orderId: order.id,
-      accountName: accountNameOf(order),
-      tabName: tabName,
-      row: toRow(order)
+    return collectUploads(order.requirementFiles || order.requirementFiles || [], options || {}).then(function (collected) {
+      (collected.uploads || []).forEach(function (item) {
+        if (item.localId) sentFileIds[item.localId] = true;
+      });
+      return postPayload({
+        action: "upsert",
+        orderId: order.id,
+        accountName: accountNameOf(order),
+        tabName: tabName,
+        row: toRow(order),
+        uploads: (collected.uploads || []).map(function (item) {
+          return {
+            name: item.name,
+            mimeType: item.mimeType,
+            data: item.data
+          };
+        })
+      }).then(function (result) {
+        result = result || { ok: true };
+        result.skippedLarge = collected.skippedLarge || [];
+        return result;
+      });
+    });
+  }
+
+  function parseJson(text) {
+    const raw = String(text || "").trim();
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch (err) {
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (!match) return null;
+      try { return JSON.parse(match[0]); } catch (err2) { return null; }
+    }
+  }
+
+  function fetchOrders() {
+    if (!isConfigured()) {
+      return Promise.resolve({ skipped: true, orders: [] });
+    }
+    const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+    const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+    const url = getWebAppUrl() + join +
+      "action=listOrders" +
+      "&role=" + encodeURIComponent((session && session.role) || "") +
+      "&userAccount=" + encodeURIComponent((session && session.account) || "") +
+      "&username=" + encodeURIComponent((session && session.username) || "");
+    return fetch(url, { method: "GET", credentials: "omit" }).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      const data = parseJson(text);
+      if (!data) return { ok: false, error: "Could not read orders from Google Sheet.", orders: [] };
+      if (!data.ok) return { ok: false, error: data.error || "Could not load orders.", orders: [] };
+      if (data.action !== "listOrders") {
+        return {
+          ok: false,
+          error: "Deploy a new version of the Apps Script web app so Order Records can load the sheet.",
+          orders: []
+        };
+      }
+      return { ok: true, orders: data.orders || [] };
+    }).catch(function () {
+      return { ok: false, error: "Could not reach Google Sheet.", orders: [] };
     });
   }
 
@@ -230,7 +367,10 @@
     HEADERS: HEADERS,
     SPREADSHEET_ID: SPREADSHEET_ID,
     sync: sync,
+    fetchOrders: fetchOrders,
+    deleteOrder: deleteOrder,
     ensureTabs: ensureTabs,
+    upsertUser: upsertUser,
     toRow: toRow,
     isConfigured: isConfigured,
     getWebAppUrl: getWebAppUrl,

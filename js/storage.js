@@ -226,8 +226,11 @@
 
   function computeStatus(order) {
     if (order && (order.readyToApprove || order.readyToApprove)) return "ready-to-approve";
+    const overall = String((order && (order.overallStatus || order.overallStatus)) || "").toLowerCase();
+    if (/ready to approve|complete/.test(overall)) return "ready-to-approve";
+    if (/revision/.test(overall)) return "revision-pending";
     const revisions = normalizeRevisions((order && order.revisions) || []);
-    if (revisions.length) return "revision-pending";
+    if (!overall && revisions.length) return "revision-pending";
     return "in-progress";
   }
 
@@ -267,6 +270,92 @@
     }
     saveOrders(orders);
     return order;
+  }
+
+  function deleteOrder(id) {
+    const wanted = String(id || "").trim();
+    if (!wanted) return false;
+    const before = getOrders();
+    const next = before.filter(function (item) { return item.id !== wanted; });
+    if (next.length === before.length) return false;
+    saveOrders(next);
+    return true;
+  }
+
+  function namesMatch(left, right) {
+    const a = String(left || "").trim().toLowerCase();
+    const b = String(right || "").trim().toLowerCase();
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (b.indexOf(a + " ") === 0) return true;
+    if (a.indexOf(b + " ") === 0) return true;
+    return false;
+  }
+
+  function sameAccountName(left, right) {
+    return namesMatch(left, right);
+  }
+
+  function accountForName(name) {
+    const wanted = String(name || "").trim();
+    if (!wanted) return null;
+    const accounts = getAccounts();
+    let match = accounts.find(function (account) {
+      return sameAccountName(account.name, wanted) || sameAccountName(accountLabel(account), wanted);
+    });
+    if (match) return match;
+    return upsertAccount({
+      name: wanted,
+      personName: wanted
+    });
+  }
+
+  function mergeRequirementFiles(previous, incoming) {
+    const prev = previous || [];
+    const next = incoming || [];
+    if (!next.length) return prev.slice();
+    return next.map(function (file) {
+      const match = prev.find(function (item) {
+        return file.id && item.id && item.id === file.id;
+      }) || prev.find(function (item) {
+        return item.name === file.name;
+      });
+      return {
+        id: file.id || (match && match.id) || "",
+        name: file.name || (match && match.name) || "",
+        url: file.url || (match && match.url) || "",
+        type: file.type || (match && match.type) || "",
+        size: file.size || (match && match.size) || 0,
+        uploadedAt: file.uploadedAt || (match && match.uploadedAt) || ""
+      };
+    });
+  }
+
+  function importOrders(incoming) {
+    const orders = getOrders();
+    (incoming || []).forEach(function (order) {
+      if (!order || !order.id) return;
+      const account = accountForName(order.accountName || order.tabName || "");
+      if (account) order.accountId = account.id;
+      order.revisions = normalizeRevisions(order.revisions || []);
+      order.status = computeStatus(order);
+      const index = orders.findIndex(function (item) { return item.id === order.id; });
+      if (index === -1) {
+        orders.push(order);
+        return;
+      }
+      const previous = orders[index];
+      if (previous.revisions && previous.revisions.length && !order.revisions.length) {
+        order.revisions = previous.revisions;
+        order.status = computeStatus(order);
+      }
+      if (previous.accountId && !order.accountId) order.accountId = previous.accountId;
+      order.requirementFiles = mergeRequirementFiles(previous.requirementFiles, order.requirementFiles);
+      if (previous.createdAt && !order.createdAt) order.createdAt = previous.createdAt;
+      orders[index] = order;
+    });
+    saveOrders(orders);
+    return getOrders();
   }
 
   function formatDateTime(iso) {
@@ -321,6 +410,8 @@
     getOrders: getOrders,
     getOrder: getOrder,
     upsertOrder: upsertOrder,
+    deleteOrder: deleteOrder,
+    importOrders: importOrders,
     computeStatus: computeStatus,
     computeStatus: computeStatus,
     recordTab: recordTab,

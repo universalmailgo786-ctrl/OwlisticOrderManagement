@@ -1562,6 +1562,12 @@ body.modal-open {
   font-size: 13px;
 }
 
+.file-list li > span:last-child {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .file-list a,
 .file-list button {
   background: none;
@@ -1704,6 +1710,13 @@ body.modal-open {
   gap: 6px;
   font-size: 13px;
   font-weight: 500;
+}
+
+.account-editor .field-note {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-soft);
+  line-height: 1.4;
 }
 
 .toast {
@@ -1990,6 +2003,20 @@ body.modal-open {
 
 .open-link:hover {
   background: #ebe4da;
+}
+
+.records-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.records-actions .ghost-btn,
+.records-actions .ghost-btn {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
 }
 
 @media (max-width: 1100px) {
