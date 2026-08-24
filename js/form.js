@@ -56,33 +56,10 @@
   }
 
   function updateStatusUI() {
-    const status = store.computeStatus({
-      revisions: revisions,
-      readyToApprove: readyToggle.checked,
-      boardStatus: boardStatusSelect ? boardStatusSelect.value : ""
-    });
     page.classList.remove("has-revision", "is-ready");
-    banner.hidden = true;
-    banner.classList.remove("is-revision", "is-ready");
-
-    if (status === "revision-pending" || status === "revision-pending") {
-      page.classList.add("has-revision");
-      banner.hidden = false;
-      banner.classList.add("is-revision");
-      document.getElementById("status-banner-title").textContent = "Revision Pending";
-      document.getElementById("status-banner-text").textContent = "An active revision is pending for this order.";
-    } else if (status === "ready-to-approve") {
-      page.classList.add("is-ready");
-      banner.hidden = false;
-      banner.classList.add("is-ready");
-      document.getElementById("status-banner-title").textContent = "Order is Ready to Approve";
-      document.getElementById("status-banner-text").textContent = "This order is waiting for approval.";
-    } else if (status === "completed") {
-      page.classList.add("is-ready");
-      banner.hidden = false;
-      banner.classList.add("is-ready");
-      document.getElementById("status-banner-title").textContent = "Order Completed";
-      document.getElementById("status-banner-text").textContent = "This order is marked completed.";
+    if (banner) {
+      banner.hidden = true;
+      banner.classList.remove("is-revision", "is-ready");
     }
 
     const readyText = readyToggle.checked ? "Ready to Approve" : "Not Ready";
