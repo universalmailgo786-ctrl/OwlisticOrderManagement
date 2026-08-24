@@ -1977,7 +1977,7 @@ body.modal-open {
 
 .records-table {
   width: 100%;
-  min-width: 1240px;
+  min-width: 2140px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 14px;
@@ -2096,7 +2096,48 @@ body.modal-open {
   color: #6b5420;
 }
 
-.records-revisions-cell {
+.records-table td.records-clip-cell {
+  white-space: normal;
+  min-width: 168px;
+  max-width: 240px;
+  overflow: hidden;
+  vertical-align: top;
+}
+
+.records-clip {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  max-width: 240px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.records-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 0;
+  max-width: 200px;
+  line-height: 1.35;
+  overflow: hidden;
+  word-break: break-all;
+}
+
+.records-file-link,
+.records-link {
+  color: #4a6a3a;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+.records-table tbody tr.records-row.has-open-revision .records-file-link,
+.records-table tbody tr.records-row.has-open-revision .records-link {
+  color: #8a3d22;
+}
+
+.records-table td.records-revisions-cell {
   white-space: normal;
   min-width: 168px;
 }

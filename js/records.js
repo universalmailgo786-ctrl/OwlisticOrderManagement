@@ -56,6 +56,57 @@
     return '<div class="records-stack"><strong>' + escapeHtml(primary || "—") + "</strong><span>" + escapeHtml(secondary || "—") + "</span></div>";
   }
 
+  function clipText(value) {
+    const text = String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+    if (!text) return '<span class="muted">—</span>';
+    return '<div class="records-clip" title="' + escapeHtml(text) + '">' + escapeHtml(text) + "</div>";
+  }
+
+  function requirementFileList(files) {
+    if (!files) return [];
+    if (typeof files === "string") {
+      return files.split(/\n|;|,/).map(function (part) {
+        const chunk = String(part || "").trim();
+        if (!chunk) return null;
+        const pipe = chunk.indexOf("|");
+        if (pipe >= 0) {
+          return { name: chunk.slice(0, pipe).trim(), url: chunk.slice(pipe + 1).trim() };
+        }
+        const match = chunk.match(/^(.*)\s+(https?:\/\/\S+)\s*$/i);
+        if (match) return { name: String(match[1] || "").trim(), url: String(match[2] || "").trim() };
+        return { name: chunk, url: "" };
+      }).filter(function (file) { return file && file.name; });
+    }
+    if (!Array.isArray(files)) return [];
+    return files.map(function (file) {
+      if (!file) return null;
+      if (typeof file === "string") return { name: file, url: "" };
+      return {
+        name: file.name || file.fileName || "",
+        url: file.url || file.link || ""
+      };
+    }).filter(function (file) { return file && file.name; });
+  }
+
+  function filesCell(files) {
+    const list = requirementFileList(files);
+    if (!list.length) return '<span class="muted">—</span>';
+    return '<div class="records-files">' + list.map(function (file, index) {
+      const name = escapeHtml(file.name);
+      const item = file.url
+        ? '<a class="records-file-link" href="' + escapeHtml(file.url) + '" target="_blank" rel="noopener noreferrer">' + name + "</a>"
+        : "<span>" + name + "</span>";
+      return item + (index < list.length - 1 ? '<span class="records-file-sep">, </span>' : "");
+    }).join("") + "</div>";
+  }
+
+  function linkCell(url) {
+    const href = String(url == null ? "" : url).trim();
+    if (!href) return '<span class="muted">—</span>';
+    const safe = /^https?:\/\//i.test(href) ? href : "https://" + href;
+    return '<a class="records-link" href="' + escapeHtml(safe) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(href) + '">' + escapeHtml(href) + "</a>";
+  }
+
   function tabOf(order) {
     if (typeof store.recordTab === "function") return store.recordTab(order);
     if (typeof store.recordTab === "function") return store.recordTab(order);
@@ -136,7 +187,12 @@
       order.businessName,
       order.clientName,
       order.whatsapp,
-      order.accountName
+      order.accountName,
+      order.messageText,
+      order.directRequirements,
+      order.fiverrGigUrl,
+      order.reviewText,
+      requirementFileList(order.requirementFiles).map(function (file) { return file.name; }).join(" ")
     ]
       .join(" ")
       .toLowerCase();
@@ -180,7 +236,7 @@
 
     if (!orders.length) {
       body.innerHTML =
-        '<tr><td colspan="12"><div class="empty-state">' +
+        '<tr><td colspan="18"><div class="empty-state">' +
           "<strong>No " + tabLabel + " orders</strong>" +
           "<p>Orders in this category will appear here. Try another tab, or clear a filter.</p>" +
         "</div></td></tr>";
@@ -201,6 +257,12 @@
         '<td class="records-value">' + formatValue(order.orderValue) + "</td>" +
         "<td>" + badge(order.paymentStatus || "in-progress", order.paymentStatus === "paid" ? "Paid" : order.paymentStatus === "unpaid" ? "Unpaid" : "—") + "</td>" +
         "<td>" + escapeHtml(store.orderTypeLabel(order)) + "</td>" +
+        '<td class="records-clip-cell">' + clipText(order.messageText) + "</td>" +
+        '<td class="records-clip-cell">' + clipText(order.directRequirements) + "</td>" +
+        '<td class="records-clip-cell">' + filesCell(order.requirementFiles) + "</td>" +
+        "<td>" + escapeHtml(order.fiverrId || "—") + "</td>" +
+        '<td class="records-clip-cell">' + linkCell(order.fiverrGigUrl) + "</td>" +
+        '<td class="records-clip-cell">' + clipText(order.reviewText) + "</td>" +
         '<td class="records-revisions-cell">' + revisionChecks(order) + "</td>" +
         "<td>" + badge(order.readyToApprove ? "ready-to-approve" : "in-progress", order.readyToApprove ? "Ready" : "Not Ready") + "</td>" +
         "<td>" + statusSelect(order) + "</td>" +
@@ -220,13 +282,14 @@
     countEl.textContent = "Loading…";
     window.OwlisticSheet.fetchOrders().then(function (result) {
       if (result && result.orders && result.orders.length) {
-        store.importOrders(result.orders);
+        const importFn = store.importOrders || store.importOrders;
+        if (typeof importFn === "function") importFn.call(store, result.orders);
       }
       renderAccountFilter();
       render();
       if (result && result.error && !auth.visibleOrders().length) {
         body.innerHTML =
-          '<tr><td colspan="12"><div class="empty-state">' +
+          '<tr><td colspan="18"><div class="empty-state">' +
             "<strong>Could not load sheet orders</strong>" +
             "<p>" + escapeHtml(result.error) + "</p>" +
           "</div></td></tr>";
