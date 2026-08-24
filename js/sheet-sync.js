@@ -340,6 +340,8 @@
         orderId: order.id,
         accountName: accountNameOf(order),
         tabName: tabName,
+        businessName: order.businessName || "",
+        clientName: order.clientName || "",
         row: toRow(order),
         uploads: (collected.uploads || []).map(function (item) {
           return {

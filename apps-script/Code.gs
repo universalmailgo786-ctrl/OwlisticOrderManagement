@@ -61,7 +61,7 @@ function doGet(e) {
   if (action === "listOrders") {
     return json_(listOrders_(params));
   }
-  return json_({ ok: true, service: "Ashar Orders Management System" });
+  return json_({ ok: true, service: "Ashar Orders Management System", sheetColumns: HEADERS.length });
 }
 
 function doPost(e) {
@@ -524,6 +524,12 @@ function upsertOrder_(ss, data) {
   row = row.slice(0, HEADERS.length);
   if (forced) {
     row[5] = target.getName();
+  }
+  if ("businessName" in data) {
+    row[25] = String(data.businessName || "").trim();
+  }
+  if ("clientName" in data) {
+    row[26] = String(data.clientName || "").trim();
   }
 
   var existingRich = null;
