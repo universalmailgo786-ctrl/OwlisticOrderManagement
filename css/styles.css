@@ -2098,7 +2098,7 @@ body.modal-open {
 .records-status {
   appearance: none;
   -webkit-appearance: none;
-  min-width: 148px;
+  min-width: 228px;
   padding: 6px 28px 6px 12px;
   border: 0;
   border-radius: 999px;
@@ -2290,6 +2290,76 @@ body.modal-open {
   font-size: 13px;
 }
 
+.records-cell-with-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.records-cell-value {
+  min-width: 0;
+  flex: 1;
+}
+
+.records-copy-btn,
+.records-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.records-copy-btn svg,
+.records-edit-btn svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+
+.records-copy-btn:hover,
+.records-edit-btn:hover {
+  color: var(--text);
+  background: #f7f3ec;
+}
+
+.records-table tbody tr.records-row.has-open-revision .records-copy-btn,
+.records-table tbody tr.records-row.has-open-revision .records-edit-btn {
+  border-color: #f0cfc2;
+  color: #8a3d22;
+  background: #fff8f5;
+}
+
+.records-name-placeholder {
+  font-weight: 600;
+}
+
+.records-inline-input {
+  width: 100%;
+  min-width: 148px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #c9b9a8;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  box-shadow: 0 0 0 4px rgba(155, 170, 134, 0.18);
+}
+
+.records-tab {
+  white-space: nowrap;
+}
+
 @media (max-width: 1100px) {
   .records-filters {
     grid-template-columns: 1fr 1fr;
@@ -2310,6 +2380,9 @@ body.modal-open {
   .records-tab {
     flex: 1 1 auto;
     justify-content: center;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.25;
   }
 
   .records-filters {

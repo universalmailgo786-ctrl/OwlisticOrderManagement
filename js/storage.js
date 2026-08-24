@@ -752,6 +752,7 @@
     normalizeRevisions: normalizeRevisions,
     normalizeRevisions: normalizeRevisions,
     normalizeMessageThread: normalizeMessageThread,
+    pairMessageThread: pairMessageThread,
     formatMessageThread: formatMessageThread,
     parseMessageThreadText: parseMessageThreadText,
     messageThreadOf: messageThreadOf,
@@ -767,6 +768,7 @@
   global.OwlisticStore.computeStatus = computeStatus;
   global.OwlisticStore.normalizeRevisions = normalizeRevisions;
   global.OwlisticStore.normalizeMessageThread = normalizeMessageThread;
+  global.OwlisticStore.pairMessageThread = pairMessageThread;
   global.OwlisticStore.formatMessageThread = formatMessageThread;
   global.OwlisticStore.parseMessageThreadText = parseMessageThreadText;
   global.OwlisticStore.messageThreadOf = messageThreadOf;
