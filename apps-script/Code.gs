@@ -429,6 +429,79 @@ function paintRevisionRow_(sheet, rowIndex, row) {
   range.setBackground(rowIndex % 2 === 0 ? CREAM : PAPER);
 }
 
+function parseRevisionMessages_(rest, createdAt, number) {
+  var messages = [];
+  var text = String(rest || "").trim();
+  if (!text || text === "(empty)") return messages;
+  var parts = text.split(" | ");
+  var i;
+  for (i = 0; i < parts.length; i++) {
+    var part = String(parts[i] || "").trim();
+    if (!part) continue;
+    messages.push({
+      id: "msg_sheet_" + number + "_" + i,
+      role: /^Seller/i.test(part) ? "seller" : "buyer",
+      text: part.replace(/^(Buyer|Seller)(?:\s*\([^)]*\))?\s*—\s*/i, ""),
+      createdAt: createdAt
+    });
+  }
+  return messages;
+}
+
+function parseRevisions_(history, revisionCount, createdAt, latestBuyer, latestSeller) {
+  var raw = String(history || "").replace(/\r/g, "").trim();
+  var rounds = [];
+  if (raw) {
+    var lines = raw.split(/\n+/);
+    var i;
+    for (i = 0; i < lines.length; i++) {
+      var match = String(lines[i] || "").match(/^Revision\s+(\d+)\s*\[(Completed|Open)\]\s*:?\s*(.*)$/i);
+      if (!match) continue;
+      var number = Number(match[1]) || (rounds.length + 1);
+      rounds.push({
+        id: "rev_sheet_" + number,
+        number: number,
+        createdAt: createdAt,
+        completed: String(match[2] || "").toLowerCase() === "completed",
+        messages: parseRevisionMessages_(match[3], createdAt, number)
+      });
+    }
+  }
+  var count = Math.max(Number(revisionCount) || 0, rounds.length);
+  if (!count && (latestBuyer || latestSeller)) count = 1;
+  if (!rounds.length && count > 0) {
+    var n;
+    for (n = 1; n <= count; n++) {
+      var messages = [];
+      if (n === count) {
+        if (latestBuyer) messages.push({ id: "msg_buyer", role: "buyer", text: latestBuyer, createdAt: createdAt });
+        if (latestSeller) messages.push({ id: "msg_seller", role: "seller", text: latestSeller, createdAt: createdAt });
+      }
+      rounds.push({
+        id: "rev_sheet_" + n,
+        number: n,
+        createdAt: createdAt,
+        completed: false,
+        messages: messages
+      });
+    }
+  }
+  while (rounds.length < count) {
+    var next = rounds.length + 1;
+    rounds.push({
+      id: "rev_sheet_" + next,
+      number: next,
+      createdAt: createdAt,
+      completed: false,
+      messages: []
+    });
+  }
+  rounds.sort(function (a, b) { return (a.number || 0) - (b.number || 0); });
+  var r;
+  for (r = 0; r < rounds.length; r++) rounds[r].number = r + 1;
+  return rounds;
+}
+
 function orderFromRow_(row, tabName, files) {
   var paymentText = String(row[9] || "").toLowerCase();
   var paymentStatus = "";
@@ -440,25 +513,14 @@ function orderFromRow_(row, tabName, files) {
   if (!files) files = parseFiles_(row[14]);
   var history = String(row[19] || "").trim();
   var revisionCount = Number(row[18] || 0) || 0;
-  var revisions = [];
-  if (revisionCount > 0 || history || String(row[21] || "").trim() || String(row[22] || "").trim()) {
-    var messages = [];
-    if (String(row[21] || "").trim()) {
-      messages.push({ id: "msg_buyer", role: "buyer", text: String(row[21]).trim(), createdAt: isoFrom_(row[3], row[4]) });
-    }
-    if (String(row[22] || "").trim()) {
-      messages.push({ id: "msg_seller", role: "seller", text: String(row[22]).trim(), createdAt: isoFrom_(row[3], row[4]) });
-    }
-    if (!messages.length && history) {
-      messages.push({ id: "msg_history", role: "buyer", text: history, createdAt: isoFrom_(row[1], row[2]) });
-    }
-    revisions.push({
-      id: "rev_sheet",
-      number: Math.max(revisionCount, 1),
-      createdAt: isoFrom_(row[1], row[2]),
-      messages: messages
-    });
-  }
+  var createdAt = isoFrom_(row[1], row[2]);
+  var revisions = parseRevisions_(
+    history,
+    revisionCount,
+    createdAt,
+    String(row[21] || "").trim(),
+    String(row[22] || "").trim()
+  );
   return {
     id: String(row[0] || "").trim(),
     accountName: String(row[5] || tabName || "").trim(),

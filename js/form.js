@@ -212,10 +212,51 @@
     return null;
   }
 
+  function canAddNextRevision() {
+    if (typeof store.canAddRevision === "function") {
+      return store.canAddRevision({ revisions: revisions });
+    }
+    return !revisions.length || revisions.every(function (item) { return item.completed; });
+  }
+
+  function visibleFormRevisions() {
+    if (typeof store.visibleRevisions === "function") {
+      return store.visibleRevisions({ revisions: revisions });
+    }
+    const list = [];
+    let i;
+    for (i = 0; i < revisions.length; i += 1) {
+      list.push(revisions[i]);
+      if (!revisions[i].completed) break;
+    }
+    return list;
+  }
+
+  function updateAddRevisionButton() {
+    const button = document.getElementById("add-revision");
+    if (!button) return;
+    const allowed = canAddNextRevision();
+    const nextNumber = revisions.length + 1;
+    button.disabled = !allowed;
+    button.textContent = "+ Add Revision " + nextNumber;
+    button.title = allowed
+      ? (revisions.length ? "Add revision " + nextNumber : "Add revision 1")
+      : "Complete the current revision before adding the next one.";
+  }
+
   function updateRevisionsCount() {
     const countEl = document.getElementById("revisions-count");
     if (!countEl) return;
     const count = revisions.length;
+    const visible = visibleFormRevisions();
+    if (!count) {
+      countEl.textContent = "0 revisions";
+      return;
+    }
+    if (visible.length < count) {
+      countEl.textContent = "Showing revision " + visible.length + " of " + count;
+      return;
+    }
     countEl.textContent = count === 1 ? "1 revision" : count + " revisions";
   }
 
@@ -457,12 +498,13 @@
 
     revisionsList.innerHTML = "";
     updateRevisionsCount();
+    updateAddRevisionButton();
     if (!revisions.length) {
       revisionsList.innerHTML = '<p class="empty-state">No revisions yet. Add Revision 1 to start the buyer and seller conversation.</p>';
       return;
     }
 
-    revisions.forEach(function (revision) {
+    visibleFormRevisions().forEach(function (revision) {
       const round = document.createElement("article");
       round.className = "revision-round" + (revision.completed ? " is-complete" : "");
       round.setAttribute("data-revision-id", revision.id);
@@ -925,6 +967,10 @@
   });
 
   document.getElementById("add-revision").addEventListener("click", function () {
+    if (!canAddNextRevision()) {
+      showToast("Complete the current revision before adding the next one.");
+      return;
+    }
     const revision = {
       id: store.uid("rev"),
       number: revisions.length + 1,
@@ -934,7 +980,11 @@
     };
     addMessage(revision, "buyer");
     revisions.push(revision);
+    if (boardStatusSelect && boardStatusSelect.value !== "on-revision") {
+      boardStatusSelect.value = "on-revision";
+    }
     renderRevisions();
+    updateStatusUI();
     maybePersist();
   });
 
@@ -1021,6 +1071,11 @@
     revision.completed = box.checked;
     renderRevisions();
     maybePersist();
+    if (box.checked && canAddNextRevision()) {
+      showToast("All revisions complete. Set status to Ready to Approve when it is ready.");
+    } else if (box.checked) {
+      showToast("Revision completed. The next revision is now showing.");
+    }
   });
 
   revisionsList.addEventListener("input", function (event) {

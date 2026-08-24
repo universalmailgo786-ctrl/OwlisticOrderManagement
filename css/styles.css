@@ -966,6 +966,11 @@ body.modal-open {
   gap: 10px;
 }
 
+#add-revision:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .choice-buyer {
   color: var(--dusty-blue);
 }
@@ -2169,6 +2174,33 @@ body.modal-open {
   width: 16px;
   height: 16px;
   accent-color: #3d5a2c;
+}
+
+.records-add-revision {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 6px 10px;
+  border: 1px solid #d7cbbb;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.records-add-revision:hover {
+  background: #f7f3ec;
+}
+
+.records-revisions-hint {
+  margin: 0;
+  max-width: 180px;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: normal;
 }
 
 .records-revision-check.is-done span {

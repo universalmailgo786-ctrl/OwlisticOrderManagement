@@ -280,12 +280,114 @@
     return order;
   }
 
+  function parseRevisionHistoryText(text, createdAt) {
+    const rounds = [];
+    String(text || "").replace(/\r/g, "").split(/\n+/).forEach(function (line) {
+      const match = String(line || "").match(/^Revision\s+(\d+)\s*\[(Completed|Open)\]\s*:?\s*(.*)$/i);
+      if (!match) return;
+      const number = Number(match[1]) || rounds.length + 1;
+      const rest = String(match[3] || "").trim();
+      const messages = [];
+      if (rest && rest !== "(empty)") {
+        rest.split(" | ").forEach(function (part, index) {
+          const chunk = String(part || "").trim();
+          if (!chunk) return;
+          messages.push({
+            id: "msg_sheet_" + number + "_" + index,
+            role: /^Seller/i.test(chunk) ? "seller" : "buyer",
+            text: chunk.replace(/^(Buyer|Seller)(?:\s*\([^)]*\))?\s*—\s*/i, ""),
+            createdAt: createdAt
+          });
+        });
+      }
+      rounds.push({
+        id: "rev_sheet_" + number,
+        number: number,
+        createdAt: createdAt,
+        completed: String(match[2]).toLowerCase() === "completed",
+        messages: messages
+      });
+    });
+    return rounds;
+  }
+
+  function expandSheetRevisions(order) {
+    const incoming = normalizeRevisions((order && order.revisions) || []);
+    if (!incoming.length) return incoming;
+    if (incoming.length > 1) return incoming;
+    const only = incoming[0];
+    const historyText = (only.messages || []).map(function (message) {
+      return message && message.text ? message.text : "";
+    }).join("\n");
+    const parsed = parseRevisionHistoryText(historyText, only.createdAt);
+    if (parsed.length) return parsed;
+    const count = Math.max(Number(only.number) || 0, incoming.length, 1);
+    if (count <= 1) return incoming;
+    const rounds = [];
+    let i;
+    for (i = 1; i <= count; i += 1) {
+      rounds.push({
+        id: "rev_sheet_" + i,
+        number: i,
+        createdAt: only.createdAt,
+        completed: false,
+        messages: i === count ? (only.messages || []).slice() : []
+      });
+    }
+    return rounds;
+  }
+
+  function visibleRevisions(order) {
+    const rounds = normalizeRevisions((order && order.revisions) || []);
+    const visible = [];
+    let i;
+    for (i = 0; i < rounds.length; i += 1) {
+      visible.push(rounds[i]);
+      if (!rounds[i].completed) break;
+    }
+    return visible;
+  }
+
+  function canAddRevision(order) {
+    const rounds = normalizeRevisions((order && order.revisions) || []);
+    if (!rounds.length) return true;
+    return rounds.every(function (item) { return item.completed; });
+  }
+
+  function addRevision(order) {
+    if (!order) return order;
+    order.revisions = normalizeRevisions(order.revisions || []);
+    if (!canAddRevision(order)) return order;
+    order.revisions.push({
+      id: uid("rev"),
+      number: order.revisions.length + 1,
+      createdAt: nowIso(),
+      completed: false,
+      messages: [{
+        id: uid("msg"),
+        role: "buyer",
+        createdAt: nowIso(),
+        text: "",
+        files: []
+      }]
+    });
+    setBoardStatus(order, "on-revision");
+    return order;
+  }
+
   function setRevisionCompleted(order, revisionId, completed) {
     if (!order) return order;
-    order.revisions = normalizeRevisions(order.revisions || []).map(function (round) {
-      if (String(round.id) === String(revisionId)) round.completed = Boolean(completed);
-      return round;
+    const rounds = normalizeRevisions(order.revisions || []);
+    const index = rounds.findIndex(function (round) {
+      return String(round.id) === String(revisionId);
     });
+    if (index < 0) return order;
+    if (completed) {
+      const previousOpen = rounds.slice(0, index).some(function (round) { return !round.completed; });
+      if (previousOpen) return order;
+    }
+    rounds[index].completed = Boolean(completed);
+    order.revisions = rounds;
     return order;
   }
 
@@ -308,6 +410,8 @@
 
   function currentRevision(order) {
     const revisions = normalizeRevisions((order && order.revisions) || []);
+    const open = revisions.find(function (item) { return !item.completed; });
+    if (open) return open;
     return revisions.length ? revisions[revisions.length - 1] : null;
   }
 
@@ -402,7 +506,7 @@
       if (!order || !order.id) return;
       const account = accountForName(order.accountName || order.tabName || "");
       if (account) order.accountId = account.id;
-      order.revisions = normalizeRevisions(order.revisions || []);
+      order.revisions = expandSheetRevisions(order);
       order.status = computeStatus(order);
       const index = orders.findIndex(function (item) { return item.id === order.id; });
       if (index === -1) {
@@ -418,7 +522,10 @@
       const looksLikeSheetStub = incomingRevisions.length && incomingRevisions.every(function (item) {
         return String(item.id || "").indexOf("rev_sheet") === 0;
       });
-      if (previous.revisions && previous.revisions.length && (!incomingRevisions.length || looksLikeSheetStub)) {
+      const previousIsLocal = (previous.revisions || []).some(function (item) {
+        return String(item.id || "").indexOf("rev_sheet") !== 0;
+      });
+      if (previous.revisions && previous.revisions.length && (!incomingRevisions.length || (looksLikeSheetStub && previousIsLocal))) {
         order.revisions = previous.revisions;
       }
       if (previous.accountId && !order.accountId) order.accountId = previous.accountId;
@@ -501,6 +608,10 @@
     boardStatusLabel: boardStatusLabel,
     setBoardStatus: setBoardStatus,
     setRevisionCompleted: setRevisionCompleted,
+    visibleRevisions: visibleRevisions,
+    canAddRevision: canAddRevision,
+    addRevision: addRevision,
+    addRevision: addRevision,
     hasOpenRevisions: hasOpenRevisions,
     computeStatus: computeStatus,
     computeStatus: computeStatus,
@@ -526,6 +637,10 @@
   global.OwlisticStore.formatDate = formatDate;
   global.OwlisticStore.setBoardStatus = setBoardStatus;
   global.OwlisticStore.setRevisionCompleted = setRevisionCompleted;
+  global.OwlisticStore.visibleRevisions = visibleRevisions;
+  global.OwlisticStore.canAddRevision = canAddRevision;
+  global.OwlisticStore.addRevision = addRevision;
+  global.OwlisticStore.addRevision = addRevision;
   global.OwlisticStore.hasOpenRevisions = hasOpenRevisions;
   global.OwlisticStore.boardStatusOf = boardStatusOf;
   global.OwlisticStore.boardStatusLabel = boardStatusLabel;

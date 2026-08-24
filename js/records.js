@@ -134,16 +134,38 @@
 
   function revisionChecks(order) {
     const rounds = store.normalizeRevisions(order.revisions || []);
-    if (!rounds.length) return '<span class="muted">No revisions</span>';
+    const visible = typeof store.visibleRevisions === "function"
+      ? store.visibleRevisions(order)
+      : rounds;
+    const canAdd = typeof store.canAddRevision === "function"
+      ? store.canAddRevision(order)
+      : !rounds.length || rounds.every(function (item) { return item.completed; });
+    if (!rounds.length) {
+      return '<div class="records-revisions">' +
+        '<span class="muted">No revisions</span>' +
+        '<button type="button" class="records-add-revision" data-add-revision="' + escapeHtml(order.id) + '">+ Add revision 1</button>' +
+      "</div>";
+    }
     const done = rounds.filter(function (item) { return item.completed; }).length;
+    const nextNumber = rounds.length + 1;
     return '<div class="records-revisions">' +
       '<p class="records-revisions-summary">' + done + " of " + rounds.length + " complete</p>" +
-      rounds.map(function (round) {
+      visible.map(function (round) {
         return '<label class="records-revision-check' + (round.completed ? " is-done" : "") + '">' +
           '<input type="checkbox" data-revision-complete="' + escapeHtml(order.id) + '" data-revision-id="' + escapeHtml(round.id) + '"' + (round.completed ? " checked" : "") + ">" +
           "<span>Revision " + round.number + (round.completed ? " completed" : "") + "</span>" +
         "</label>";
       }).join("") +
+      (canAdd
+        ? '<button type="button" class="records-add-revision" data-add-revision="' + escapeHtml(order.id) + '">+ Add revision ' + nextNumber + "</button>" +
+          (rounds.length
+            ? '<p class="records-revisions-hint">All revisions complete. Set status to Ready to Approve when it is ready.</p>'
+            : "")
+        : '<p class="records-revisions-hint">' +
+          (visible.length < rounds.length
+            ? "Complete revision " + visible[visible.length - 1].number + " to show the next one."
+            : "Complete this revision to add the next one.") +
+          "</p>") +
     "</div>";
   }
 
@@ -322,6 +344,33 @@
   }
 
   body.addEventListener("click", function (event) {
+    const addBtn = event.target.closest("[data-add-revision]");
+    if (addBtn) {
+      const id = addBtn.getAttribute("data-add-revision");
+      const order = store.getOrder(id) || store.getOrder(id);
+      const canSee = auth.canSeeOrder || auth.canSeeOrder;
+      if (!order || (typeof canSee === "function" && !canSee.call(auth, order))) return;
+      if (typeof store.addRevision === "function") store.addRevision(order);
+      else if (typeof store.addRevision === "function") store.addRevision(order);
+      store.upsertOrder(order);
+      const finishAdd = function () {
+        setActiveTab("on-revision");
+        showToast("Revision " + (order.revisions && order.revisions.length ? order.revisions.length : 1) + " added");
+      };
+      const sheet = window.OwlisticSheet;
+      setActiveTab("on-revision");
+      if (sheet && typeof sheet.sync === "function") {
+        addBtn.disabled = true;
+        sheet.sync(order).then(function () {
+          showToast("Revision " + (order.revisions && order.revisions.length ? order.revisions.length : 1) + " added");
+        }).catch(function () {
+          showToast("Revision " + (order.revisions && order.revisions.length ? order.revisions.length : 1) + " added");
+        });
+        return;
+      }
+      finishAdd();
+      return;
+    }
     const button = event.target.closest("[data-delete-order]");
     if (!button) return;
     const id = button.getAttribute("data-delete-order");
@@ -376,9 +425,18 @@
       }
       store.upsertOrder(order);
       const sheet = window.OwlisticSheet;
+      const rounds = store.normalizeRevisions(order.revisions || []);
+      const remaining = rounds.filter(function (item) { return !item.completed; }).length;
+      render();
       const finish = function () {
         render();
-        showToast(box.checked ? "Revision marked complete" : "Revision marked open");
+        if (!box.checked) {
+          showToast("Revision marked open");
+        } else if (remaining) {
+          showToast("Revision completed. The next revision is now showing.");
+        } else {
+          showToast("All revisions complete. Set status to Ready to Approve when it is ready.");
+        }
       };
       if (sheet && typeof sheet.sync === "function") {
         sheet.sync(order).then(finish).catch(finish);
@@ -405,16 +463,11 @@
     store.upsertOrder(order);
     const label = (store.boardStatusLabel && store.boardStatusLabel(nextTab)) || select.options[select.selectedIndex].text;
     const sheet = window.OwlisticSheet;
-    const finish = function () {
-      setActiveTab(nextTab);
-      showToast("Status set to " + label);
-    };
+    setActiveTab(nextTab);
+    showToast("Status set to " + label);
     if (sheet && typeof sheet.sync === "function") {
-      select.disabled = true;
-      sheet.sync(order).then(finish).catch(finish);
-      return;
+      sheet.sync(order).catch(function () {});
     }
-    finish();
   });
   [search, dateFilter, accountFilter, paymentFilter, revisionFilter, readyFilter].forEach(function (input) {
     input.addEventListener("input", render);
