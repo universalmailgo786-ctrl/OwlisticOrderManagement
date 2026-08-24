@@ -289,6 +289,11 @@
     return order;
   }
 
+  function hasOpenRevisions(order) {
+    const rounds = normalizeRevisions((order && order.revisions) || []);
+    return rounds.length > 0 && rounds.some(function (item) { return !item.completed; });
+  }
+
   function computeStatus(order) {
     const tab = boardStatusOf(order);
     if (tab === "completed") return "completed";
@@ -496,6 +501,7 @@
     boardStatusLabel: boardStatusLabel,
     setBoardStatus: setBoardStatus,
     setRevisionCompleted: setRevisionCompleted,
+    hasOpenRevisions: hasOpenRevisions,
     computeStatus: computeStatus,
     computeStatus: computeStatus,
     recordTab: recordTab,
@@ -520,6 +526,7 @@
   global.OwlisticStore.formatDate = formatDate;
   global.OwlisticStore.setBoardStatus = setBoardStatus;
   global.OwlisticStore.setRevisionCompleted = setRevisionCompleted;
+  global.OwlisticStore.hasOpenRevisions = hasOpenRevisions;
   global.OwlisticStore.boardStatusOf = boardStatusOf;
   global.OwlisticStore.boardStatusLabel = boardStatusLabel;
   global.OwlisticStore.upsertOrder = upsertOrder;

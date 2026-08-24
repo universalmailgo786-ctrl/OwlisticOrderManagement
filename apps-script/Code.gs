@@ -413,9 +413,20 @@ function writeOrderRow_(sheet, rowIndex, row, files) {
   sheet.getRange(rowIndex, 1, 1, HEADERS.length).setValues([row]);
   styleDataRow_(sheet, rowIndex);
   writeFilesCell_(sheet.getRange(rowIndex, 15), files);
+  paintRevisionRow_(sheet, rowIndex, row);
   if (files && files.length > 1) {
     sheet.setRowHeight(rowIndex, Math.min(28 + files.length * 16, 96));
   }
+}
+
+function paintRevisionRow_(sheet, rowIndex, row) {
+  var history = String((row && row[19]) || "");
+  var range = sheet.getRange(rowIndex, 1, 1, HEADERS.length);
+  if (history.indexOf("[Open]") >= 0) {
+    range.setBackground("#fbe7dc");
+    return;
+  }
+  range.setBackground(rowIndex % 2 === 0 ? CREAM : PAPER);
 }
 
 function orderFromRow_(row, tabName, files) {
@@ -791,6 +802,13 @@ function applyStatusColors_(sheet, dataRows) {
   rules.push(chip(25, "Waiting", GOLD, GOLD_TEXT));
   rules.push(chip(25, "Revision Pending", GOLD, GOLD_TEXT));
   rules.push(chip(25, "Revision Needed", ROSE, ROSE_TEXT));
+  rules.push(
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=ISNUMBER(SEARCH("[Open]",$T2))')
+      .setBackground("#fbe7dc")
+      .setRanges([sheet.getRange(2, 1, dataRows, HEADERS.length)])
+      .build()
+  );
 
   sheet.setConditionalFormatRules(rules);
 }

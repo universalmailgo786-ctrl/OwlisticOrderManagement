@@ -2016,6 +2016,22 @@ body.modal-open {
   box-shadow: inset 3px 0 0 #d9785c;
 }
 
+.records-table tbody tr.records-row.has-open-revision td {
+  background: #fbe7dc;
+  color: #8a3d22;
+  border-bottom-color: #f0cfc2;
+}
+
+.records-table tbody tr.records-row.has-open-revision:hover td {
+  background: #f6d4c6;
+}
+
+.records-table tbody tr.records-row.has-open-revision .records-stack span,
+.records-table tbody tr.records-row.has-open-revision .muted,
+.records-table tbody tr.records-row.has-open-revision .records-revisions-summary {
+  color: #a45a3c;
+}
+
 .records-row.is-ready-to-approve td:first-child {
   box-shadow: inset 3px 0 0 var(--sage);
 }

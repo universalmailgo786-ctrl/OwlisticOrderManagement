@@ -189,7 +189,10 @@
 
     body.innerHTML = orders.map(function (order) {
       const status = store.computeStatus(order);
-      return '<tr class="records-row is-' + status + '">' +
+      const openRevisions = typeof store.hasOpenRevisions === "function"
+        ? store.hasOpenRevisions(order)
+        : store.normalizeRevisions(order.revisions || []).some(function (item) { return !item.completed; });
+      return '<tr class="records-row is-' + status + (openRevisions ? " has-open-revision" : "") + '">' +
         "<td>" + stack(order.id, store.formatDate(order.createdAt)) + "</td>" +
         "<td>" + stack(order.accountName || "No account", order.fiverrId || "No Fiverr ID") + "</td>" +
         "<td>" + escapeHtml(order.name || "—") + "</td>" +
