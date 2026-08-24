@@ -22,7 +22,6 @@
   const requirementList = document.getElementById("requirement-file-list");
   const revisionsList = document.getElementById("revisions-list");
   const messageThreadEl = document.getElementById("message-thread");
-  const readyToggle = document.getElementById("ready-to-approve");
   const boardStatusSelect = document.getElementById("board-status");
   const submitBtn = document.getElementById("submit-form");
   const deleteOrderBtn = document.getElementById("delete-order-btn");
@@ -61,10 +60,6 @@
       banner.hidden = true;
       banner.classList.remove("is-revision", "is-ready");
     }
-
-    const readyText = readyToggle.checked ? "Ready to Approve" : "Not Ready";
-    document.getElementById("ready-helper").textContent = readyText;
-    document.getElementById("ready-switch-text").textContent = readyText;
   }
 
   function hasPersistableContent() {
@@ -955,7 +950,6 @@
     fileInput.value = "";
     requirementFiles = [];
     revisions = [];
-    readyToggle.checked = false;
     editMeta.hidden = true;
     submitBtn.textContent = "Save to Google Sheet";
     if (deleteOrderBtn) deleteOrderBtn.hidden = true;
@@ -1020,7 +1014,7 @@
       revisions: revisions,
       readyToApprove: boardStatusSelect
         ? (boardStatusSelect.value === "completed" || boardStatusSelect.value === "ready-to-approve")
-        : readyToggle.checked
+        : Boolean(existing && existing.readyToApprove)
     };
   }
 
@@ -1102,7 +1096,6 @@
     document.getElementById("reviewText").value = order.reviewText || "";
     requirementFiles = (order.requirementFiles || []).slice();
     revisions = store.normalizeRevisions(order.revisions || []);
-    readyToggle.checked = Boolean(order.readyToApprove);
     fileInput.value = "";
     submitBtn.textContent = "Save to Google Sheet";
     editMeta.hidden = false;
@@ -1407,21 +1400,8 @@
     maybePersist();
   });
 
-  readyToggle.addEventListener("change", function () {
-    if (boardStatusSelect) {
-      if (readyToggle.checked) {
-        if (boardStatusSelect.value !== "completed") boardStatusSelect.value = "ready-to-approve";
-      } else if (boardStatusSelect.value === "ready-to-approve" || boardStatusSelect.value === "completed") {
-        boardStatusSelect.value = "in-progress";
-      }
-    }
-    updateStatusUI();
-    maybePersist();
-  });
-
   if (boardStatusSelect) {
     boardStatusSelect.addEventListener("change", function () {
-      readyToggle.checked = boardStatusSelect.value === "completed" || boardStatusSelect.value === "ready-to-approve";
       updateStatusUI();
       maybePersist();
     });
