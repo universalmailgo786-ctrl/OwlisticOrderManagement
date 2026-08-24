@@ -277,6 +277,37 @@
     });
   }
 
+  function confirmDelete(order) {
+    const id = order && order.id ? order.id : "this order";
+    return window.confirm("Do you wish to delete order " + id + "?\n\nThis will remove it from the portal and from the Google Sheet.");
+  }
+
+  function removeOrder(order) {
+    if (!order || !order.id) {
+      return Promise.resolve({ skipped: true });
+    }
+    const id = order.id;
+    return deleteOrder(order).then(function () {
+      if (store && typeof store.deleteOrder === "function") store.deleteOrder(id);
+      return fetchOrders().then(function (result) {
+        const sheetOrders = (result && result.orders) || [];
+        const stillOnSheet = sheetOrders.some(function (item) { return item.id === id; });
+        if (store && typeof (store.importOrders || store.importOrders) === "function") {
+          (store.importOrders || store.importOrders)(sheetOrders.filter(function (item) { return item.id !== id; }));
+        }
+        if (store && typeof store.deleteOrder === "function") store.deleteOrder(id);
+        return {
+          ok: true,
+          removedLocal: true,
+          sheetRemaining: stillOnSheet,
+          error: stillOnSheet ? "Deleted in the portal, but the Google Sheet row is still there. Deploy the latest Apps Script." : ""
+        };
+      }).catch(function () {
+        return { ok: true, removedLocal: true, sheetUnknown: true };
+      });
+    });
+  }
+
   function upsertUser(user) {
     if (!user || !user.username) {
       return Promise.resolve({ skipped: true, empty: true });
@@ -369,6 +400,10 @@
     sync: sync,
     fetchOrders: fetchOrders,
     deleteOrder: deleteOrder,
+    confirmDelete: confirmDelete,
+    confirmDelete: confirmDelete,
+    removeOrder: removeOrder,
+    removeOrder: removeOrder,
     ensureTabs: ensureTabs,
     upsertUser: upsertUser,
     toRow: toRow,

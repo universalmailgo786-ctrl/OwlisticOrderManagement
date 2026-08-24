@@ -23,6 +23,7 @@
   const revisionsList = document.getElementById("revisions-list");
   const readyToggle = document.getElementById("ready-to-approve");
   const submitBtn = document.getElementById("submit-form");
+  const deleteOrderBtn = document.getElementById("delete-order-btn");
 
   let lastFocus = null;
   let requirementFiles = [];
@@ -657,6 +658,7 @@
     readyToggle.checked = false;
     editMeta.hidden = true;
     submitBtn.textContent = "Submit Form";
+    if (deleteOrderBtn) deleteOrderBtn.hidden = true;
     refreshRequirementFiles();
     renderRevisions();
     updateStatusUI();
@@ -722,6 +724,7 @@
       document.getElementById("order-id").value = saved.id;
       submitBtn.textContent = "Save Changes";
       editMeta.hidden = false;
+      if (deleteOrderBtn) deleteOrderBtn.hidden = false;
       editMeta.textContent = "Editing " + saved.id + " · Created " + store.formatDateTime(saved.createdAt) + " · Last updated " + store.formatDateTime(saved.updatedAt);
       refreshRequirementFiles();
       updateStatusUI();
@@ -788,6 +791,7 @@
     fileInput.value = "";
     submitBtn.textContent = "Save Changes";
     editMeta.hidden = false;
+    if (deleteOrderBtn) deleteOrderBtn.hidden = false;
     editMeta.textContent = "Editing " + order.id + " · Created " + store.formatDateTime(order.createdAt) + " · Last updated " + store.formatDateTime(order.updatedAt);
     refreshRequirementFiles();
     renderRevisions();
@@ -1036,6 +1040,50 @@
       window.history.replaceState({}, "", "index.html");
     }
   });
+
+  if (deleteOrderBtn) {
+    deleteOrderBtn.addEventListener("click", function () {
+      const id = document.getElementById("order-id").value;
+      const order = id ? (store.getOrder(id) || store.getOrder(id)) : null;
+      if (!order) {
+        showToast("Save this order first, then you can delete it.");
+        return;
+      }
+      const canSee = auth.canSeeOrder || auth.canSeeOrder;
+      if (typeof canSee === "function" && !canSee.call(auth, order)) {
+        showToast("You can only delete orders for your account.");
+        return;
+      }
+      const sheet = window.OwlisticSheet;
+      if (sheet && typeof sheet.confirmDelete === "function") {
+        if (!sheet.confirmDelete(order)) return;
+      } else if (!window.confirm("Do you wish to delete order " + order.id + "?\n\nThis will remove it from the portal and from the Google Sheet.")) {
+        return;
+      }
+      deleteOrderBtn.disabled = true;
+      const after = function (result) {
+        deleteOrderBtn.disabled = false;
+        if (result && result.sheetRemaining) {
+          showToast("Deleted from the portal. Deploy Apps Script to remove the Google Sheet row too.");
+        } else {
+          showToast("Order " + order.id + " deleted");
+        }
+        window.setTimeout(function () {
+          window.location.href = "records.html";
+        }, 700);
+      };
+      if (sheet && typeof sheet.removeOrder === "function") {
+        sheet.removeOrder(order).then(after).catch(function () {
+          if (store.deleteOrder) store.deleteOrder(order.id);
+          after({ ok: true });
+        });
+        return;
+      }
+      if (store.deleteOrder) store.deleteOrder(order.id);
+      if (sheet && typeof sheet.deleteOrder === "function") sheet.deleteOrder(order);
+      after({ ok: true });
+    });
+  }
 
   form.addEventListener("submit", function (event) {
     event.preventDefault();

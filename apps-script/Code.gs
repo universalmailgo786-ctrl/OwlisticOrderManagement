@@ -475,10 +475,18 @@ function upsertOrder_(ss, data) {
   var row = data.row || [];
   var orderId = String(data.orderId || row[0] || "");
   var forced = forcedAccount_(data);
-  var wantedName = forced || tabName_(data.tabName || data.accountName || "");
-  var target = wantedName ? getOrCreateSheet_(ss, wantedName) : ss.getSheets()[0];
-  if (forced && tabName_(target.getName()) !== forced) {
-    return { ok: false, error: "You can only save orders to the " + forced + " tab." };
+  var found = findOrder_(ss, orderId);
+  if (found && forced && !canAccessFound_(found, forced)) {
+    return { ok: false, error: "You can only edit orders for " + forced + "." };
+  }
+
+  var wantedName = tabName_(data.tabName || data.accountName || "");
+  var target = null;
+  if (forced) {
+    target = (found && canAccessFound_(found, forced)) ? found.sheet : sheetForAccount_(ss, forced);
+    if (!target) target = getOrCreateSheet_(ss, forced);
+  } else {
+    target = wantedName ? getOrCreateSheet_(ss, wantedName) : (found ? found.sheet : ss.getSheets()[0]);
   }
   styleSheet_(ss, target);
 
@@ -487,10 +495,9 @@ function upsertOrder_(ss, data) {
   }
   row = row.slice(0, HEADERS.length);
   if (forced) {
-    row[5] = forced;
+    row[5] = target.getName();
   }
 
-  var found = findOrder_(ss, orderId);
   var existingRich = null;
   var existingText = "";
   if (found) {
@@ -501,9 +508,6 @@ function upsertOrder_(ss, data) {
   row[14] = (files || []).map(function (file) { return file.name; }).join("\n");
 
   if (found) {
-    if (forced && tabName_(found.sheet.getName()) !== forced) {
-      return { ok: false, error: "You can only edit orders on the " + forced + " tab." };
-    }
     if (found.sheet.getSheetId() === target.getSheetId()) {
       writeOrderRow_(target, found.row, row, files);
       return { ok: true, updated: true, orderId: orderId, tab: target.getName() };
@@ -529,8 +533,8 @@ function deleteOrder_(ss, data) {
     return { ok: true, action: "deleteOrder", orderId: orderId, missing: true };
   }
   var forced = forcedAccount_(data);
-  if (forced && tabName_(found.sheet.getName()) !== forced) {
-    return { ok: false, error: "You can only delete orders on the " + forced + " tab." };
+  if (forced && !canAccessFound_(found, forced)) {
+    return { ok: false, error: "You can only delete orders for " + forced + "." };
   }
   found.sheet.deleteRow(found.row);
   return { ok: true, action: "deleteOrder", orderId: orderId, tab: found.sheet.getName() };
@@ -545,7 +549,7 @@ function findOrder_(ss, orderId) {
     if (last < 2) continue;
     var ids = sheet.getRange(2, 1, last - 1, 1).getValues();
     for (var i = 0; i < ids.length; i++) {
-      if (String(ids[i][0]) === orderId) {
+      if (String(ids[i][0] || "").trim() === orderId) {
         return { sheet: sheet, row: i + 2 };
       }
     }
@@ -572,6 +576,34 @@ function rowBelongsToAccount_(row, tabName, account) {
   var cell = accountKey_(row[5]);
   if (cell === forced || cell.indexOf(forced + " ") === 0) return true;
   return false;
+}
+
+function sheetForAccount_(ss, account) {
+  var sheets = ss.getSheets();
+  var exact = null;
+  var prefix = null;
+  for (var i = 0; i < sheets.length; i++) {
+    var name = sheets[i].getName();
+    if (name === "Users") continue;
+    if (accountKey_(name) === accountKey_(account)) {
+      exact = sheets[i];
+      break;
+    }
+    if (!prefix && sheetMatchesAccount_(name, account)) prefix = sheets[i];
+  }
+  return exact || prefix;
+}
+
+function canAccessFound_(found, forced) {
+  if (!forced || !found) return true;
+  if (sheetMatchesAccount_(found.sheet.getName(), forced)) return true;
+  var cell = "";
+  try {
+    cell = String(found.sheet.getRange(found.row, 6).getDisplayValue() || "");
+  } catch (err) {}
+  var key = accountKey_(forced);
+  var cellKey = accountKey_(cell);
+  return cellKey === key || cellKey.indexOf(key + " ") === 0;
 }
 
 function tabName_(raw) {

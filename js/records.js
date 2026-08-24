@@ -198,18 +198,58 @@
     });
   });
   loadFromSheet();
+
+  function showToast(message) {
+    let toast = document.getElementById("toast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.className = "toast";
+      toast.id = "toast";
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.hidden = false;
+    window.clearTimeout(showToast.timer);
+    showToast.timer = window.setTimeout(function () {
+      toast.hidden = true;
+    }, 2800);
+  }
+
   body.addEventListener("click", function (event) {
     const button = event.target.closest("[data-delete-order]");
     if (!button) return;
     const id = button.getAttribute("data-delete-order");
-    const order = store.getOrder(id);
-    if (!order || !auth.canSeeOrder(order)) return;
-    if (!window.confirm("Delete order " + id + "? This removes it from Order Records and the Google Sheet.")) return;
-    store.deleteOrder(id);
-    if (window.OwlisticSheet && typeof window.OwlisticSheet.deleteOrder === "function") {
-      window.OwlisticSheet.deleteOrder(order);
+    const order = store.getOrder(id) || store.getOrder(id);
+    const canSee = auth.canSeeOrder || auth.canSeeOrder;
+    if (!order || (typeof canSee === "function" && !canSee.call(auth, order))) return;
+    const sheet = window.OwlisticSheet;
+    if (sheet && typeof sheet.confirmDelete === "function") {
+      if (!sheet.confirmDelete(order)) return;
+    } else if (!window.confirm("Do you wish to delete order " + id + "?\n\nThis will remove it from the portal and from the Google Sheet.")) {
+      return;
     }
+    button.disabled = true;
+    const finish = function (result) {
+      if (store.deleteOrder) store.deleteOrder(id);
+      render();
+      if (result && result.sheetRemaining) {
+        showToast("Deleted from the portal. Deploy Apps Script to remove the Google Sheet row too.");
+      } else {
+        showToast("Order " + id + " deleted");
+      }
+    };
+    if (sheet && typeof sheet.removeOrder === "function") {
+      sheet.removeOrder(order).then(finish).catch(function () {
+        if (store.deleteOrder) store.deleteOrder(id);
+        render();
+        showToast("Order " + id + " deleted from the portal");
+      });
+      return;
+    }
+    if (store.deleteOrder) store.deleteOrder(id);
+    if (sheet && typeof sheet.deleteOrder === "function") sheet.deleteOrder(order);
     render();
+    showToast("Order " + id + " deleted");
   });
   [search, dateFilter, accountFilter, paymentFilter, revisionFilter, readyFilter].forEach(function (input) {
     input.addEventListener("input", render);
