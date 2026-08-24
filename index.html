@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=revseq1" />
+  <link rel="stylesheet" href="css/styles.css?v=bizname1" />
 </head>
 <body>
   <nav class="app-nav">
@@ -104,31 +104,12 @@
 
     <form class="questionnaire" id="order-questionnaire" novalidate>
       <input type="hidden" id="order-id" name="orderId" />
-      <div class="extra-details">
-        <div class="extra-details-head">
-          <h2>Extra details</h2>
-          <p>Enter these by hand. They are separate from the numbered questions.</p>
-        </div>
-        <div class="extra-details-grid">
-          <label for="business-name">
-            Business Name
-            <input class="line-input" type="text" id="business-name" name="businessName" autocomplete="organization" />
-          </label>
-          <label for="client-name">
-            Client Name
-            <input class="line-input" type="text" id="client-name" name="clientName" autocomplete="name" />
-          </label>
-          <label for="board-status">
-            Status
-            <select class="line-input extra-status" id="board-status" name="boardStatus">
-              <option value="in-progress">In Progress</option>
-              <option value="on-revision">On Revision</option>
-              <option value="ready-to-approve">Ready to Approve</option>
-              <option value="completed">Completed</option>
-            </select>
-          </label>
-        </div>
-      </div>
+      <select id="board-status" name="boardStatus" hidden>
+        <option value="in-progress">In Progress</option>
+        <option value="on-revision">On Revision</option>
+        <option value="ready-to-approve">Ready to Approve</option>
+        <option value="completed">Completed</option>
+      </select>
       <!-- 1. WhatsApp Number -->
       <div class="form-row">
         <div class="row-identity">
@@ -165,6 +146,44 @@
         </div>
         <div class="row-control">
           <input class="line-input" type="text" id="name" name="name" autocomplete="name" />
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="row-identity">
+          <span class="row-number tone-sage" aria-hidden="true">BN</span>
+          <div class="row-icon tone-sage" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4.6 19.4V8.2h5.2V5.8h9.6v13.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+              <path d="M7.2 11.2h.1M7.2 14.2h.1M7.2 17.2h.1M12.4 8.8h.1M12.4 11.8h.1M12.4 14.8h.1M15.6 8.8h.1M15.6 11.8h.1M15.6 14.8h.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <label for="business-name">Business Name</label>
+            <span class="helper">Saves to the Google Sheet with this order</span>
+          </div>
+        </div>
+        <div class="row-control">
+          <input class="line-input" type="text" id="business-name" name="businessName" autocomplete="organization" />
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="row-identity">
+          <span class="row-number tone-terracotta" aria-hidden="true">CN</span>
+          <div class="row-icon tone-terracotta" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <circle cx="12" cy="8.2" r="3.2" fill="none" stroke="currentColor" stroke-width="1.7"/>
+              <path d="M5.2 19.2c.8-3.4 3.2-5.2 6.8-5.2s6 1.8 6.8 5.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="row-copy">
+            <label for="client-name">Client Name</label>
+            <span class="helper">Saves to the Google Sheet with this order</span>
+          </div>
+        </div>
+        <div class="row-control">
+          <input class="line-input" type="text" id="client-name" name="clientName" autocomplete="name" />
         </div>
       </div>
 
@@ -444,9 +463,10 @@
       </div>
 
       <div class="form-actions">
+        <p class="save-hint">Business Name and Client Name save to Google Sheet automatically. Use Save to write the full order.</p>
         <button type="button" class="ghost-btn" id="new-order-btn">New Order</button>
         <button type="button" class="ghost-btn is-danger" id="delete-order-btn" hidden>Delete Order</button>
-        <button type="submit" class="submit-btn" id="submit-form">Submit Form</button>
+        <button type="submit" class="submit-btn" id="submit-form">Save to Google Sheet</button>
       </div>
     </form>
 
@@ -550,6 +570,6 @@
   <script src="js/storage.js?v=revseq1"></script>
   <script src="js/sheet-sync.js?v=names1"></script>
   <script src="js/auth.js?v=names1"></script>
-  <script src="js/form.js?v=revseq1"></script>
+  <script src="js/form.js?v=bizname1"></script>
 </body>
 </html>

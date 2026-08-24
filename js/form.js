@@ -88,13 +88,33 @@
     document.getElementById("ready-switch-text").textContent = readyText;
   }
 
+  function hasPersistableContent() {
+    const businessName = (document.getElementById("business-name") && document.getElementById("business-name").value.trim()) || "";
+    const clientName = (document.getElementById("client-name") && document.getElementById("client-name").value.trim()) || "";
+    const name = (document.getElementById("name") && document.getElementById("name").value.trim()) || "";
+    const whatsapp = (document.getElementById("whatsapp") && document.getElementById("whatsapp").value.trim()) || "";
+    const messageText = (document.getElementById("messageText") && document.getElementById("messageText").value.trim()) || "";
+    const orderValue = (document.getElementById("orderValue") && document.getElementById("orderValue").value.trim()) || "";
+    return Boolean(
+      document.getElementById("order-id").value ||
+      businessName ||
+      clientName ||
+      name ||
+      whatsapp ||
+      messageText ||
+      orderValue ||
+      requirementFiles.length ||
+      revisions.length
+    );
+  }
+
   function maybePersist() {
     if (isSubmitting) return;
-    if (!document.getElementById("order-id").value) return;
+    if (!hasPersistableContent()) return;
     window.clearTimeout(persistTimer);
     persistTimer = window.setTimeout(function () {
       saveOrder(true).catch(function () {});
-    }, 250);
+    }, 450);
   }
 
   function storedBlob(record) {
@@ -716,7 +736,7 @@
     revisions = [];
     readyToggle.checked = false;
     editMeta.hidden = true;
-    submitBtn.textContent = "Submit Form";
+    submitBtn.textContent = "Save to Google Sheet";
     if (deleteOrderBtn) deleteOrderBtn.hidden = true;
     refreshRequirementFiles();
     renderRevisions();
@@ -786,7 +806,7 @@
       }
       const saved = store.upsertOrder(collectOrder());
       document.getElementById("order-id").value = saved.id;
-      submitBtn.textContent = "Save Changes";
+      submitBtn.textContent = "Save to Google Sheet";
       editMeta.hidden = false;
       if (deleteOrderBtn) deleteOrderBtn.hidden = false;
       editMeta.textContent = "Editing " + saved.id + " · Created " + store.formatDateTime(saved.createdAt) + " · Last updated " + store.formatDateTime(saved.updatedAt);
@@ -858,7 +878,7 @@
     revisions = store.normalizeRevisions(order.revisions || []);
     readyToggle.checked = Boolean(order.readyToApprove);
     fileInput.value = "";
-    submitBtn.textContent = "Save Changes";
+    submitBtn.textContent = "Save to Google Sheet";
     editMeta.hidden = false;
     if (deleteOrderBtn) deleteOrderBtn.hidden = false;
     editMeta.textContent = "Editing " + order.id + " · Created " + store.formatDateTime(order.createdAt) + " · Last updated " + store.formatDateTime(order.updatedAt);
@@ -1218,11 +1238,7 @@
     }).then(function () {
       isSubmitting = false;
       submitBtn.disabled = false;
-      if (!document.getElementById("order-id").value) {
-        submitBtn.textContent = "Submit Form";
-      } else {
-        submitBtn.textContent = "Save Changes";
-      }
+      submitBtn.textContent = "Save to Google Sheet";
     });
   });
 })();

@@ -1084,6 +1084,14 @@ body.modal-open {
   margin-top: 8px;
 }
 
+.save-hint {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  text-align: right;
+}
+
 .form-actions.compact {
   justify-content: flex-start;
   margin-top: 8px;
