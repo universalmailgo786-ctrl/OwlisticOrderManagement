@@ -68,16 +68,12 @@
   }
 
   function hasPersistableContent() {
-    const businessName = (document.getElementById("business-name") && document.getElementById("business-name").value.trim()) || "";
-    const clientName = (document.getElementById("client-name") && document.getElementById("client-name").value.trim()) || "";
     const name = (document.getElementById("name") && document.getElementById("name").value.trim()) || "";
     const whatsapp = (document.getElementById("whatsapp") && document.getElementById("whatsapp").value.trim()) || "";
     const messageText = (document.getElementById("messageText") && document.getElementById("messageText").value.trim()) || "";
     const orderValue = (document.getElementById("orderValue") && document.getElementById("orderValue").value.trim()) || "";
     return Boolean(
       document.getElementById("order-id").value ||
-      businessName ||
-      clientName ||
       name ||
       whatsapp ||
       messageText ||
@@ -955,8 +951,6 @@
     threadMessages = emptyMessageThread();
     document.getElementById("directRequirements").value = "";
     document.getElementById("reviewText").value = "";
-    document.getElementById("business-name").value = "";
-    document.getElementById("client-name").value = "";
     if (boardStatusSelect) boardStatusSelect.value = "in-progress";
     fileInput.value = "";
     requirementFiles = [];
@@ -1000,14 +994,16 @@
     const account = lockedAccount();
     if (account) accountSelect.value = account.id;
     syncMessageTextField();
+    const existingId = document.getElementById("order-id").value;
+    const existing = existingId && store.getOrder(existingId);
     return {
-      id: document.getElementById("order-id").value || undefined,
+      id: existingId || undefined,
       accountId: account && account.id ? account.id : "",
       accountName: store.accountLabel(account),
       whatsapp: document.getElementById("whatsapp").value.trim(),
       name: document.getElementById("name").value.trim(),
-      businessName: document.getElementById("business-name").value.trim(),
-      clientName: document.getElementById("client-name").value.trim(),
+      businessName: existing && existing.businessName ? existing.businessName : "",
+      clientName: existing && existing.clientName ? existing.clientName : "",
       boardStatus: boardStatusSelect ? boardStatusSelect.value : "",
       orderValue: document.getElementById("orderValue").value,
       paymentStatus: selectedPayment("paymentStatus"),
@@ -1089,8 +1085,6 @@
     populateAccounts(order.accountId || "");
     document.getElementById("whatsapp").value = order.whatsapp || "";
     document.getElementById("name").value = order.name || "";
-    document.getElementById("business-name").value = order.businessName || "";
-    document.getElementById("client-name").value = order.clientName || "";
     if (boardStatusSelect) {
       boardStatusSelect.value = (store.boardStatusOf && store.boardStatusOf(order)) || "in-progress";
     }
@@ -1432,12 +1426,6 @@
       maybePersist();
     });
   }
-
-  ["business-name", "client-name"].forEach(function (id) {
-    const field = document.getElementById(id);
-    if (!field) return;
-    field.addEventListener("input", maybePersist);
-  });
 
   function refreshSheetConnect() {
     const panel = document.getElementById("sheet-connect");
