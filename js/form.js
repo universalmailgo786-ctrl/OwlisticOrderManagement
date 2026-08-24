@@ -74,7 +74,13 @@
       banner.hidden = false;
       banner.classList.add("is-ready");
       document.getElementById("status-banner-title").textContent = "Order is Ready to Approve";
-      document.getElementById("status-banner-text").textContent = "No active revisions are pending.";
+      document.getElementById("status-banner-text").textContent = "This order is waiting for approval.";
+    } else if (status === "completed") {
+      page.classList.add("is-ready");
+      banner.hidden = false;
+      banner.classList.add("is-ready");
+      document.getElementById("status-banner-title").textContent = "Order Completed";
+      document.getElementById("status-banner-text").textContent = "This order is marked completed.";
     }
 
     const readyText = readyToggle.checked ? "Ready to Approve" : "Not Ready";
@@ -458,7 +464,7 @@
 
     revisions.forEach(function (revision) {
       const round = document.createElement("article");
-      round.className = "revision-round";
+      round.className = "revision-round" + (revision.completed ? " is-complete" : "");
       round.setAttribute("data-revision-id", revision.id);
 
       const messages = revision.messages || [];
@@ -483,7 +489,13 @@
             '<p class="revision-title">Revision ' + revision.number + "</p>" +
             '<p class="revision-meta">' + store.formatDateTime(revision.createdAt) + " · " + (pairs.length === 1 ? "1 row" : pairs.length + " rows") + "</p>" +
           "</div>" +
-          '<button type="button" class="ghost-btn is-danger" data-delete-revision="' + revision.id + '">Delete revision</button>' +
+          '<div class="revision-round-actions">' +
+            '<label class="revision-complete">' +
+              '<input type="checkbox" data-complete-revision="' + revision.id + '"' + (revision.completed ? " checked" : "") + ">" +
+              "<span>" + (revision.completed ? "Revision completed" : "Mark revision completed") + "</span>" +
+            "</label>" +
+            '<button type="button" class="ghost-btn is-danger" data-delete-revision="' + revision.id + '">Delete revision</button>' +
+          "</div>" +
         "</div>" +
         '<div class="chat-thread">' +
           '<div class="chat-legend" aria-hidden="true">' +
@@ -718,7 +730,9 @@
       fiverrGigUrl: document.getElementById("fiverrGigUrl").value.trim(),
       reviewText: document.getElementById("reviewText").value,
       revisions: revisions,
-      readyToApprove: boardStatusSelect ? boardStatusSelect.value === "completed" : readyToggle.checked
+      readyToApprove: boardStatusSelect
+        ? (boardStatusSelect.value === "completed" || boardStatusSelect.value === "ready-to-approve")
+        : readyToggle.checked
     };
   }
 
@@ -915,6 +929,7 @@
       id: store.uid("rev"),
       number: revisions.length + 1,
       createdAt: store.nowIso(),
+      completed: false,
       messages: []
     };
     addMessage(revision, "buyer");
@@ -998,6 +1013,16 @@
     });
   });
 
+  revisionsList.addEventListener("change", function (event) {
+    const box = event.target.closest("[data-complete-revision]");
+    if (!box) return;
+    const revision = findRevision(box.getAttribute("data-complete-revision"));
+    if (!revision) return;
+    revision.completed = box.checked;
+    renderRevisions();
+    maybePersist();
+  });
+
   revisionsList.addEventListener("input", function (event) {
     const field = event.target.closest("[data-message-text]");
     if (!field) return;
@@ -1009,8 +1034,11 @@
 
   readyToggle.addEventListener("change", function () {
     if (boardStatusSelect) {
-      if (readyToggle.checked) boardStatusSelect.value = "completed";
-      else if (boardStatusSelect.value === "completed") boardStatusSelect.value = "in-progress";
+      if (readyToggle.checked) {
+        if (boardStatusSelect.value !== "completed") boardStatusSelect.value = "ready-to-approve";
+      } else if (boardStatusSelect.value === "ready-to-approve" || boardStatusSelect.value === "completed") {
+        boardStatusSelect.value = "in-progress";
+      }
     }
     updateStatusUI();
     maybePersist();
@@ -1018,7 +1046,7 @@
 
   if (boardStatusSelect) {
     boardStatusSelect.addEventListener("change", function () {
-      readyToggle.checked = boardStatusSelect.value === "completed";
+      readyToggle.checked = boardStatusSelect.value === "completed" || boardStatusSelect.value === "ready-to-approve";
       updateStatusUI();
       maybePersist();
     });

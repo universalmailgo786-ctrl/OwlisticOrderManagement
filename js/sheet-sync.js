@@ -193,7 +193,7 @@
         if (files) parts.push("Files: " + files);
         return parts.join(" — ");
       });
-      return "Revision " + (round.number || "") + (messages.length ? ": " + messages.join(" | ") : ": (empty)");
+      return "Revision " + (round.number || "") + (round.completed ? " [Completed]" : " [Open]") + (messages.length ? ": " + messages.join(" | ") : ": (empty)");
     }).join("\n");
   }
 

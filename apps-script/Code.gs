@@ -479,9 +479,8 @@ function orderFromRow_(row, tabName, files) {
 function parseBoardStatus_(value) {
   var raw = String(value || "").trim().toLowerCase();
   if (!raw) return "";
-  if (raw === "completed" || raw === "complete" || raw === "ready-to-approve" || raw === "ready to approve") {
-    return "completed";
-  }
+  if (raw === "ready-to-approve" || raw === "ready to approve") return "ready-to-approve";
+  if (raw === "completed" || raw === "complete") return "completed";
   if (
     raw === "on-revision" ||
     raw === "on revision" ||
@@ -493,7 +492,8 @@ function parseBoardStatus_(value) {
     return "on-revision";
   }
   if (raw === "in-progress" || raw === "in progress" || raw === "waiting") return "in-progress";
-  if (/ready to approve|complete/.test(raw)) return "completed";
+  if (/ready to approve/.test(raw)) return "ready-to-approve";
+  if (/complete/.test(raw)) return "completed";
   if (/revision/.test(raw)) return "on-revision";
   if (/progress/.test(raw)) return "in-progress";
   return "";
@@ -780,7 +780,7 @@ function applyStatusColors_(sheet, dataRows) {
   rules.push(chip(25, "Completed", SAGE, SAGE_TEXT));
   rules.push(chip(25, "On Revision", ROSE, ROSE_TEXT));
   rules.push(chip(25, "Complete", SAGE, SAGE_TEXT));
-  rules.push(chip(25, "Ready to Approve", SAGE, SAGE_TEXT));
+  rules.push(chip(25, "Ready to Approve", GOLD, GOLD_TEXT));
   rules.push(chip(25, "In Progress", SKY, SKY_TEXT));
   rules.push(chip(25, "Waiting", GOLD, GOLD_TEXT));
   rules.push(chip(25, "Revision Pending", GOLD, GOLD_TEXT));
@@ -802,7 +802,7 @@ function applyDropdowns_(sheet, dataRows) {
     .build();
   var status = SpreadsheetApp.newDataValidation()
     .requireValueInList(
-      ["In Progress", "On Revision", "Completed", "Ready to Approve", "Revision Pending", "Waiting", "Revision Needed", "Complete"],
+      ["In Progress", "On Revision", "Ready to Approve", "Completed", "Revision Pending", "Waiting", "Revision Needed", "Complete"],
       true
     )
     .setAllowInvalid(true)

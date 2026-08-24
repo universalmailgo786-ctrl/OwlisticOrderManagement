@@ -178,6 +178,7 @@
           id: item.id,
           number: item.number || rounds.length + 1,
           createdAt: item.createdAt,
+          completed: Boolean(item.completed),
           messages: item.messages.slice()
         });
         return;
@@ -198,6 +199,7 @@
           id: item.id,
           number: item.number || rounds.length + 1,
           createdAt: item.createdAt,
+          completed: Boolean(item.completed),
           messages: messages
         });
         return;
@@ -207,6 +209,7 @@
           id: uid("rev"),
           number: 1,
           createdAt: item.createdAt,
+          completed: false,
           messages: []
         });
       }
@@ -227,9 +230,8 @@
   function parseBoardStatus(value) {
     const raw = String(value || "").trim().toLowerCase();
     if (!raw) return "";
-    if (raw === "completed" || raw === "complete" || raw === "ready-to-approve" || raw === "ready to approve") {
-      return "completed";
-    }
+    if (raw === "ready-to-approve" || raw === "ready to approve") return "ready-to-approve";
+    if (raw === "completed" || raw === "complete") return "completed";
     if (
       raw === "on-revision" ||
       raw === "on revision" ||
@@ -241,7 +243,8 @@
       return "on-revision";
     }
     if (raw === "in-progress" || raw === "in progress" || raw === "waiting") return "in-progress";
-    if (/ready to approve|complete/.test(raw)) return "completed";
+    if (/ready to approve/.test(raw)) return "ready-to-approve";
+    if (/complete/.test(raw)) return "completed";
     if (/revision/.test(raw)) return "on-revision";
     if (/progress/.test(raw)) return "in-progress";
     return "";
@@ -252,14 +255,17 @@
     if (fromBoard) return fromBoard;
     const fromOverall = parseBoardStatus(order && order.overallStatus);
     if (fromOverall) return fromOverall;
-    if (order && order.readyToApprove) return "completed";
+    if (order && order.readyToApprove) return "ready-to-approve";
     const revisions = normalizeRevisions((order && order.revisions) || []);
-    if (revisions.length) return "on-revision";
+    if (revisions.length && revisions.some(function (item) { return !item.completed; })) {
+      return "on-revision";
+    }
     return "in-progress";
   }
 
   function boardStatusLabel(tab) {
     if (tab === "completed") return "Completed";
+    if (tab === "ready-to-approve") return "Ready to Approve";
     if (tab === "on-revision") return "On Revision";
     return "In Progress";
   }
@@ -269,14 +275,24 @@
     if (!order) return order;
     order.boardStatus = next;
     order.overallStatus = boardStatusLabel(next);
-    order.readyToApprove = next === "completed";
+    order.readyToApprove = next === "completed" || next === "ready-to-approve";
     order.status = computeStatus(order);
+    return order;
+  }
+
+  function setRevisionCompleted(order, revisionId, completed) {
+    if (!order) return order;
+    order.revisions = normalizeRevisions(order.revisions || []).map(function (round) {
+      if (String(round.id) === String(revisionId)) round.completed = Boolean(completed);
+      return round;
+    });
     return order;
   }
 
   function computeStatus(order) {
     const tab = boardStatusOf(order);
-    if (tab === "completed") return "ready-to-approve";
+    if (tab === "completed") return "completed";
+    if (tab === "ready-to-approve") return "ready-to-approve";
     if (tab === "on-revision") return "revision-pending";
     return "in-progress";
   }
@@ -393,7 +409,11 @@
         return;
       }
       const previous = orders[index];
-      if (previous.revisions && previous.revisions.length && !order.revisions.length) {
+      const incomingRevisions = order.revisions || [];
+      const looksLikeSheetStub = incomingRevisions.length && incomingRevisions.every(function (item) {
+        return String(item.id || "").indexOf("rev_sheet") === 0;
+      });
+      if (previous.revisions && previous.revisions.length && (!incomingRevisions.length || looksLikeSheetStub)) {
         order.revisions = previous.revisions;
       }
       if (previous.accountId && !order.accountId) order.accountId = previous.accountId;
@@ -430,8 +450,9 @@
   }
 
   function statusLabel(status) {
+    if (status === "completed") return "Completed";
+    if (status === "ready-to-approve") return "Ready to Approve";
     if (status === "revision-pending" || status === "revision-pending") return "On Revision";
-    if (status === "ready-to-approve") return "Completed";
     return "In Progress";
   }
 
@@ -474,6 +495,7 @@
     boardStatusOf: boardStatusOf,
     boardStatusLabel: boardStatusLabel,
     setBoardStatus: setBoardStatus,
+    setRevisionCompleted: setRevisionCompleted,
     computeStatus: computeStatus,
     computeStatus: computeStatus,
     recordTab: recordTab,
@@ -497,6 +519,7 @@
   global.OwlisticStore.statusLabel = statusLabel;
   global.OwlisticStore.formatDate = formatDate;
   global.OwlisticStore.setBoardStatus = setBoardStatus;
+  global.OwlisticStore.setRevisionCompleted = setRevisionCompleted;
   global.OwlisticStore.boardStatusOf = boardStatusOf;
   global.OwlisticStore.boardStatusLabel = boardStatusLabel;
   global.OwlisticStore.upsertOrder = upsertOrder;

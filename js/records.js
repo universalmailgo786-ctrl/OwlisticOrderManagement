@@ -17,15 +17,17 @@
   const tabButtons = Array.prototype.slice.call(document.querySelectorAll(".records-tab"));
   const TAB_LABELS = {
     "in-progress": "in progress",
-    completed: "completed",
-    "on-revision": "on revision"
+    "on-revision": "on revision",
+    "ready-to-approve": "ready to approve",
+    completed: "completed"
   };
 
   let activeTab = "in-progress";
 
   function badge(status, label) {
-    const cls = status === "revision-pending" || status === "revision-pending" || status === "on-revision" ? "badge-red"
-      : status === "ready-to-approve" || status === "completed" ? "badge-green"
+    const cls = status === "revision-pending" || status === "on-revision" ? "badge-red"
+      : status === "ready-to-approve" ? "badge-gold"
+      : status === "completed" || status === "completed" ? "badge-green"
       : status === "paid" ? "badge-green"
       : status === "unpaid" ? "badge-red"
       : "badge-sage";
@@ -58,7 +60,8 @@
     if (typeof store.recordTab === "function") return store.recordTab(order);
     if (typeof store.recordTab === "function") return store.recordTab(order);
     const status = store.computeStatus(order);
-    if (status === "ready-to-approve") return "completed";
+    if (status === "completed") return "completed";
+    if (status === "ready-to-approve") return "ready-to-approve";
     if (status === "revision-pending" || status === "revision-pending") return "on-revision";
     return "in-progress";
   }
@@ -68,6 +71,7 @@
     const options = [
       ["in-progress", "In Progress"],
       ["on-revision", "On Revision"],
+      ["ready-to-approve", "Ready to Approve"],
       ["completed", "Completed"]
     ];
     return '<select class="records-status is-' + tab + '" data-status-order="' + escapeHtml(order.id) + '" aria-label="Order status">' +
@@ -75,6 +79,21 @@
         return '<option value="' + item[0] + '"' + (item[0] === tab ? " selected" : "") + ">" + item[1] + "</option>";
       }).join("") +
       "</select>";
+  }
+
+  function revisionChecks(order) {
+    const rounds = store.normalizeRevisions(order.revisions || []);
+    if (!rounds.length) return '<span class="muted">No revisions</span>';
+    const done = rounds.filter(function (item) { return item.completed; }).length;
+    return '<div class="records-revisions">' +
+      '<p class="records-revisions-summary">' + done + " of " + rounds.length + " complete</p>" +
+      rounds.map(function (round) {
+        return '<label class="records-revision-check' + (round.completed ? " is-done" : "") + '">' +
+          '<input type="checkbox" data-revision-complete="' + escapeHtml(order.id) + '" data-revision-id="' + escapeHtml(round.id) + '"' + (round.completed ? " checked" : "") + ">" +
+          "<span>Revision " + round.number + (round.completed ? " completed" : "") + "</span>" +
+        "</label>";
+      }).join("") +
+    "</div>";
   }
 
   function renderAccountFilter() {
@@ -135,7 +154,7 @@
   }
 
   function updateTabCounts(all) {
-    const counts = { "in-progress": 0, completed: 0, "on-revision": 0 };
+    const counts = { "in-progress": 0, "on-revision": 0, "ready-to-approve": 0, completed: 0 };
     all.forEach(function (order) {
       const tab = tabOf(order);
       if (counts[tab] != null) counts[tab] += 1;
@@ -170,10 +189,6 @@
 
     body.innerHTML = orders.map(function (order) {
       const status = store.computeStatus(order);
-      const rounds = store.normalizeRevisions(order.revisions || []);
-      const revisionLabel = rounds.length
-        ? (rounds.length === 1 ? "1 revision" : rounds.length + " revisions")
-        : "No revisions";
       return '<tr class="records-row is-' + status + '">' +
         "<td>" + stack(order.id, store.formatDate(order.createdAt)) + "</td>" +
         "<td>" + stack(order.accountName || "No account", order.fiverrId || "No Fiverr ID") + "</td>" +
@@ -183,7 +198,7 @@
         '<td class="records-value">' + formatValue(order.orderValue) + "</td>" +
         "<td>" + badge(order.paymentStatus || "in-progress", order.paymentStatus === "paid" ? "Paid" : order.paymentStatus === "unpaid" ? "Unpaid" : "—") + "</td>" +
         "<td>" + escapeHtml(store.orderTypeLabel(order)) + "</td>" +
-        "<td>" + badge(rounds.length ? "completed" : "in-progress", revisionLabel) + "</td>" +
+        '<td class="records-revisions-cell">' + revisionChecks(order) + "</td>" +
         "<td>" + badge(order.readyToApprove ? "ready-to-approve" : "in-progress", order.readyToApprove ? "Ready" : "Not Ready") + "</td>" +
         "<td>" + statusSelect(order) + "</td>" +
         '<td class="records-actions">' +
@@ -278,6 +293,34 @@
   });
 
   body.addEventListener("change", function (event) {
+    const box = event.target.closest("[data-revision-complete]");
+    if (box) {
+      const id = box.getAttribute("data-revision-complete");
+      const revisionId = box.getAttribute("data-revision-id");
+      const order = store.getOrder(id);
+      if (!order) return;
+      const canSee = auth.canSeeOrder || auth.canSeeOrder;
+      if (typeof canSee === "function" && !canSee.call(auth, order)) return;
+      if (typeof store.setRevisionCompleted === "function") {
+        store.setRevisionCompleted(order, revisionId, box.checked);
+      } else {
+        (order.revisions || []).forEach(function (round) {
+          if (String(round.id) === String(revisionId)) round.completed = box.checked;
+        });
+      }
+      store.upsertOrder(order);
+      const sheet = window.OwlisticSheet;
+      const finish = function () {
+        render();
+        showToast(box.checked ? "Revision marked complete" : "Revision marked open");
+      };
+      if (sheet && typeof sheet.sync === "function") {
+        sheet.sync(order).then(finish).catch(finish);
+        return;
+      }
+      finish();
+      return;
+    }
     const select = event.target.closest("[data-status-order]");
     if (!select) return;
     const id = select.getAttribute("data-status-order");
@@ -290,8 +333,8 @@
     else if (typeof store.setBoardStatus === "function") store.setBoardStatus(order, nextTab);
     else {
       order.boardStatus = nextTab;
-      order.overallStatus = nextTab === "completed" ? "Completed" : nextTab === "on-revision" ? "On Revision" : "In Progress";
-      order.readyToApprove = nextTab === "completed";
+      order.overallStatus = (store.boardStatusLabel && store.boardStatusLabel(nextTab)) || nextTab;
+      order.readyToApprove = nextTab === "completed" || nextTab === "ready-to-approve";
     }
     store.upsertOrder(order);
     const label = (store.boardStatusLabel && store.boardStatusLabel(nextTab)) || select.options[select.selectedIndex].text;

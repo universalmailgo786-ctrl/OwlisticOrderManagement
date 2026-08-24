@@ -1159,6 +1159,37 @@ body.modal-open {
 .revision-round-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.revision-complete {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #f4efe8;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.revision-complete input {
+  width: 16px;
+  height: 16px;
+  accent-color: #3d5a2c;
+}
+
+.revision-round.is-complete {
+  box-shadow: inset 0 0 0 1px #c7d7b8;
+  background: #f7faf4;
+}
+
+.revision-round-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -1645,6 +1676,11 @@ body.modal-open {
   color: #5b6b4e;
 }
 
+.badge-gold {
+  background: #f4ead0;
+  color: #6b5420;
+}
+
 .badge-blue {
   background: #e8f1f5;
   color: #2f6580;
@@ -1825,13 +1861,13 @@ body.modal-open {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
   margin: 0 0 18px;
   padding: 6px;
   background: #fff;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 28px;
   box-shadow: var(--shadow);
 }
 
@@ -2036,6 +2072,49 @@ body.modal-open {
 
 .records-status.is-completed {
   background-color: #e7efe0;
+  color: #3d5a2c;
+}
+
+.records-status.is-ready-to-approve {
+  background-color: #f4ead0;
+  color: #6b5420;
+}
+
+.records-revisions-cell {
+  white-space: normal;
+  min-width: 168px;
+}
+
+.records-revisions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.records-revisions-summary {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.records-revision-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.records-revision-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: #3d5a2c;
+}
+
+.records-revision-check.is-done span {
   color: #3d5a2c;
 }
 

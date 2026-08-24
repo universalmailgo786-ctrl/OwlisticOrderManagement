@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=status1" />
+  <link rel="stylesheet" href="css/styles.css?v=ready1" />
 </head>
 <body class="records-page">
   <nav class="app-nav">
@@ -35,13 +35,17 @@
         In progress
         <span class="records-tab-count" data-tab-count="in-progress">0</span>
       </button>
-      <button type="button" class="records-tab" role="tab" id="tab-completed" data-tab="completed" aria-selected="false">
-        Completed
-        <span class="records-tab-count" data-tab-count="completed">0</span>
-      </button>
       <button type="button" class="records-tab" role="tab" id="tab-on-revision" data-tab="on-revision" aria-selected="false">
         On revision
         <span class="records-tab-count" data-tab-count="on-revision">0</span>
+      </button>
+      <button type="button" class="records-tab" role="tab" id="tab-ready-to-approve" data-tab="ready-to-approve" aria-selected="false">
+        Ready to Approve
+        <span class="records-tab-count" data-tab-count="ready-to-approve">0</span>
+      </button>
+      <button type="button" class="records-tab" role="tab" id="tab-completed" data-tab="completed" aria-selected="false">
+        Completed
+        <span class="records-tab-count" data-tab-count="completed">0</span>
       </button>
     </div>
 
@@ -112,9 +116,9 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="js/storage.js?v=status1"></script>
-  <script src="js/sheet-sync.js?v=status1"></script>
-  <script src="js/auth.js?v=status1"></script>
-  <script src="js/records.js?v=status1"></script>
+  <script src="js/storage.js?v=ready1"></script>
+  <script src="js/sheet-sync.js?v=ready1"></script>
+  <script src="js/auth.js?v=ready1"></script>
+  <script src="js/records.js?v=ready1"></script>
 </body>
 </html>
