@@ -95,7 +95,8 @@
   function filesCell(files) {
     const list = requirementFileList(files);
     if (!list.length) return '<span class="muted">—</span>';
-    return '<div class="records-files">' + list.map(function (file, index) {
+    const title = escapeHtml(filesCopyText(files));
+    return '<div class="records-files" title="' + title + '">' + list.map(function (file, index) {
       const name = escapeHtml(file.name);
       const item = file.url
         ? '<a class="records-file-link" href="' + escapeHtml(file.url) + '" target="_blank" rel="noopener noreferrer">' + name + "</a>"
@@ -134,10 +135,10 @@
   function messageCellHtml(message) {
     if (!message) return '<span class="muted">—</span>';
     const text = String(message.text || "").trim();
-    const files = message.files || [];
-    if (!text && !files.length) return '<span class="muted">—</span>';
-    return (text ? '<div class="records-clip" title="' + escapeHtml(text) + '">' + escapeHtml(text) + "</div>" : "") +
-      (files.length ? filesCell(files) : "");
+    const files = (message.files || []).map(function (file) { return file && file.name; }).filter(Boolean).join(", ");
+    const display = text && files ? text + " · " + files : (text || files);
+    if (!display) return '<span class="muted">—</span>';
+    return '<div class="records-clip" title="' + escapeHtml(messageCopy(message)) + '">' + escapeHtml(display) + "</div>";
   }
 
   function maxMessagePairs(orders) {
@@ -154,8 +155,9 @@
   }
 
   function withCopy(html, text, label, extraClass) {
+    const title = text ? ' title="' + escapeHtml(text) + '"' : "";
     return '<div class="records-cell-with-copy' + (extraClass ? " " + extraClass : "") + '">' +
-      '<div class="records-cell-value">' + html + "</div>" +
+      '<div class="records-cell-value"' + title + ">" + html + "</div>" +
       copyButton(text, label) +
     "</div>";
   }
@@ -163,10 +165,10 @@
   function editableNameCell(order, field, placeholder, label) {
     const value = String(order[field] || "").trim();
     const display = value
-      ? escapeHtml(value)
+      ? '<span class="records-clip" title="' + escapeHtml(value) + '">' + escapeHtml(value) + "</span>"
       : '<span class="muted records-name-placeholder">' + escapeHtml(placeholder) + "</span>";
     return '<div class="records-cell-with-copy records-editable">' +
-      '<div class="records-cell-value">' + display + "</div>" +
+      '<div class="records-cell-value" title="' + escapeHtml(value) + '">' + display + "</div>" +
       '<button type="button" class="records-edit-btn" data-edit-field="' + field + '" data-edit-order="' + escapeHtml(order.id) + '" title="Edit ' + escapeHtml(label) + '" aria-label="Edit ' + escapeHtml(label) + '">' + PENCIL_ICON + "</button>" +
       copyButton(value, label) +
     "</div>";
