@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=files2" />
+  <link rel="stylesheet" href="css/styles.css?v=status1" />
 </head>
 <body>
   <nav class="app-nav">
@@ -104,6 +104,30 @@
 
     <form class="questionnaire" id="order-questionnaire" novalidate>
       <input type="hidden" id="order-id" name="orderId" />
+      <div class="extra-details">
+        <div class="extra-details-head">
+          <h2>Extra details</h2>
+          <p>Enter these by hand. They are separate from the numbered questions.</p>
+        </div>
+        <div class="extra-details-grid">
+          <label for="business-name">
+            Business Name
+            <input class="line-input" type="text" id="business-name" name="businessName" autocomplete="organization" />
+          </label>
+          <label for="client-name">
+            Client Name
+            <input class="line-input" type="text" id="client-name" name="clientName" autocomplete="name" />
+          </label>
+          <label for="board-status">
+            Status
+            <select class="line-input extra-status" id="board-status" name="boardStatus">
+              <option value="in-progress">In Progress</option>
+              <option value="on-revision">On Revision</option>
+              <option value="completed">Completed</option>
+            </select>
+          </label>
+        </div>
+      </div>
       <!-- 1. WhatsApp Number -->
       <div class="form-row">
         <div class="row-identity">
@@ -522,9 +546,9 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="js/storage.js?v=files2"></script>
-  <script src="js/sheet-sync.js?v=files2"></script>
-  <script src="js/auth.js?v=files2"></script>
-  <script src="js/form.js?v=files2"></script>
+  <script src="js/storage.js?v=status1"></script>
+  <script src="js/sheet-sync.js?v=status1"></script>
+  <script src="js/auth.js?v=status1"></script>
+  <script src="js/form.js?v=status1"></script>
 </body>
 </html>

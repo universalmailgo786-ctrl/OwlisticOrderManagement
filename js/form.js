@@ -22,6 +22,7 @@
   const requirementList = document.getElementById("requirement-file-list");
   const revisionsList = document.getElementById("revisions-list");
   const readyToggle = document.getElementById("ready-to-approve");
+  const boardStatusSelect = document.getElementById("board-status");
   const submitBtn = document.getElementById("submit-form");
   const deleteOrderBtn = document.getElementById("delete-order-btn");
 
@@ -55,7 +56,8 @@
   function updateStatusUI() {
     const status = store.computeStatus({
       revisions: revisions,
-      readyToApprove: readyToggle.checked
+      readyToApprove: readyToggle.checked,
+      boardStatus: boardStatusSelect ? boardStatusSelect.value : ""
     });
     page.classList.remove("has-revision", "is-ready");
     banner.hidden = true;
@@ -652,6 +654,9 @@
     document.getElementById("messageText").value = "";
     document.getElementById("directRequirements").value = "";
     document.getElementById("reviewText").value = "";
+    document.getElementById("business-name").value = "";
+    document.getElementById("client-name").value = "";
+    if (boardStatusSelect) boardStatusSelect.value = "in-progress";
     fileInput.value = "";
     requirementFiles = [];
     revisions = [];
@@ -698,6 +703,9 @@
       accountName: store.accountLabel(account),
       whatsapp: document.getElementById("whatsapp").value.trim(),
       name: document.getElementById("name").value.trim(),
+      businessName: document.getElementById("business-name").value.trim(),
+      clientName: document.getElementById("client-name").value.trim(),
+      boardStatus: boardStatusSelect ? boardStatusSelect.value : "",
       orderValue: document.getElementById("orderValue").value,
       paymentStatus: selectedPayment("paymentStatus"),
       searchKeyword: document.getElementById("searchKeyword").value.trim(),
@@ -710,7 +718,7 @@
       fiverrGigUrl: document.getElementById("fiverrGigUrl").value.trim(),
       reviewText: document.getElementById("reviewText").value,
       revisions: revisions,
-      readyToApprove: readyToggle.checked
+      readyToApprove: boardStatusSelect ? boardStatusSelect.value === "completed" : readyToggle.checked
     };
   }
 
@@ -775,6 +783,11 @@
     populateAccounts(order.accountId || "");
     document.getElementById("whatsapp").value = order.whatsapp || "";
     document.getElementById("name").value = order.name || "";
+    document.getElementById("business-name").value = order.businessName || "";
+    document.getElementById("client-name").value = order.clientName || "";
+    if (boardStatusSelect) {
+      boardStatusSelect.value = (store.boardStatusOf && store.boardStatusOf(order)) || "in-progress";
+    }
     document.getElementById("orderValue").value = order.orderValue || "";
     setPayment("paymentStatus", order.paymentStatus || "");
     document.getElementById("searchKeyword").value = order.searchKeyword || "";
@@ -995,8 +1008,26 @@
   });
 
   readyToggle.addEventListener("change", function () {
+    if (boardStatusSelect) {
+      if (readyToggle.checked) boardStatusSelect.value = "completed";
+      else if (boardStatusSelect.value === "completed") boardStatusSelect.value = "in-progress";
+    }
     updateStatusUI();
     maybePersist();
+  });
+
+  if (boardStatusSelect) {
+    boardStatusSelect.addEventListener("change", function () {
+      readyToggle.checked = boardStatusSelect.value === "completed";
+      updateStatusUI();
+      maybePersist();
+    });
+  }
+
+  ["business-name", "client-name"].forEach(function (id) {
+    const field = document.getElementById(id);
+    if (!field) return;
+    field.addEventListener("input", maybePersist);
   });
 
   function refreshSheetConnect() {

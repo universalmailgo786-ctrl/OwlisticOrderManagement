@@ -26,7 +26,9 @@ var HEADERS = [
   "Latest Buyer Message",
   "Latest Seller Reply",
   "Ready to Approve",
-  "Overall Status"
+  "Overall Status",
+  "Business Name",
+  "Client Name"
 ];
 
 var FOREST = "#223829";
@@ -42,7 +44,7 @@ var GOLD = "#f4ead0";
 var GOLD_TEXT = "#6b5420";
 var SKY = "#e4eef4";
 var SKY_TEXT = "#1f4f66";
-var COL_WIDTHS = [118, 122, 108, 140, 128, 150, 150, 150, 108, 132, 140, 150, 240, 220, 220, 140, 200, 200, 92, 260, 140, 220, 220, 168, 168];
+var COL_WIDTHS = [118, 122, 108, 140, 128, 150, 150, 150, 108, 132, 140, 150, 240, 220, 220, 140, 200, 200, 92, 260, 140, 220, 220, 168, 168, 160, 160];
 var FILES_FOLDER_NAME = "Owlistic Order Files";
 var TAB_COLORS = ["#9baa86", "#c4a574", "#4e91b1", "#e98a5f", "#708b55", "#8b6b4a"];
 var FORMAT_ROWS = 300;
@@ -466,9 +468,35 @@ function orderFromRow_(row, tabName, files) {
     revisions: revisions,
     readyToApprove: readyToApprove,
     overallStatus: String(row[24] || "").trim(),
+    boardStatus: parseBoardStatus_(row[24]),
+    businessName: String(row[25] || "").trim(),
+    clientName: String(row[26] || "").trim(),
     createdAt: isoFrom_(row[1], row[2]),
     updatedAt: isoFrom_(row[3], row[4]) || isoFrom_(row[1], row[2])
   };
+}
+
+function parseBoardStatus_(value) {
+  var raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw === "completed" || raw === "complete" || raw === "ready-to-approve" || raw === "ready to approve") {
+    return "completed";
+  }
+  if (
+    raw === "on-revision" ||
+    raw === "on revision" ||
+    raw === "revision" ||
+    raw === "revision-pending" ||
+    raw === "revision pending" ||
+    raw === "revision needed"
+  ) {
+    return "on-revision";
+  }
+  if (raw === "in-progress" || raw === "in progress" || raw === "waiting") return "in-progress";
+  if (/ready to approve|complete/.test(raw)) return "completed";
+  if (/revision/.test(raw)) return "on-revision";
+  if (/progress/.test(raw)) return "in-progress";
+  return "";
 }
 
 function upsertOrder_(ss, data) {
@@ -678,7 +706,9 @@ function styleSheet_(ss, sheet) {
     "Most recent buyer comment.",
     "Most recent seller reply.",
     "Ready to Approve or Not Ready. Dropdown in each cell.",
-    "Overall workflow status. Dropdown in each cell."
+    "Overall workflow status. Use In Progress, On Revision, or Completed to match the portal tabs.",
+    "Business name entered by hand in the portal.",
+    "Client name entered by hand in the portal."
   ]]);
 
   var dataRows = Math.max(lastRow - 1, FORMAT_ROWS - 1);
@@ -747,6 +777,8 @@ function applyStatusColors_(sheet, dataRows) {
   rules.push(chip(10, "Unpaid", ROSE, ROSE_TEXT));
   rules.push(chip(24, "Ready to Approve", SAGE, SAGE_TEXT));
   rules.push(chip(24, "Not Ready", CREAM, MUTED));
+  rules.push(chip(25, "Completed", SAGE, SAGE_TEXT));
+  rules.push(chip(25, "On Revision", ROSE, ROSE_TEXT));
   rules.push(chip(25, "Complete", SAGE, SAGE_TEXT));
   rules.push(chip(25, "Ready to Approve", SAGE, SAGE_TEXT));
   rules.push(chip(25, "In Progress", SKY, SKY_TEXT));
@@ -770,7 +802,7 @@ function applyDropdowns_(sheet, dataRows) {
     .build();
   var status = SpreadsheetApp.newDataValidation()
     .requireValueInList(
-      ["In Progress", "Ready to Approve", "Revision Pending", "Waiting", "Revision Needed", "Complete"],
+      ["In Progress", "On Revision", "Completed", "Ready to Approve", "Revision Pending", "Waiting", "Revision Needed", "Complete"],
       true
     )
     .setAllowInvalid(true)

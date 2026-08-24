@@ -33,7 +33,9 @@
     "Latest Buyer Message",
     "Latest Seller Reply",
     "Ready to Approve",
-    "Overall Status"
+    "Overall Status",
+    "Business Name",
+    "Client Name"
   ];
 
   function callStore(primary, fallback) {
@@ -226,7 +228,9 @@
       latestMessage(rounds, "buyer"),
       latestMessage(rounds, "seller"),
       order.readyToApprove || order.readyToApprove ? "Ready to Approve" : "Not Ready",
-      statusLabel
+      statusLabel,
+      order.businessName || "",
+      order.clientName || ""
     ];
   }
 

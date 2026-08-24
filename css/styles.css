@@ -1029,6 +1029,48 @@ body.modal-open {
   font-size: 13px;
 }
 
+.extra-details {
+  padding: 20px 22px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.extra-details-head h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.extra-details-head p {
+  margin: 6px 0 0;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.extra-details-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.extra-details-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.extra-details-grid .line-input,
+.extra-status {
+  width: 100%;
+  min-height: 44px;
+}
+
 .form-actions {
   display: flex;
   justify-content: flex-end;
@@ -1899,7 +1941,7 @@ body.modal-open {
 
 .records-table {
   width: 100%;
-  min-width: 980px;
+  min-width: 1240px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 14px;
@@ -1967,6 +2009,34 @@ body.modal-open {
 .records-table .badge {
   padding: 6px 10px;
   font-size: 12px;
+}
+
+.records-status {
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 148px;
+  padding: 6px 28px 6px 12px;
+  border: 0;
+  border-radius: 999px;
+  background-color: #e7efe0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%233d5a2c' d='M1 1.2L6 6.2 11 1.2'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  color: #3d5a2c;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.records-status.is-on-revision {
+  background-color: #fbe7dc;
+  color: #8a3d22;
+}
+
+.records-status.is-completed {
+  background-color: #e7efe0;
+  color: #3d5a2c;
 }
 
 .empty-state {
@@ -2048,6 +2118,10 @@ body.modal-open {
 }
 
 @media (max-width: 900px) {
+  .extra-details-grid {
+    grid-template-columns: 1fr;
+  }
+
   .account-panel,
   .revisions-head,
   .account-modal-grid,

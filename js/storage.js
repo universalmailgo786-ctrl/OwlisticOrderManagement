@@ -224,21 +224,65 @@
     return rounds;
   }
 
-  function computeStatus(order) {
-    if (order && (order.readyToApprove || order.readyToApprove)) return "ready-to-approve";
-    const overall = String((order && (order.overallStatus || order.overallStatus)) || "").toLowerCase();
-    if (/ready to approve|complete/.test(overall)) return "ready-to-approve";
-    if (/revision/.test(overall)) return "revision-pending";
+  function parseBoardStatus(value) {
+    const raw = String(value || "").trim().toLowerCase();
+    if (!raw) return "";
+    if (raw === "completed" || raw === "complete" || raw === "ready-to-approve" || raw === "ready to approve") {
+      return "completed";
+    }
+    if (
+      raw === "on-revision" ||
+      raw === "on revision" ||
+      raw === "revision" ||
+      raw === "revision-pending" ||
+      raw === "revision pending" ||
+      raw === "revision needed"
+    ) {
+      return "on-revision";
+    }
+    if (raw === "in-progress" || raw === "in progress" || raw === "waiting") return "in-progress";
+    if (/ready to approve|complete/.test(raw)) return "completed";
+    if (/revision/.test(raw)) return "on-revision";
+    if (/progress/.test(raw)) return "in-progress";
+    return "";
+  }
+
+  function boardStatusOf(order) {
+    const fromBoard = parseBoardStatus(order && order.boardStatus);
+    if (fromBoard) return fromBoard;
+    const fromOverall = parseBoardStatus(order && order.overallStatus);
+    if (fromOverall) return fromOverall;
+    if (order && order.readyToApprove) return "completed";
     const revisions = normalizeRevisions((order && order.revisions) || []);
-    if (!overall && revisions.length) return "revision-pending";
+    if (revisions.length) return "on-revision";
+    return "in-progress";
+  }
+
+  function boardStatusLabel(tab) {
+    if (tab === "completed") return "Completed";
+    if (tab === "on-revision") return "On Revision";
+    return "In Progress";
+  }
+
+  function setBoardStatus(order, tab) {
+    const next = parseBoardStatus(tab) || "in-progress";
+    if (!order) return order;
+    order.boardStatus = next;
+    order.overallStatus = boardStatusLabel(next);
+    order.readyToApprove = next === "completed";
+    order.status = computeStatus(order);
+    return order;
+  }
+
+  function computeStatus(order) {
+    const tab = boardStatusOf(order);
+    if (tab === "completed") return "ready-to-approve";
+    if (tab === "on-revision") return "revision-pending";
     return "in-progress";
   }
 
   function recordTab(order) {
-    const status = computeStatus(order);
-    if (status === "ready-to-approve") return "completed";
-    if (status === "revision-pending" || status === "revision-pending") return "on-revision";
-    return "in-progress";
+    return boardStatusOf(order);
   }
 
   function currentRevision(order) {
@@ -341,17 +385,31 @@
       order.status = computeStatus(order);
       const index = orders.findIndex(function (item) { return item.id === order.id; });
       if (index === -1) {
+        order.boardStatus = parseBoardStatus(order.boardStatus) ||
+          parseBoardStatus(order.overallStatus) ||
+          "";
+        order.status = computeStatus(order);
         orders.push(order);
         return;
       }
       const previous = orders[index];
       if (previous.revisions && previous.revisions.length && !order.revisions.length) {
         order.revisions = previous.revisions;
-        order.status = computeStatus(order);
       }
       if (previous.accountId && !order.accountId) order.accountId = previous.accountId;
       order.requirementFiles = mergeRequirementFiles(previous.requirementFiles, order.requirementFiles);
       if (previous.createdAt && !order.createdAt) order.createdAt = previous.createdAt;
+      if (!String(order.businessName || "").trim() && previous.businessName) {
+        order.businessName = previous.businessName;
+      }
+      if (!String(order.clientName || "").trim() && previous.clientName) {
+        order.clientName = previous.clientName;
+      }
+      order.boardStatus = parseBoardStatus(order.boardStatus) ||
+        parseBoardStatus(order.overallStatus) ||
+        previous.boardStatus ||
+        "";
+      order.status = computeStatus(order);
       orders[index] = order;
     });
     saveOrders(orders);
@@ -412,8 +470,13 @@
     upsertOrder: upsertOrder,
     deleteOrder: deleteOrder,
     importOrders: importOrders,
+    parseBoardStatus: parseBoardStatus,
+    boardStatusOf: boardStatusOf,
+    boardStatusLabel: boardStatusLabel,
+    setBoardStatus: setBoardStatus,
     computeStatus: computeStatus,
     computeStatus: computeStatus,
+    recordTab: recordTab,
     recordTab: recordTab,
     currentRevision: currentRevision,
     currentRevision: currentRevision,
@@ -425,4 +488,16 @@
     getFile: getFile,
     deleteFile: deleteFile
   };
+  global.OwlisticStore.recordTab = recordTab;
+  global.OwlisticStore.recordTab = recordTab;
+  global.OwlisticStore.computeStatus = computeStatus;
+  global.OwlisticStore.computeStatus = computeStatus;
+  global.OwlisticStore.normalizeRevisions = normalizeRevisions;
+  global.OwlisticStore.orderTypeLabel = orderTypeLabel;
+  global.OwlisticStore.statusLabel = statusLabel;
+  global.OwlisticStore.formatDate = formatDate;
+  global.OwlisticStore.setBoardStatus = setBoardStatus;
+  global.OwlisticStore.boardStatusOf = boardStatusOf;
+  global.OwlisticStore.boardStatusLabel = boardStatusLabel;
+  global.OwlisticStore.upsertOrder = upsertOrder;
 })(window);

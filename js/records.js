@@ -56,10 +56,25 @@
 
   function tabOf(order) {
     if (typeof store.recordTab === "function") return store.recordTab(order);
+    if (typeof store.recordTab === "function") return store.recordTab(order);
     const status = store.computeStatus(order);
     if (status === "ready-to-approve") return "completed";
     if (status === "revision-pending" || status === "revision-pending") return "on-revision";
     return "in-progress";
+  }
+
+  function statusSelect(order) {
+    const tab = tabOf(order);
+    const options = [
+      ["in-progress", "In Progress"],
+      ["on-revision", "On Revision"],
+      ["completed", "Completed"]
+    ];
+    return '<select class="records-status is-' + tab + '" data-status-order="' + escapeHtml(order.id) + '" aria-label="Order status">' +
+      options.map(function (item) {
+        return '<option value="' + item[0] + '"' + (item[0] === tab ? " selected" : "") + ">" + item[1] + "</option>";
+      }).join("") +
+      "</select>";
   }
 
   function renderAccountFilter() {
@@ -95,7 +110,15 @@
     if (readyFilter.value === "yes" && !order.readyToApprove) return false;
     if (readyFilter.value === "no" && order.readyToApprove) return false;
     if (!query) return true;
-    const haystack = [order.id, order.fiverrId, order.name, order.whatsapp, order.accountName]
+    const haystack = [
+      order.id,
+      order.fiverrId,
+      order.name,
+      order.businessName,
+      order.clientName,
+      order.whatsapp,
+      order.accountName
+    ]
       .join(" ")
       .toLowerCase();
     return haystack.indexOf(query) !== -1;
@@ -138,7 +161,7 @@
 
     if (!orders.length) {
       body.innerHTML =
-        '<tr><td colspan="10"><div class="empty-state">' +
+        '<tr><td colspan="12"><div class="empty-state">' +
           "<strong>No " + tabLabel + " orders</strong>" +
           "<p>Orders in this category will appear here. Try another tab, or clear a filter.</p>" +
         "</div></td></tr>";
@@ -155,12 +178,14 @@
         "<td>" + stack(order.id, store.formatDate(order.createdAt)) + "</td>" +
         "<td>" + stack(order.accountName || "No account", order.fiverrId || "No Fiverr ID") + "</td>" +
         "<td>" + escapeHtml(order.name || "—") + "</td>" +
+        "<td>" + escapeHtml(order.businessName || "—") + "</td>" +
+        "<td>" + escapeHtml(order.clientName || "—") + "</td>" +
         '<td class="records-value">' + formatValue(order.orderValue) + "</td>" +
         "<td>" + badge(order.paymentStatus || "in-progress", order.paymentStatus === "paid" ? "Paid" : order.paymentStatus === "unpaid" ? "Unpaid" : "—") + "</td>" +
         "<td>" + escapeHtml(store.orderTypeLabel(order)) + "</td>" +
         "<td>" + badge(rounds.length ? "completed" : "in-progress", revisionLabel) + "</td>" +
         "<td>" + badge(order.readyToApprove ? "ready-to-approve" : "in-progress", order.readyToApprove ? "Ready" : "Not Ready") + "</td>" +
-        "<td>" + badge(status, store.statusLabel(status)) + "</td>" +
+        "<td>" + statusSelect(order) + "</td>" +
         '<td class="records-actions">' +
           '<a class="open-link" href="index.html?order=' + encodeURIComponent(order.id) + '">Edit</a>' +
           '<button type="button" class="ghost-btn is-danger" data-delete-order="' + escapeHtml(order.id) + '">Delete</button>' +
@@ -183,7 +208,7 @@
       render();
       if (result && result.error && !auth.visibleOrders().length) {
         body.innerHTML =
-          '<tr><td colspan="10"><div class="empty-state">' +
+          '<tr><td colspan="12"><div class="empty-state">' +
             "<strong>Could not load sheet orders</strong>" +
             "<p>" + escapeHtml(result.error) + "</p>" +
           "</div></td></tr>";
@@ -250,6 +275,37 @@
     if (sheet && typeof sheet.deleteOrder === "function") sheet.deleteOrder(order);
     render();
     showToast("Order " + id + " deleted");
+  });
+
+  body.addEventListener("change", function (event) {
+    const select = event.target.closest("[data-status-order]");
+    if (!select) return;
+    const id = select.getAttribute("data-status-order");
+    const order = store.getOrder(id);
+    if (!order) return;
+    const canSee = auth.canSeeOrder || auth.canSeeOrder;
+    if (typeof canSee === "function" && !canSee.call(auth, order)) return;
+    const nextTab = select.value;
+    if (typeof store.setBoardStatus === "function") store.setBoardStatus(order, nextTab);
+    else if (typeof store.setBoardStatus === "function") store.setBoardStatus(order, nextTab);
+    else {
+      order.boardStatus = nextTab;
+      order.overallStatus = nextTab === "completed" ? "Completed" : nextTab === "on-revision" ? "On Revision" : "In Progress";
+      order.readyToApprove = nextTab === "completed";
+    }
+    store.upsertOrder(order);
+    const label = (store.boardStatusLabel && store.boardStatusLabel(nextTab)) || select.options[select.selectedIndex].text;
+    const sheet = window.OwlisticSheet;
+    const finish = function () {
+      setActiveTab(nextTab);
+      showToast("Status set to " + label);
+    };
+    if (sheet && typeof sheet.sync === "function") {
+      select.disabled = true;
+      sheet.sync(order).then(finish).catch(finish);
+      return;
+    }
+    finish();
   });
   [search, dateFilter, accountFilter, paymentFilter, revisionFilter, readyFilter].forEach(function (input) {
     input.addEventListener("input", render);
