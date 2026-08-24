@@ -169,6 +169,25 @@ body {
   min-height: 132px;
 }
 
+.form-row-message {
+  grid-template-columns: 1fr;
+  align-items: start;
+  min-height: 0;
+}
+
+.form-row-message .row-identity {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.form-row-message .row-control {
+  width: 100%;
+}
+
+.form-row-message .message-thread {
+  width: 100%;
+}
+
 .row-identity {
   display: flex;
   align-items: center;
@@ -2125,6 +2144,12 @@ body.modal-open {
   max-width: 240px;
   line-height: 1.35;
   word-break: break-word;
+}
+
+.records-clip-thread {
+  white-space: pre-line;
+  -webkit-line-clamp: 6;
+  max-width: 280px;
 }
 
 .records-files {

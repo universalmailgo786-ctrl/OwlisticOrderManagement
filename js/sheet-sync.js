@@ -216,7 +216,7 @@
       paymentLabel(order),
       order.searchKeyword || order.searchKeyword || "",
       typeLabel,
-      order.messageText || order.messageText || "",
+      order.messageText || callStore("formatMessageThread", "formatMessageThread", order.messageThread || []) || "",
       order.directRequirements || order.directRequirements || "",
       fileNames(order.requirementFiles || order.requirementFiles),
       order.fiverrId || order.fiverrId || "",
@@ -331,7 +331,11 @@
       return Promise.resolve({ skipped: true });
     }
     const tabName = tabNameOf(accountNameOf(order));
-    return collectUploads(order.requirementFiles || order.requirementFiles || [], options || {}).then(function (collected) {
+    const extraFiles = [];
+    (order.messageThread || []).forEach(function (message) {
+      (message.files || []).forEach(function (file) { extraFiles.push(file); });
+    });
+    return collectUploads((order.requirementFiles || []).concat(extraFiles), options || {}).then(function (collected) {
       (collected.uploads || []).forEach(function (item) {
         if (item.localId) sentFileIds[item.localId] = true;
       });

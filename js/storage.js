@@ -420,6 +420,10 @@
     const stamp = nowIso();
     order.status = computeStatus(order);
     order.revisions = normalizeRevisions(order.revisions);
+    order.messageThread = messageThreadOf(order);
+    if (order.messageThread.length) {
+      order.messageText = formatMessageThread(order.messageThread);
+    }
     if (!order.id) {
       order.id = nextOrderId();
       order.createdAt = stamp;
@@ -500,6 +504,117 @@
     });
   }
 
+  function threadRole(message) {
+    return message && (message.role === "client" || message.role === "seller" || message.kind === "seller")
+      ? "client"
+      : "buyer";
+  }
+
+  function normalizeMessageThread(list) {
+    return (list || []).map(function (item, index) {
+      if (!item) return null;
+      if (typeof item === "string") {
+        const text = item.trim();
+        if (!text) return null;
+        return {
+          id: "mt_sheet_" + (index + 1),
+          role: "buyer",
+          createdAt: "",
+          text: text,
+          files: []
+        };
+      }
+      return {
+        id: item.id || ("mt_" + (index + 1)),
+        role: threadRole(item),
+        createdAt: item.createdAt || "",
+        text: String(item.text || ""),
+        files: item.files || []
+      };
+    }).filter(Boolean);
+  }
+
+  function pairMessageThread(list) {
+    const pairs = [];
+    let pendingBuyer = null;
+    normalizeMessageThread(list).forEach(function (message) {
+      if (threadRole(message) === "buyer") {
+        if (pendingBuyer) pairs.push({ buyer: pendingBuyer, client: null });
+        pendingBuyer = message;
+        return;
+      }
+      pairs.push({ buyer: pendingBuyer, client: message });
+      pendingBuyer = null;
+    });
+    if (pendingBuyer) pairs.push({ buyer: pendingBuyer, client: null });
+    return pairs;
+  }
+
+  function formatMessageThread(list) {
+    const pairs = pairMessageThread(list);
+    if (!pairs.length) return "";
+    return pairs.map(function (pair, index) {
+      const number = index + 1;
+      const lines = [];
+      function line(label, message) {
+        if (!message) return;
+        const text = String(message.text || "").trim();
+        const files = (message.files || []).map(function (file) { return file && file.name; }).filter(Boolean).join(", ");
+        if (!text && !files) return;
+        lines.push(label + " " + number + ": " + (text || "(no text)") + (files ? " | Files: " + files : ""));
+      }
+      line("Buyer Message", pair.buyer);
+      line("Client Reply", pair.client);
+      return lines.join("\n");
+    }).filter(Boolean).join("\n");
+  }
+
+  function parseMessageThreadText(text) {
+    const rounds = [];
+    String(text || "").replace(/\r/g, "").split(/\n+/).forEach(function (line) {
+      const raw = String(line || "").trim();
+      if (!raw) return;
+      const buyer = raw.match(/^Buyer Message\s+(\d+)\s*:\s*(.*)$/i);
+      const client = raw.match(/^Client Reply\s+(\d+)\s*:\s*(.*)$/i);
+      if (buyer) {
+        rounds.push({
+          id: "mt_sheet_b_" + buyer[1],
+          role: "buyer",
+          createdAt: "",
+          text: String(buyer[2] || "").replace(/\s*\|\s*Files:.*$/, "").trim(),
+          files: []
+        });
+        return;
+      }
+      if (client) {
+        rounds.push({
+          id: "mt_sheet_c_" + client[1],
+          role: "client",
+          createdAt: "",
+          text: String(client[2] || "").replace(/\s*\|\s*Files:.*$/, "").trim(),
+          files: []
+        });
+        return;
+      }
+    });
+    if (rounds.length) return rounds;
+    const plain = String(text || "").trim();
+    if (!plain) return [];
+    return [{
+      id: "mt_sheet_plain",
+      role: "buyer",
+      createdAt: "",
+      text: plain,
+      files: []
+    }];
+  }
+
+  function messageThreadOf(order) {
+    const fromList = normalizeMessageThread(order && order.messageThread);
+    if (fromList.length) return fromList;
+    return parseMessageThreadText(order && order.messageText);
+  }
+
   function importOrders(incoming) {
     const orders = getOrders();
     (incoming || []).forEach(function (order) {
@@ -507,6 +622,10 @@
       const account = accountForName(order.accountName || order.tabName || "");
       if (account) order.accountId = account.id;
       order.revisions = expandSheetRevisions(order);
+      order.messageThread = messageThreadOf(order);
+      if (!String(order.messageText || "").trim()) {
+        order.messageText = formatMessageThread(order.messageThread);
+      }
       order.status = computeStatus(order);
       const index = orders.findIndex(function (item) { return item.id === order.id; });
       if (index === -1) {
@@ -527,6 +646,17 @@
       });
       if (previous.revisions && previous.revisions.length && (!incomingRevisions.length || (looksLikeSheetStub && previousIsLocal))) {
         order.revisions = previous.revisions;
+      }
+      const incomingThread = order.messageThread || [];
+      const threadLooksSheet = incomingThread.length && incomingThread.every(function (item) {
+        return String(item.id || "").indexOf("mt_sheet") === 0;
+      });
+      const previousThreadLocal = (previous.messageThread || []).some(function (item) {
+        return String(item.id || "").indexOf("mt_sheet") !== 0;
+      });
+      if (previous.messageThread && previous.messageThread.length && (!incomingThread.length || (threadLooksSheet && previousThreadLocal))) {
+        order.messageThread = previous.messageThread;
+        order.messageText = formatMessageThread(previous.messageThread) || previous.messageText || order.messageText;
       }
       if (previous.accountId && !order.accountId) order.accountId = previous.accountId;
       order.requirementFiles = mergeRequirementFiles(previous.requirementFiles, order.requirementFiles);
@@ -621,6 +751,10 @@
     currentRevision: currentRevision,
     normalizeRevisions: normalizeRevisions,
     normalizeRevisions: normalizeRevisions,
+    normalizeMessageThread: normalizeMessageThread,
+    formatMessageThread: formatMessageThread,
+    parseMessageThreadText: parseMessageThreadText,
+    messageThreadOf: messageThreadOf,
     saveFileBlobs: saveFileBlobs,
     saveFileBlobs: saveFileBlobs,
     getFile: getFile,
@@ -632,6 +766,10 @@
   global.OwlisticStore.computeStatus = computeStatus;
   global.OwlisticStore.computeStatus = computeStatus;
   global.OwlisticStore.normalizeRevisions = normalizeRevisions;
+  global.OwlisticStore.normalizeMessageThread = normalizeMessageThread;
+  global.OwlisticStore.formatMessageThread = formatMessageThread;
+  global.OwlisticStore.parseMessageThreadText = parseMessageThreadText;
+  global.OwlisticStore.messageThreadOf = messageThreadOf;
   global.OwlisticStore.orderTypeLabel = orderTypeLabel;
   global.OwlisticStore.statusLabel = statusLabel;
   global.OwlisticStore.formatDate = formatDate;

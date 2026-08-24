@@ -62,6 +62,12 @@
     return '<div class="records-clip" title="' + escapeHtml(text) + '">' + escapeHtml(text) + "</div>";
   }
 
+  function clipThread(value) {
+    const text = String(value == null ? "" : value).replace(/\r/g, "").trim();
+    if (!text) return '<span class="muted">—</span>';
+    return '<div class="records-clip records-clip-thread" title="' + escapeHtml(text) + '">' + escapeHtml(text) + "</div>";
+  }
+
   function requirementFileList(files) {
     if (!files) return [];
     if (typeof files === "string") {
@@ -279,7 +285,7 @@
         '<td class="records-value">' + formatValue(order.orderValue) + "</td>" +
         "<td>" + badge(order.paymentStatus || "in-progress", order.paymentStatus === "paid" ? "Paid" : order.paymentStatus === "unpaid" ? "Unpaid" : "—") + "</td>" +
         "<td>" + escapeHtml(store.orderTypeLabel(order)) + "</td>" +
-        '<td class="records-clip-cell">' + clipText(order.messageText) + "</td>" +
+        '<td class="records-clip-cell">' + clipThread(order.messageText) + "</td>" +
         '<td class="records-clip-cell">' + clipText(order.directRequirements) + "</td>" +
         '<td class="records-clip-cell">' + filesCell(order.requirementFiles) + "</td>" +
         "<td>" + escapeHtml(order.fiverrId || "—") + "</td>" +

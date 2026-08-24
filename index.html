@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=bizname1" />
+  <link rel="stylesheet" href="css/styles.css?v=msgthread1" />
 </head>
 <body>
   <nav class="app-nav">
@@ -301,7 +301,7 @@
       </div>
 
       <!-- 7. Message Text -->
-      <div class="form-row form-row-tall">
+      <div class="form-row form-row-message">
         <div class="row-identity">
           <span class="row-number tone-sage">7</span>
           <div class="row-icon tone-sage" aria-hidden="true">
@@ -312,11 +312,13 @@
             </svg>
           </div>
           <div class="row-copy">
-            <label for="messageText">Message Text</label>
+            <label id="message-text-label">Message Text</label>
+            <span class="helper">Buyer Message 1, Client Reply 1, then 2, and so on. Each reply saves to Google Sheet.</span>
           </div>
         </div>
         <div class="row-control">
-          <textarea class="area-input" id="messageText" name="messageText" rows="3"></textarea>
+          <div class="message-thread" id="message-thread" aria-labelledby="message-text-label"></div>
+          <textarea class="area-input" id="messageText" name="messageText" rows="3" hidden></textarea>
         </div>
       </div>
 
@@ -567,9 +569,9 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="js/storage.js?v=revseq1"></script>
+  <script src="js/storage.js?v=msgthread1"></script>
   <script src="js/sheet-sync.js?v=names1"></script>
   <script src="js/auth.js?v=names1"></script>
-  <script src="js/form.js?v=bizname1"></script>
+  <script src="js/form.js?v=msgthread1"></script>
 </body>
 </html>

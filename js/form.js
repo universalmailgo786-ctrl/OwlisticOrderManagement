@@ -21,6 +21,7 @@
   const fileName = document.getElementById("upload-filename");
   const requirementList = document.getElementById("requirement-file-list");
   const revisionsList = document.getElementById("revisions-list");
+  const messageThreadEl = document.getElementById("message-thread");
   const readyToggle = document.getElementById("ready-to-approve");
   const boardStatusSelect = document.getElementById("board-status");
   const submitBtn = document.getElementById("submit-form");
@@ -29,6 +30,7 @@
   let lastFocus = null;
   let requirementFiles = [];
   let revisions = [];
+  let threadMessages = [];
   let persistTimer = null;
   let isSubmitting = false;
 
@@ -102,6 +104,7 @@
       name ||
       whatsapp ||
       messageText ||
+      threadHasContent() ||
       orderValue ||
       requirementFiles.length ||
       revisions.length
@@ -582,6 +585,252 @@
     if (pruned) maybePersist();
   }
 
+  function emptyMessageThread() {
+    return [{
+      id: store.uid("mt"),
+      role: "buyer",
+      createdAt: store.nowIso(),
+      text: "",
+      files: []
+    }];
+  }
+
+  function threadHasContent() {
+    return threadMessages.some(function (message) {
+      return String(message.text || "").trim() || (message.files && message.files.length);
+    });
+  }
+
+  function threadMessageRole(message) {
+    return message && (message.role === "client" || message.role === "seller" || message.kind === "seller")
+      ? "client"
+      : "buyer";
+  }
+
+  function threadFilled(message) {
+    if (!message) return false;
+    return Boolean(String(message.text || "").trim() || (message.files && message.files.length));
+  }
+
+  function pairThread(list) {
+    const pairs = [];
+    let pendingBuyer = null;
+    (list || []).forEach(function (message) {
+      if (threadMessageRole(message) === "buyer") {
+        if (pendingBuyer) pairs.push({ buyer: pendingBuyer, client: null });
+        pendingBuyer = message;
+        return;
+      }
+      pairs.push({ buyer: pendingBuyer, client: message });
+      pendingBuyer = null;
+    });
+    if (pendingBuyer) pairs.push({ buyer: pendingBuyer, client: null });
+    return pairs;
+  }
+
+  function lastThreadPair() {
+    const pairs = pairThread(threadMessages);
+    return pairs.length ? pairs[pairs.length - 1] : null;
+  }
+
+  function threadPairNumber() {
+    return pairThread(threadMessages).length || 1;
+  }
+
+  function canAddThread(role) {
+    const last = lastThreadPair();
+    if (role === "buyer") {
+      if (!last) return true;
+      if (!threadFilled(last.buyer)) return false;
+      if (!threadFilled(last.client)) return false;
+      return true;
+    }
+    if (!last || !threadFilled(last.buyer)) return false;
+    if (last.client && !threadFilled(last.client)) return false;
+    return !last.client;
+  }
+
+  function threadHint(role) {
+    const last = lastThreadPair();
+    const number = threadPairNumber();
+    if (role === "buyer") {
+      if (last && !threadFilled(last.buyer)) return "Fill Buyer Message " + number + " before adding another";
+      if (last && !threadFilled(last.client)) return "Add Client Reply " + number + " first";
+      return "Fill the current buyer message before adding another";
+    }
+    if (!last || !threadFilled(last.buyer)) return "Fill Buyer Message " + number + " first";
+    return "Fill Buyer Message " + number + " first";
+  }
+
+  function addThreadMessage(role) {
+    threadMessages.push({
+      id: store.uid("mt"),
+      role: role,
+      createdAt: store.nowIso(),
+      text: "",
+      files: []
+    });
+  }
+
+  function findThreadMessage(id) {
+    return threadMessages.find(function (item) { return item.id === id; }) || null;
+  }
+
+  function removeThreadMessage(messageId) {
+    const index = threadMessages.findIndex(function (item) { return item.id === messageId; });
+    if (index === -1) return;
+    if (threadMessageRole(threadMessages[index]) === "buyer") {
+      const removeCount = threadMessages[index + 1] && threadMessageRole(threadMessages[index + 1]) === "client" ? 2 : 1;
+      threadMessages.splice(index, removeCount);
+    } else {
+      threadMessages.splice(index, 1);
+    }
+    if (!threadMessages.length) threadMessages = emptyMessageThread();
+  }
+
+  function removeThreadPair(pairIndex) {
+    const pairs = pairThread(threadMessages);
+    const pair = pairs[pairIndex];
+    if (!pair) return;
+    const ids = {};
+    if (pair.buyer) ids[pair.buyer.id] = true;
+    if (pair.client) ids[pair.client.id] = true;
+    threadMessages = threadMessages.filter(function (item) { return !ids[item.id]; });
+    if (!threadMessages.length) threadMessages = emptyMessageThread();
+  }
+
+  function threadBubbleHtml(message, role, number) {
+    const label = role === "client" ? "Client Reply " + number : "Buyer Message " + number;
+    const placeholder = role === "client" ? "Write client reply " + number : "Write buyer message " + number;
+    const pill = role === "client" ? "Client" : "Buyer";
+    const cls = role === "client" ? "seller" : "buyer";
+    return '<div class="chat-bubble is-' + cls + '" data-mt-card="' + message.id + '">' +
+      '<div class="chat-bubble-head">' +
+        '<div class="chat-bubble-heading">' +
+          '<span class="chat-pill">' + pill + "</span>" +
+          '<p class="chat-label">' + label + "</p>" +
+        "</div>" +
+        '<div class="chat-card-actions">' +
+          '<button type="button" class="chat-card-btn is-edit" data-mt-edit="' + message.id + '">Edit</button>' +
+          '<button type="button" class="chat-card-btn is-delete" data-mt-delete="' + message.id + '">Delete</button>' +
+        "</div>" +
+      "</div>" +
+      '<p class="chat-time">' + store.formatDateTime(message.createdAt) + "</p>" +
+      '<textarea data-mt-text="' + message.id + '" placeholder="' + placeholder + '">' + escapeHtml(message.text || "") + "</textarea>" +
+      '<label class="chat-attach">' +
+        '<input type="file" multiple data-mt-files="' + message.id + '" />' +
+        "<span>Attach files</span>" +
+      "</label>" +
+      '<ul class="file-list" data-mt-file-list="' + message.id + '"></ul>' +
+    "</div>";
+  }
+
+  function threadEmptyHtml(role, number) {
+    const canAdd = canAddThread(role);
+    if (role === "client") {
+      return '<div class="chat-wait is-seller' + (canAdd ? " is-ready" : "") + '">' +
+        '<span class="chat-pill">Client</span>' +
+        '<p class="chat-label">Client Reply ' + number + "</p>" +
+        '<p class="chat-wait-copy" data-mt-wait-copy>' + (canAdd ? "Buyer Message " + number + " is ready. Add Client Reply " + number + "." : "Fill Buyer Message " + number + " first.") + "</p>" +
+        '<button type="button" class="row-action-btn" data-mt-add="client"' + (canAdd ? "" : " disabled") + ">" +
+          "+ Add Client Reply " + number +
+        "</button>" +
+      "</div>";
+    }
+    return '<div class="chat-wait is-buyer">' +
+      '<span class="chat-pill">Buyer</span>' +
+      '<p class="chat-label">Buyer Message ' + number + "</p>" +
+      '<p class="chat-wait-copy">This row starts with the buyer.</p>' +
+    "</div>";
+  }
+
+  function threadSlotHtml(message, role, number) {
+    return '<div class="chat-slot is-' + (role === "client" ? "seller" : "buyer") + '">' +
+      (message ? threadBubbleHtml(message, role, number) : threadEmptyHtml(role, number)) +
+    "</div>";
+  }
+
+  function syncMessageTextField() {
+    const field = document.getElementById("messageText");
+    if (!field) return;
+    field.value = (store.formatMessageThread ? store.formatMessageThread(threadMessages) : "") || "";
+  }
+
+  function renderMessageThread() {
+    if (!messageThreadEl) return;
+    if (!threadMessages.length) threadMessages = emptyMessageThread();
+    const pairs = pairThread(threadMessages);
+    const nextNumber = pairs.length + 1;
+    const allowed = canAddThread("buyer");
+    messageThreadEl.innerHTML =
+      '<div class="chat-thread">' +
+        '<div class="chat-legend" aria-hidden="true"><span></span><span>Buyer</span><span>Client Reply</span></div>' +
+        pairs.map(function (pair, index) {
+          const number = index + 1;
+          return '<div class="chat-pair" data-mt-pair="' + index + '">' +
+            '<div class="chat-step-col">' +
+              '<span class="chat-step" aria-hidden="true">' + number + "</span>" +
+              '<button type="button" class="chat-row-delete" data-mt-delete-row="' + index + '" title="Delete row ' + number + '">Delete row</button>' +
+            "</div>" +
+            threadSlotHtml(pair.buyer, "buyer", number) +
+            threadSlotHtml(pair.client, "client", number) +
+          "</div>";
+        }).join("") +
+        '<div class="chat-next">' +
+          '<button type="button" class="next-row-btn" data-mt-next' + (allowed ? "" : " disabled") + ' title="' + escapeHtml(allowed ? "Add Buyer Message " + nextNumber : threadHint("buyer")) + '">' +
+            "+ Add Buyer Message " + nextNumber +
+          "</button>" +
+          "<p>" + (allowed
+            ? "This starts row " + nextNumber + ": Buyer Message " + nextNumber + " on the left, Client Reply " + nextNumber + " on the right."
+            : escapeHtml(threadHint("buyer"))) + "</p>" +
+        "</div>" +
+      "</div>";
+    threadMessages.forEach(function (message) {
+      const list = messageThreadEl.querySelector('[data-mt-file-list="' + message.id + '"]');
+      if (!list) return;
+      renderFileList(list, message.files || [], function () {
+        renderMessageThread();
+        maybePersist();
+      });
+    });
+    syncMessageTextField();
+  }
+
+  function updateThreadActionButtons() {
+    if (!messageThreadEl) return;
+    const clientBtn = messageThreadEl.querySelector('[data-mt-add="client"]');
+    if (clientBtn) {
+      const allowed = canAddThread("client");
+      const number = threadPairNumber();
+      clientBtn.disabled = !allowed;
+      clientBtn.title = allowed ? "Add Client Reply " + number : threadHint("client");
+      const wait = clientBtn.closest(".chat-wait");
+      if (wait) {
+        wait.classList.toggle("is-ready", allowed);
+        const copy = wait.querySelector("[data-mt-wait-copy]");
+        if (copy) {
+          copy.textContent = allowed
+            ? "Buyer Message " + number + " is ready. Add Client Reply " + number + "."
+            : "Fill Buyer Message " + number + " first.";
+        }
+      }
+    }
+    const nextBtn = messageThreadEl.querySelector("[data-mt-next]");
+    if (nextBtn) {
+      const allowed = canAddThread("buyer");
+      const nextNumber = threadPairNumber() + 1;
+      nextBtn.disabled = !allowed;
+      nextBtn.title = allowed ? "Add Buyer Message " + nextNumber : threadHint("buyer");
+      const hint = nextBtn.parentNode && nextBtn.parentNode.querySelector("p");
+      if (hint) {
+        hint.textContent = allowed
+          ? "This starts row " + nextNumber + ": Buyer Message " + nextNumber + " on the left, Client Reply " + nextNumber + " on the right."
+          : threadHint("buyer");
+      }
+    }
+    syncMessageTextField();
+  }
+
   function isAdmin() {
     return auth.isSuperAdmin();
   }
@@ -726,6 +975,7 @@
     document.getElementById("order-custom").checked = false;
     document.getElementById("order-direct").checked = false;
     document.getElementById("messageText").value = "";
+    threadMessages = emptyMessageThread();
     document.getElementById("directRequirements").value = "";
     document.getElementById("reviewText").value = "";
     document.getElementById("business-name").value = "";
@@ -739,6 +989,7 @@
     submitBtn.textContent = "Save to Google Sheet";
     if (deleteOrderBtn) deleteOrderBtn.hidden = true;
     refreshRequirementFiles();
+    renderMessageThread();
     renderRevisions();
     updateStatusUI();
   }
@@ -771,6 +1022,7 @@
   function collectOrder() {
     const account = lockedAccount();
     if (account) accountSelect.value = account.id;
+    syncMessageTextField();
     return {
       id: document.getElementById("order-id").value || undefined,
       accountId: account && account.id ? account.id : "",
@@ -785,7 +1037,8 @@
       searchKeyword: document.getElementById("searchKeyword").value.trim(),
       orderTypeCustom: document.getElementById("order-custom").checked,
       orderTypeDirect: document.getElementById("order-direct").checked,
-      messageText: document.getElementById("messageText").value,
+      messageThread: threadMessages.slice(),
+      messageText: (store.formatMessageThread ? store.formatMessageThread(threadMessages) : "") || document.getElementById("messageText").value,
       directRequirements: document.getElementById("directRequirements").value,
       requirementFiles: requirementFiles,
       fiverrId: document.getElementById("fiverrId").value.trim(),
@@ -869,6 +1122,8 @@
     document.getElementById("searchKeyword").value = order.searchKeyword || "";
     document.getElementById("order-custom").checked = Boolean(order.orderTypeCustom);
     document.getElementById("order-direct").checked = !order.orderTypeCustom && Boolean(order.orderTypeDirect);
+    threadMessages = store.messageThreadOf ? store.messageThreadOf(order) : (order.messageThread || []).slice();
+    if (!threadMessages.length) threadMessages = emptyMessageThread();
     document.getElementById("messageText").value = order.messageText || "";
     document.getElementById("directRequirements").value = order.directRequirements || "";
     document.getElementById("fiverrId").value = order.fiverrId || "";
@@ -883,6 +1138,7 @@
     if (deleteOrderBtn) deleteOrderBtn.hidden = false;
     editMeta.textContent = "Editing " + order.id + " · Created " + store.formatDateTime(order.createdAt) + " · Last updated " + store.formatDateTime(order.updatedAt);
     refreshRequirementFiles();
+    renderMessageThread();
     renderRevisions();
     updateStatusUI();
   }
@@ -890,6 +1146,8 @@
   function bootForm() {
     populateAccounts();
     refreshRequirementFiles();
+    if (!threadMessages.length) threadMessages = emptyMessageThread();
+    renderMessageThread();
     renderRevisions();
     updateStatusUI();
 
@@ -985,6 +1243,77 @@
     fileInput.files = transfer.files;
     refreshRequirementFiles();
   });
+
+  if (messageThreadEl) {
+    messageThreadEl.addEventListener("click", function (event) {
+      const editBtn = event.target.closest("[data-mt-edit]");
+      if (editBtn) {
+        const field = messageThreadEl.querySelector('[data-mt-text="' + editBtn.getAttribute("data-mt-edit") + '"]');
+        const card = event.target.closest("[data-mt-card]");
+        messageThreadEl.querySelectorAll(".chat-bubble.is-editing").forEach(function (el) {
+          el.classList.remove("is-editing");
+        });
+        if (card) card.classList.add("is-editing");
+        if (field) {
+          field.focus();
+          field.setSelectionRange(field.value.length, field.value.length);
+        }
+        return;
+      }
+
+      const deleteRowBtn = event.target.closest("[data-mt-delete-row]");
+      if (deleteRowBtn) {
+        removeThreadPair(Number(deleteRowBtn.getAttribute("data-mt-delete-row")));
+        renderMessageThread();
+        maybePersist();
+        showToast("Row deleted");
+        return;
+      }
+
+      const deleteMessageBtn = event.target.closest("[data-mt-delete]");
+      if (deleteMessageBtn) {
+        removeThreadMessage(deleteMessageBtn.getAttribute("data-mt-delete"));
+        renderMessageThread();
+        maybePersist();
+        showToast("Message deleted");
+        return;
+      }
+
+      const nextRow = event.target.closest("[data-mt-next]");
+      const addBtn = nextRow || event.target.closest("[data-mt-add]");
+      if (!addBtn) return;
+      const role = nextRow ? "buyer" : addBtn.getAttribute("data-mt-add");
+      if (!canAddThread(role)) {
+        showToast(threadHint(role));
+        return;
+      }
+      addThreadMessage(role);
+      renderMessageThread();
+      maybePersist();
+    });
+
+    messageThreadEl.addEventListener("change", function (event) {
+      const filesInput = event.target.closest("[data-mt-files]");
+      if (!filesInput || !filesInput.files || !filesInput.files.length) return;
+      const message = findThreadMessage(filesInput.getAttribute("data-mt-files"));
+      if (!message) return;
+      store.saveFileBlobs(filesInput.files).then(function (saved) {
+        message.files = (message.files || []).concat(saved);
+        filesInput.value = "";
+        renderMessageThread();
+        maybePersist();
+      });
+    });
+
+    messageThreadEl.addEventListener("input", function (event) {
+      const field = event.target.closest("[data-mt-text]");
+      if (!field) return;
+      const message = findThreadMessage(field.getAttribute("data-mt-text"));
+      if (message) message.text = field.value;
+      updateThreadActionButtons();
+      maybePersist();
+    });
+  }
 
   document.getElementById("add-revision").addEventListener("click", function () {
     if (!canAddNextRevision()) {
