@@ -2264,9 +2264,12 @@ body.modal-open {
   font-family: inherit;
   text-align: left;
 }
-  cursor: pointer;
-  font-family: inherit;
-  text-align: left;
+
+.records-file-missing {
+  color: #9a4a32;
+  font-size: 12px;
+  font-weight: 600;
+  word-break: break-word;
 }
 
 .records-message-cell {

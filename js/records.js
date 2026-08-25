@@ -131,7 +131,7 @@
           '<button type="button" class="records-file-link" data-download-file-id="' + escapeHtml(file.id) + '" data-file-name="' + name + '">' + name + "</button>" +
           "</div>";
       }
-      return '<div class="records-file-card"><span class="records-file-name">' + name + "</span></div>";
+      return '<div class="records-file-card"><span class="records-file-missing" title="This file was not uploaded to Google Drive. Open the order and re-attach it, then click Save.">' + name + " (not on Drive)</span></div>";
     }).join("") + "</div>";
   }
 

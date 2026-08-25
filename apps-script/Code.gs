@@ -347,6 +347,12 @@ function rememberDriveError_(message) {
   } catch (err) {}
 }
 
+function clearDriveError_() {
+  try {
+    PropertiesService.getScriptProperties().deleteProperty("driveLastError");
+  } catch (err) {}
+}
+
 function uploadKey_(id) {
   return "up_" + String(id || "").replace(/[^A-Za-z0-9_\-]/g, "").slice(0, 80);
 }
@@ -508,6 +514,7 @@ function saveUploads_(orderId, uploads) {
       var blob = Utilities.newBlob(bytes, item.mimeType || "application/octet-stream", driveName);
       var file = createDriveFile_(folder, blob);
       sharePublic_(file);
+      clearDriveError_();
       saved.push(savedFileInfo_(originalName, file));
     } catch (err2) {
       rememberDriveError_("Drive upload failed: " + err2);

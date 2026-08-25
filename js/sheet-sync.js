@@ -144,13 +144,14 @@
     if (!blob || !/^image\/(png|jpeg|jpg|webp|bmp)$/i.test(blob.type || "")) {
       return Promise.resolve(blob);
     }
+    const large = (blob.size || 0) > 2 * 1024 * 1024;
     if ((blob.size || 0) <= 1.2 * 1024 * 1024) return Promise.resolve(blob);
     return new Promise(function (resolve) {
       const url = URL.createObjectURL(blob);
       const img = new Image();
       img.onload = function () {
         try {
-          const max = 1600;
+          const max = large ? 1280 : 1600;
           let width = img.naturalWidth || img.width;
           let height = img.naturalHeight || img.height;
           const scale = Math.min(1, max / Math.max(width, height));
@@ -164,7 +165,7 @@
             URL.revokeObjectURL(url);
             if (out && out.size && out.size < blob.size) resolve(out);
             else resolve(blob);
-          }, "image/jpeg", 0.84);
+          }, "image/jpeg", large ? 0.74 : 0.84);
         } catch (err) {
           URL.revokeObjectURL(url);
           resolve(blob);
@@ -188,12 +189,12 @@
   }
 
   function collectUploads(files, options) {
-    const force = options && options.forceUploads;
     const skippedLarge = [];
     const pending = (files || []).filter(function (file) {
-      if (!file || file.url || !file.id) return false;
-      if (inFlightUploads[file.id]) return false;
-      if (!force && sentFileIds[file.id]) return false;
+      if (!file || file.url) return false;
+      if (!(file.id || file.pendingBlob)) return false;
+      const key = file.id || file.name;
+      if (inFlightUploads[key]) return false;
       return true;
     });
     return Promise.all(pending.map(function (file) {
@@ -585,7 +586,7 @@
   }
 
   function waitForUpload(uploadId) {
-    const timeout = 50000;
+    const timeout = 90000;
     const started = Date.now();
     function attempt() {
       const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
@@ -616,22 +617,33 @@
     return delay(400).then(attempt);
   }
 
-  function uploadFile(file, orderId) {
-    if (!file || !file.id) {
-      return Promise.resolve({ status: "error", error: "Missing file." });
-    }
-    if (file.url) {
-      return Promise.resolve({ status: "ok", url: file.url, name: file.name, id: file.driveId || "" });
-    }
-    if (!isConfigured()) {
-      return Promise.resolve({ status: "error", error: "Google Sheet is not connected." });
-    }
-    if (inFlightUploads[file.id]) return inFlightUploads[file.id];
-    const uploadId = file.id;
-    sentFileIds[file.id] = true;
-    const task = fileBlob(file).then(function (blob) {
-      if (!blob) throw new Error("The image was not kept in this browser.");
-      if ((blob.size || 0) > MAX_UPLOAD_BYTES) throw new Error("Image is larger than 20 MB.");
+  function stampUploadedFile(file, result) {
+    if (!file || !result || !result.url) return file;
+    file.url = result.url;
+    if (result.id) file.driveId = result.id;
+    if (result.previewUrl) file.previewUrl = result.previewUrl;
+    if (file.id) sentFileIds[file.id] = true;
+    return file;
+  }
+
+  function filesNeedingDrive(order) {
+    return orderUploadFiles(order).filter(function (file) {
+      return file && !file.url && (file.id || file.pendingBlob);
+    });
+  }
+
+  function filesMissingDrive(order) {
+    return orderUploadFiles(order).filter(function (file) {
+      return file && file.name && !file.url;
+    });
+  }
+
+  function uploadFileAttempt(file, orderId) {
+    const uploadId = file.id || ("up_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8));
+    if (!file.id) file.id = uploadId;
+    return fileBlob(file).then(function (blob) {
+      if (!blob) throw new Error("This file is not in this browser anymore. Re-attach it.");
+      if ((blob.size || 0) > MAX_UPLOAD_BYTES) throw new Error("File is larger than 20 MB.");
       return compressImageBlob(blob).then(function (ready) {
         return blobToBase64(ready).then(function (data) {
           return postPayload({
@@ -641,7 +653,7 @@
             name: file.name || "file",
             mimeType: (ready && ready.type) || file.type || blob.type || "application/octet-stream",
             data: data
-          }, 90000);
+          }, 120000);
         });
       });
     }).then(function (posted) {
@@ -651,18 +663,56 @@
       return waitForUpload(uploadId);
     }).then(function (result) {
       if (!result || result.status !== "ok" || !result.url) {
-        delete sentFileIds[file.id];
+        throw new Error((result && (result.error || result.driveLastError)) || "Drive upload timed out.");
       }
+      stampUploadedFile(file, result);
       return result;
-    }).catch(function (err) {
-      delete sentFileIds[file.id];
+    });
+  }
+
+  function uploadFile(file, orderId) {
+    if (!file) {
+      return Promise.resolve({ status: "error", error: "Missing file." });
+    }
+    if (file.url) {
+      return Promise.resolve({ status: "ok", url: file.url, name: file.name, id: file.driveId || "" });
+    }
+    if (!isConfigured()) {
+      return Promise.resolve({ status: "error", error: "Google Sheet is not connected." });
+    }
+    const key = file.id || file.name || "file";
+    if (inFlightUploads[key]) return inFlightUploads[key];
+    let attempt = 0;
+    function run() {
+      attempt += 1;
+      return uploadFileAttempt(file, orderId).catch(function (err) {
+        if (attempt >= 3) {
+          return { status: "error", error: (err && err.message) || "Drive upload failed." };
+        }
+        return delay(900 * attempt).then(run);
+      });
+    }
+    const task = run().then(function (result) {
+      delete inFlightUploads[key];
+      return result;
+    }, function (err) {
+      delete inFlightUploads[key];
       return { status: "error", error: (err && err.message) || "Drive upload failed." };
     });
-    inFlightUploads[file.id] = task.then(function (result) {
-      delete inFlightUploads[file.id];
-      return result;
-    });
-    return inFlightUploads[file.id];
+    inFlightUploads[key] = task;
+    return task;
+  }
+
+  function uploadOrderFiles(order) {
+    const pending = filesNeedingDrive(order);
+    return pending.reduce(function (chain, file) {
+      return chain.then(function (results) {
+        return uploadFile(file, order && order.id).then(function (result) {
+          results.push({ file: file, result: result });
+          return results;
+        });
+      });
+    }, Promise.resolve([]));
   }
 
   function fetchOrder(order) {
@@ -696,10 +746,11 @@
       return Promise.resolve({ skipped: true });
     }
     const tabName = tabNameOf(accountNameOf(order));
-    return collectUploads(orderUploadFiles(order), options || {}).then(function (collected) {
-      (collected.uploads || []).forEach(function (item) {
-        if (item.localId) sentFileIds[item.localId] = true;
-      });
+    return uploadOrderFiles(order).then(function (uploadResults) {
+      const missing = filesMissingDrive(order).map(function (file) { return file.name; });
+      const uploadedNames = (uploadResults || []).filter(function (item) {
+        return item && item.file && item.file.url;
+      }).map(function (item) { return item.file.name; });
       return postPayload({
         action: "upsert",
         orderId: order.id,
@@ -708,18 +759,15 @@
         businessName: order.businessName || "",
         clientName: order.clientName || "",
         row: toRow(order),
-        uploads: (collected.uploads || []).map(function (item) {
-          return {
-            name: item.name,
-            mimeType: item.mimeType,
-            data: item.data
-          };
-        })
+        uploads: []
       }).then(function (result) {
         result = result || { ok: true };
-        result.skippedLarge = collected.skippedLarge || [];
-        result.uploadedNames = (collected.uploads || []).map(function (item) { return item.name; }).filter(Boolean);
-        result.uploadedLocalIds = (collected.uploads || []).map(function (item) { return item.localId; }).filter(Boolean);
+        result.skippedLarge = [];
+        result.uploadedNames = uploadedNames;
+        result.uploadedLocalIds = (uploadResults || []).map(function (item) {
+          return item && item.file && item.file.id;
+        }).filter(Boolean);
+        result.missingDriveFiles = missing;
         return result;
       });
     });
@@ -821,6 +869,9 @@
     fetchOrder: fetchOrder,
     waitForDriveLinks: waitForDriveLinks,
     uploadFile: uploadFile,
+    uploadOrderFiles: uploadOrderFiles,
+    filesNeedingDrive: filesNeedingDrive,
+    filesMissingDrive: filesMissingDrive,
     fetchOrders: fetchOrders,
     findDuplicateOrder: findDuplicateOrder,
     confirmSheetWrite: confirmSheetWrite,
