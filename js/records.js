@@ -388,17 +388,28 @@
     }).join("");
   }
 
+  function applySheetOrders(result) {
+    if (!result || result.skipped) return;
+    const list = result.orders || [];
+    if (result.ok && typeof store.replaceOrders === "function") {
+      store.replaceOrders(list);
+      return;
+    }
+    if (list.length && typeof store.importOrders === "function") {
+      store.importOrders(list);
+    }
+  }
+
   function loadFromSheet() {
     if (!window.OwlisticSheet || typeof window.OwlisticSheet.fetchOrders !== "function") {
       render();
       return;
     }
     countEl.textContent = "Loading…";
+    body.innerHTML =
+      '<tr><td colspan="21"><div class="empty-state"><strong>Loading orders from Google Sheet</strong></div></td></tr>';
     window.OwlisticSheet.fetchOrders().then(function (result) {
-      if (result && result.orders && result.orders.length) {
-        const importFn = store.importOrders || store.importOrders;
-        if (typeof importFn === "function") importFn.call(store, result.orders);
-      }
+      applySheetOrders(result);
       renderAccountFilter();
       render();
       if (result && result.error && !auth.visibleOrders().length) {
@@ -408,6 +419,8 @@
             "<p>" + escapeHtml(result.error) + "</p>" +
           "</div></td></tr>";
       }
+    }).catch(function () {
+      render();
     });
   }
 

@@ -1056,7 +1056,7 @@
 
   function refreshFromSheetOrders(list, orderId) {
     if (!list || !list.length) return;
-    store.importOrders(list);
+    store.replaceOrders(list);
     const updated = store.getOrder(orderId);
     if (updated && updated.requirementFiles) {
       requirementFiles = updated.requirementFiles.slice();
@@ -1226,7 +1226,9 @@
 
   if (window.OwlisticSheet && typeof window.OwlisticSheet.fetchOrders === "function") {
     window.OwlisticSheet.fetchOrders().then(function (result) {
-      if (result && result.orders && result.orders.length) {
+      if (result && result.ok && typeof store.replaceOrders === "function") {
+        store.replaceOrders(result.orders || []);
+      } else if (result && result.orders && result.orders.length) {
         store.importOrders(result.orders);
       }
       bootForm();

@@ -296,8 +296,10 @@
       return fetchOrders().then(function (result) {
         const sheetOrders = (result && result.orders) || [];
         const stillOnSheet = sheetOrders.some(function (item) { return item.id === id; });
-        if (store && typeof (store.importOrders || store.importOrders) === "function") {
-          (store.importOrders || store.importOrders)(sheetOrders.filter(function (item) { return item.id !== id; }));
+        if (store && typeof store.replaceOrders === "function") {
+          store.replaceOrders(sheetOrders.filter(function (item) { return item.id !== id; }));
+        } else if (store && typeof store.importOrders === "function") {
+          store.importOrders(sheetOrders.filter(function (item) { return item.id !== id; }));
         }
         if (store && typeof store.deleteOrder === "function") store.deleteOrder(id);
         return {
@@ -475,8 +477,9 @@
       "action=listOrders" +
       "&role=" + encodeURIComponent((session && session.role) || "") +
       "&userAccount=" + encodeURIComponent((session && session.account) || "") +
-      "&username=" + encodeURIComponent((session && session.username) || "");
-    return fetch(url, { method: "GET", credentials: "omit" }).then(function (response) {
+      "&username=" + encodeURIComponent((session && session.username) || "") +
+      "&_=" + Date.now();
+    return fetch(url, { method: "GET", credentials: "omit", cache: "no-store" }).then(function (response) {
       return response.text();
     }).then(function (text) {
       const data = parseJson(text);

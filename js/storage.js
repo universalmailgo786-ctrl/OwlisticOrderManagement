@@ -615,66 +615,83 @@
     return parseMessageThreadText(order && order.messageText);
   }
 
+  function hydrateImportedOrder(order, previous) {
+    const account = accountForName(order.accountName || order.tabName || "");
+    if (account) order.accountId = account.id;
+    order.revisions = expandSheetRevisions(order);
+    order.messageThread = messageThreadOf(order);
+    if (!String(order.messageText || "").trim()) {
+      order.messageText = formatMessageThread(order.messageThread);
+    }
+    order.status = computeStatus(order);
+    if (!previous) {
+      order.boardStatus = parseBoardStatus(order.boardStatus) ||
+        parseBoardStatus(order.overallStatus) ||
+        "";
+      order.status = computeStatus(order);
+      return order;
+    }
+    const incomingRevisions = order.revisions || [];
+    const looksLikeSheetStub = incomingRevisions.length && incomingRevisions.every(function (item) {
+      return String(item.id || "").indexOf("rev_sheet") === 0;
+    });
+    const previousIsLocal = (previous.revisions || []).some(function (item) {
+      return String(item.id || "").indexOf("rev_sheet") !== 0;
+    });
+    if (previous.revisions && previous.revisions.length && (!incomingRevisions.length || (looksLikeSheetStub && previousIsLocal))) {
+      order.revisions = previous.revisions;
+    }
+    const incomingThread = order.messageThread || [];
+    const threadLooksSheet = incomingThread.length && incomingThread.every(function (item) {
+      return String(item.id || "").indexOf("mt_sheet") === 0;
+    });
+    const previousThreadLocal = (previous.messageThread || []).some(function (item) {
+      return String(item.id || "").indexOf("mt_sheet") !== 0;
+    });
+    if (previous.messageThread && previous.messageThread.length && (!incomingThread.length || (threadLooksSheet && previousThreadLocal))) {
+      order.messageThread = previous.messageThread;
+      order.messageText = formatMessageThread(previous.messageThread) || previous.messageText || order.messageText;
+    }
+    if (previous.accountId && !order.accountId) order.accountId = previous.accountId;
+    order.requirementFiles = mergeRequirementFiles(previous.requirementFiles, order.requirementFiles);
+    if (previous.createdAt && !order.createdAt) order.createdAt = previous.createdAt;
+    if (!String(order.businessName || "").trim() && previous.businessName) {
+      order.businessName = previous.businessName;
+    }
+    if (!String(order.clientName || "").trim() && previous.clientName) {
+      order.clientName = previous.clientName;
+    }
+    order.boardStatus = parseBoardStatus(order.boardStatus) ||
+      parseBoardStatus(order.overallStatus) ||
+      previous.boardStatus ||
+      "";
+    order.status = computeStatus(order);
+    return order;
+  }
+
   function importOrders(incoming) {
     const orders = getOrders();
     (incoming || []).forEach(function (order) {
       if (!order || !order.id) return;
-      const account = accountForName(order.accountName || order.tabName || "");
-      if (account) order.accountId = account.id;
-      order.revisions = expandSheetRevisions(order);
-      order.messageThread = messageThreadOf(order);
-      if (!String(order.messageText || "").trim()) {
-        order.messageText = formatMessageThread(order.messageThread);
-      }
-      order.status = computeStatus(order);
       const index = orders.findIndex(function (item) { return item.id === order.id; });
-      if (index === -1) {
-        order.boardStatus = parseBoardStatus(order.boardStatus) ||
-          parseBoardStatus(order.overallStatus) ||
-          "";
-        order.status = computeStatus(order);
-        orders.push(order);
-        return;
-      }
-      const previous = orders[index];
-      const incomingRevisions = order.revisions || [];
-      const looksLikeSheetStub = incomingRevisions.length && incomingRevisions.every(function (item) {
-        return String(item.id || "").indexOf("rev_sheet") === 0;
-      });
-      const previousIsLocal = (previous.revisions || []).some(function (item) {
-        return String(item.id || "").indexOf("rev_sheet") !== 0;
-      });
-      if (previous.revisions && previous.revisions.length && (!incomingRevisions.length || (looksLikeSheetStub && previousIsLocal))) {
-        order.revisions = previous.revisions;
-      }
-      const incomingThread = order.messageThread || [];
-      const threadLooksSheet = incomingThread.length && incomingThread.every(function (item) {
-        return String(item.id || "").indexOf("mt_sheet") === 0;
-      });
-      const previousThreadLocal = (previous.messageThread || []).some(function (item) {
-        return String(item.id || "").indexOf("mt_sheet") !== 0;
-      });
-      if (previous.messageThread && previous.messageThread.length && (!incomingThread.length || (threadLooksSheet && previousThreadLocal))) {
-        order.messageThread = previous.messageThread;
-        order.messageText = formatMessageThread(previous.messageThread) || previous.messageText || order.messageText;
-      }
-      if (previous.accountId && !order.accountId) order.accountId = previous.accountId;
-      order.requirementFiles = mergeRequirementFiles(previous.requirementFiles, order.requirementFiles);
-      if (previous.createdAt && !order.createdAt) order.createdAt = previous.createdAt;
-      if (!String(order.businessName || "").trim() && previous.businessName) {
-        order.businessName = previous.businessName;
-      }
-      if (!String(order.clientName || "").trim() && previous.clientName) {
-        order.clientName = previous.clientName;
-      }
-      order.boardStatus = parseBoardStatus(order.boardStatus) ||
-        parseBoardStatus(order.overallStatus) ||
-        previous.boardStatus ||
-        "";
-      order.status = computeStatus(order);
-      orders[index] = order;
+      const previous = index === -1 ? null : orders[index];
+      const next = hydrateImportedOrder(order, previous);
+      if (index === -1) orders.push(next);
+      else orders[index] = next;
     });
     saveOrders(orders);
+    return getOrders();
+  }
+
+  function replaceOrders(incoming) {
+    const previousAll = getOrders();
+    const next = [];
+    (incoming || []).forEach(function (order) {
+      if (!order || !order.id) return;
+      const previous = previousAll.find(function (item) { return item.id === order.id; }) || null;
+      next.push(hydrateImportedOrder(order, previous));
+    });
+    saveOrders(next);
     return getOrders();
   }
 
@@ -733,6 +750,7 @@
     upsertOrder: upsertOrder,
     deleteOrder: deleteOrder,
     importOrders: importOrders,
+    replaceOrders: replaceOrders,
     parseBoardStatus: parseBoardStatus,
     boardStatusOf: boardStatusOf,
     boardStatusLabel: boardStatusLabel,
