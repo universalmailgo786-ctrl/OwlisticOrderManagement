@@ -1240,6 +1240,20 @@
     }
   }
 
+  function mergeDriveLinksInBackground(saved, syncResult) {
+    const sheet = window.OwlisticSheet;
+    const uploaded = (syncResult && syncResult.uploadedNames) || [];
+    if (!sheet || !uploaded.length) return;
+    const wait = typeof sheet.waitForDriveLinks === "function"
+      ? sheet.waitForDriveLinks(saved, uploaded, { localIds: (syncResult && syncResult.uploadedLocalIds) || [] })
+      : (typeof sheet.fetchOrder === "function" ? sheet.fetchOrder(saved) : Promise.resolve(null));
+    wait.then(function (remote) {
+      if (!remote || !remote.order) return;
+      const existing = store.getOrder(saved.id) || saved;
+      store.upsertOrder(mergeRemoteFileUrls(existing, remote.order));
+    }).catch(function () {});
+  }
+
   function writeOrderToSheet(saved) {
     const sheet = window.OwlisticSheet;
     if (!sheet || typeof sheet.sync !== "function") {
@@ -1271,54 +1285,28 @@
         showToast("Order " + saved.id + " saved locally. Connect Google Sheet to sync.");
         return { saved: saved, sheet: syncResult };
       }
-      const confirmPromise = typeof sheet.confirmSheetWrite === "function"
-        ? sheet.confirmSheetWrite(saved, { existedBefore: alreadyById })
-        : Promise.resolve({ ok: true, confirmed: true });
-      return confirmPromise.then(function (confirm) {
-        if (confirm && confirm.confirmed) {
-          const done = {
-            saved: saved,
-            sheet: syncResult,
-            confirmed: true,
-            duplicate: Boolean(confirm.duplicate)
-          };
-          if (typeof sheet.fetchOrder !== "function") {
-            warnMissingDriveFiles(syncResult, saved);
-            return done;
-          }
-          const uploaded = (syncResult && syncResult.uploadedNames) || [];
-          if (!uploaded.length) {
-            warnMissingDriveFiles(syncResult, saved);
-            return done;
-          }
-          const wait = typeof sheet.waitForDriveLinks === "function"
-            ? sheet.waitForDriveLinks(saved, uploaded, { localIds: syncResult.uploadedLocalIds || [] })
-            : sheet.fetchOrder(saved);
-          return wait.then(function (remote) {
-            if (remote && remote.order) {
-              const current = collectOrder();
-              current.id = saved.id || current.id;
-              const merged = mergeRemoteFileUrls(current, remote.order);
-              const stored = store.upsertOrder(merged);
-              applySavedOrder(stored);
-              if (stored.messageThread) threadMessages = stored.messageThread.slice();
-              if (stored.revisions) revisions = stored.revisions.slice();
-              renderMessageThread();
-              renderRevisions();
-              done.saved = stored;
-            }
-            warnMissingDriveFiles(syncResult, done.saved);
-            return done;
-          }).catch(function () {
-            warnMissingDriveFiles(syncResult, saved);
-            return done;
-          });
-        }
+      if (syncResult && syncResult.ok === false) {
         return { saved: saved, sheet: syncResult, confirmed: false, sheetFailed: true };
-      });
+      }
+      if (!pendingFiles.length && syncResult) {
+        syncResult.missingDriveFiles = [];
+      }
+      mergeDriveLinksInBackground(saved, syncResult);
+      return {
+        saved: saved,
+        sheet: syncResult,
+        confirmed: true,
+        duplicate: false
+      };
     }).catch(function () {
       showToast("Order " + saved.id + " saved locally, but Google Sheet sync failed");
       return { saved: saved, sheetFailed: true };
+    });
+  }
+
+  function filesStillUploading() {
+    return requirementFiles.some(function (file) {
+      return file && file.id && !file.url;
     });
   }
 
@@ -1329,14 +1317,16 @@
     const leftover = fileInput && fileInput.files && fileInput.files.length
       ? Array.from(fileInput.files)
       : [];
-    const ready = leftover.length ? ingestRequirementFiles(leftover) : ingestQueue;
+    const ready = leftover.length
+      ? ingestRequirementFiles(leftover)
+      : (filesStillUploading() ? ingestQueue : Promise.resolve());
     return ready.then(function () {
       if (!formHasFilledOrderData()) {
         return { empty: true };
       }
       const saved = store.upsertOrder(collectOrder());
-      applySavedOrder(saved);
       if (silent) {
+        applySavedOrder(saved);
         return { saved: saved, silent: true };
       }
       if (submitBtn) {
@@ -1380,14 +1370,6 @@
     return saved;
   }
 
-  function syncLinksInBackground() {
-    const sheet = window.OwlisticSheet;
-    if (!sheet || typeof sheet.sync !== "function") return;
-    const saved = persistLocalOrder();
-    if (!saved) return;
-    sheet.sync(saved, { skipUploads: true }).catch(function () {});
-  }
-
   function missingDriveMessage(names) {
     const list = (names || []).filter(Boolean);
     if (!list.length) return "";
@@ -1417,7 +1399,6 @@
         const ok = (results || []).filter(function (item) { return item && item.file && item.file.url; });
         if (ok.length) {
           persistLocalOrder();
-          syncLinksInBackground();
           refreshRequirementFiles();
           renderMessageThread();
           renderRevisions();
@@ -1456,7 +1437,6 @@
       const failed = results.filter(function (item) { return !item || !item.url; });
       if (ok.length) {
         persistLocalOrder();
-        syncLinksInBackground();
         refreshRequirementFiles();
         renderMessageThread();
         renderRevisions();
@@ -2094,7 +2074,13 @@
     window.clearTimeout(persistTimer);
     persistTimer = null;
     submitBtn.disabled = true;
-    submitBtn.textContent = "Uploading images to Drive…";
+    const sheet = window.OwlisticSheet;
+    const pendingNow = sheet && sheet.filesNeedingDrive
+      ? sheet.filesNeedingDrive(collectOrder())
+      : [];
+    submitBtn.textContent = (pendingNow.length || filesStillUploading())
+      ? "Uploading images to Drive…"
+      : "Saving to Google Sheet…";
     saveOrder(false).then(function (outcome) {
       if (!outcome || outcome.empty || (outcome.sheet && outcome.sheet.skipped)) {
         if (outcome && outcome.empty) {
@@ -2108,17 +2094,12 @@
         return;
       }
       if (outcome.confirmed) {
-        const missing = (outcome.sheet && outcome.sheet.missingDriveFiles) || [];
-        if (missing.length) {
-          warnMissingDriveFiles(outcome.sheet, outcome.saved);
-          return;
-        }
         goToDefaultPage();
         showToast("Order is filled in the Google Sheet.", 5000);
         return;
       }
       if (outcome.sheetFailed) {
-        showToast("Could not confirm this order in the Google Sheet. Check the sheet and try Save again.", 5000);
+        showToast("Could not save this order to the Google Sheet. Check the sheet and try Save again.", 5000);
       }
     }).catch(function () {
       showToast("Could not save this order");

@@ -679,6 +679,9 @@
   }
 
   function confirmSheetWrite(order, options) {
+    if (options && (options.existedBefore || options.skipConfirm)) {
+      return Promise.resolve({ ok: true, confirmed: true, skipped: true });
+    }
     const timeout = (options && options.timeout) || 8000;
     const started = Date.now();
     function attempt() {
@@ -1017,7 +1020,7 @@
     if (!order) {
       return Promise.resolve({ skipped: true });
     }
-    return enqueueOrderWrite(order.id, function () {
+    const run = function () {
       const latest = liveOrder(order) || order;
       const tabName = tabNameOf(accountNameOf(latest));
       const start = options && options.skipUploads ? Promise.resolve([]) : uploadOrderFiles(latest);
@@ -1047,7 +1050,9 @@
           return result;
         });
       });
-    });
+    };
+    if (options && options.bypassQueue) return run();
+    return enqueueOrderWrite(order.id, run);
   }
 
   function parseJson(text) {
