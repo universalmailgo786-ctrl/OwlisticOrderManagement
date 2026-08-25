@@ -64,21 +64,43 @@
     }
   }
 
+  function fieldValue(id) {
+    const el = document.getElementById(id);
+    return el ? String(el.value || "").trim() : "";
+  }
+
+  function sameText(left, right) {
+    return String(left || "").trim() === String(right || "").trim();
+  }
+
+  function selectedAccount() {
+    return lockedAccount() || store.getAccount(accountSelect && accountSelect.value);
+  }
+
+  function formHasFilledOrderData() {
+    const account = selectedAccount() || {};
+    if (fieldValue("orderValue")) return true;
+    if (fieldValue("searchKeyword")) return true;
+    if (document.getElementById("order-custom") && document.getElementById("order-custom").checked) return true;
+    if (document.getElementById("order-direct") && document.getElementById("order-direct").checked) return true;
+    if (fieldValue("directRequirements")) return true;
+    if (fieldValue("reviewText")) return true;
+    if (fieldValue("messageText")) return true;
+    if (typeof threadHasContent === "function" && threadHasContent()) return true;
+    if (requirementFiles.length) return true;
+    if (revisions.length) return true;
+    if (fileInput && fileInput.files && fileInput.files.length) return true;
+    if (fieldValue("whatsapp") && !sameText(fieldValue("whatsapp"), account.whatsapp)) return true;
+    if (fieldValue("name") && !sameText(fieldValue("name"), account.personName)) return true;
+    if (fieldValue("fiverrId") && !sameText(fieldValue("fiverrId"), account.fiverrId)) return true;
+    if (fieldValue("fiverrGigUrl") && !sameText(fieldValue("fiverrGigUrl"), account.fiverrGigUrl)) return true;
+    const payment = selectedPayment("paymentStatus");
+    if (payment && !sameText(payment, account.paymentStatus)) return true;
+    return false;
+  }
+
   function hasPersistableContent() {
-    const name = (document.getElementById("name") && document.getElementById("name").value.trim()) || "";
-    const whatsapp = (document.getElementById("whatsapp") && document.getElementById("whatsapp").value.trim()) || "";
-    const messageText = (document.getElementById("messageText") && document.getElementById("messageText").value.trim()) || "";
-    const orderValue = (document.getElementById("orderValue") && document.getElementById("orderValue").value.trim()) || "";
-    return Boolean(
-      document.getElementById("order-id").value ||
-      name ||
-      whatsapp ||
-      messageText ||
-      threadHasContent() ||
-      orderValue ||
-      requirementFiles.length ||
-      revisions.length
-    );
+    return formHasFilledOrderData();
   }
 
   function maybePersist() {
@@ -1107,6 +1129,9 @@
   }
 
   function doSaveOrder(silent) {
+    if (!formHasFilledOrderData()) {
+      return Promise.resolve({ empty: true });
+    }
     return store.saveFileBlobs(fileInput.files).then(function (newFiles) {
       if (newFiles.length) {
         requirementFiles = requirementFiles.concat(newFiles);
@@ -1566,13 +1591,20 @@
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     if (isSubmitting) return;
+    if (!formHasFilledOrderData()) {
+      showToast("The form is empty. Fill in the order details before saving.", 4000);
+      return;
+    }
     isSubmitting = true;
     window.clearTimeout(persistTimer);
     persistTimer = null;
     submitBtn.disabled = true;
     submitBtn.textContent = "Saving to Google Sheet…";
     saveOrder(false).then(function (outcome) {
-      if (!outcome || (outcome.sheet && outcome.sheet.skipped)) {
+      if (!outcome || outcome.empty || (outcome.sheet && outcome.sheet.skipped)) {
+        if (outcome && outcome.empty) {
+          showToast("The form is empty. Fill in the order details before saving.", 4000);
+        }
         return;
       }
       if (outcome.duplicate && outcome.confirmed) {
