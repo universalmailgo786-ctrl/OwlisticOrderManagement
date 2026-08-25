@@ -278,11 +278,32 @@ body {
   outline: none;
 }
 
+.form-row-url {
+  align-items: start;
+}
+
 .line-input {
   height: 42px;
   padding: 0 2px 8px;
   border: 0;
   border-bottom: 1.5px dotted #cfc3b6;
+}
+
+textarea.line-input.url-input {
+  display: block;
+  height: auto;
+  min-height: 42px;
+  padding-top: 8px;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.45;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.account-editor textarea.line-input.url-input {
+  min-height: 42px;
 }
 
 .line-input::placeholder,

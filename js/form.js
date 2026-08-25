@@ -25,6 +25,19 @@
   const boardStatusSelect = document.getElementById("board-status");
   const submitBtn = document.getElementById("submit-form");
   const deleteOrderBtn = document.getElementById("delete-order-btn");
+  const urlFields = ["fiverrGigUrl", "account-fiverr-url"].map(function (id) {
+    return document.getElementById(id);
+  }).filter(Boolean);
+
+  function growUrlField(el) {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.max(42, el.scrollHeight) + "px";
+  }
+
+  function growUrlFields() {
+    urlFields.forEach(growUrlField);
+  }
 
   let lastFocus = null;
   let requirementFiles = [];
@@ -1017,6 +1030,7 @@
     setPayment("paymentStatus", account.paymentStatus || "");
     document.getElementById("fiverrId").value = account.fiverrId || "";
     document.getElementById("fiverrGigUrl").value = account.fiverrGigUrl || "";
+    growUrlFields();
   }
 
   function fillAccountEditor(account) {
@@ -1029,6 +1043,7 @@
     document.getElementById("account-fiverr-id").value = account && account.fiverrId ? account.fiverrId : "";
     document.getElementById("account-fiverr-url").value = account && account.fiverrGigUrl ? account.fiverrGigUrl : "";
     setPayment("accountPaymentStatus", account && account.paymentStatus ? account.paymentStatus : "");
+    growUrlFields();
   }
 
   function renderAccountList() {
@@ -1140,6 +1155,7 @@
     setPayment("paymentStatus", "");
     document.getElementById("fiverrId").value = "";
     document.getElementById("fiverrGigUrl").value = "";
+    growUrlFields();
     populateAccounts();
     if (isAdmin()) {
       accountSelect.value = "";
@@ -1528,6 +1544,7 @@
     document.getElementById("directRequirements").value = order.directRequirements || "";
     document.getElementById("fiverrId").value = order.fiverrId || "";
     document.getElementById("fiverrGigUrl").value = order.fiverrGigUrl || "";
+    growUrlFields();
     document.getElementById("reviewText").value = order.reviewText || "";
     requirementFiles = (order.requirementFiles || []).slice();
     revisions = store.normalizeRevisions(order.revisions || []);
@@ -1599,6 +1616,7 @@
         window.setTimeout(applyAccountIfNewOrder, ms);
       });
     }
+    growUrlFields();
   }
 
   (function startForm() {
@@ -1961,6 +1979,17 @@
     window.OwlisticSheet.setWebAppUrl(document.getElementById("sheet-web-app-url").value);
     refreshSheetConnect();
     showToast(window.OwlisticSheet.isConfigured() ? "Google Sheet connected" : "Paste the Apps Script web app URL ending in /exec");
+  });
+
+  urlFields.forEach(function (el) {
+    el.addEventListener("input", function () {
+      growUrlField(el);
+    });
+    el.addEventListener("paste", function () {
+      window.setTimeout(function () {
+        growUrlField(el);
+      }, 0);
+    });
   });
 
   document.getElementById("copy-sheet-script").addEventListener("click", function () {

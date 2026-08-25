@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=drivefix1" />
+  <link rel="stylesheet" href="css/styles.css?v=urlwrap2" />
 </head>
 <body>
   <nav class="app-nav">
@@ -164,7 +164,7 @@
       </div>
 
       <!-- 4. Fiverr GIG URL -->
-      <div class="form-row">
+      <div class="form-row form-row-url">
         <div class="row-identity">
           <span class="row-number tone-terracotta">4</span>
           <div class="row-icon tone-terracotta" aria-hidden="true">
@@ -178,7 +178,7 @@
           </div>
         </div>
         <div class="row-control">
-          <input class="line-input" type="text" id="fiverrGigUrl" name="fiverrGigUrl" placeholder="https://" inputmode="url" autocomplete="off" />
+          <textarea class="line-input url-input" id="fiverrGigUrl" name="fiverrGigUrl" rows="2" placeholder="https://" inputmode="url" autocomplete="off"></textarea>
         </div>
       </div>
 
@@ -477,7 +477,7 @@
           </label>
           <label>
             Fiverr GIG URL
-            <input class="line-input" type="text" id="account-fiverr-url" placeholder="https://" inputmode="url" />
+            <textarea class="line-input url-input" id="account-fiverr-url" rows="2" placeholder="https://" inputmode="url"></textarea>
           </label>
           <fieldset class="choice-group">
             <legend>Payment Status</legend>
@@ -503,9 +503,9 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="js/storage.js?v=acctfill3"></script>
-  <script src="js/sheet-sync.js?v=acctfill3"></script>
-  <script src="js/auth.js?v=acctfill3"></script>
-  <script src="js/form.js?v=acctfill3"></script>
+  <script src="js/storage.js?v=urlwrap2"></script>
+  <script src="js/sheet-sync.js?v=urlwrap2"></script>
+  <script src="js/auth.js?v=urlwrap2"></script>
+  <script src="js/form.js?v=urlwrap2"></script>
 </body>
 </html>
