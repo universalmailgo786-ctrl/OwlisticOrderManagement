@@ -15,7 +15,10 @@
   }
 
   function writeJson(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(key, JSON.stringify(value, function (prop, val) {
+      if (prop === "pendingBlob") return undefined;
+      return val;
+    }));
   }
 
   function uid(prefix) {
@@ -67,7 +70,8 @@
               name: record.name,
               type: record.type,
               size: record.size,
-              uploadedAt: record.uploadedAt
+              uploadedAt: record.uploadedAt,
+              pendingBlob: file
             });
           };
           tx.onerror = function () {
@@ -337,6 +341,7 @@
     if (!file) return [];
     const id = driveFileId(file.url);
     const urls = [];
+    if (file.previewUrl) urls.push(file.previewUrl);
     if (id) {
       urls.push("https://lh3.googleusercontent.com/d/" + encodeURIComponent(id) + "=w400");
       urls.push("https://drive.google.com/thumbnail?id=" + encodeURIComponent(id) + "&sz=w400");
@@ -382,7 +387,10 @@
         url: file.url || (match && match.url) || "",
         type: file.type || (match && match.type) || "",
         size: file.size || (match && match.size) || 0,
-        uploadedAt: file.uploadedAt || (match && match.uploadedAt) || ""
+        uploadedAt: file.uploadedAt || (match && match.uploadedAt) || "",
+        driveId: file.driveId || (match && match.driveId) || "",
+        previewUrl: file.previewUrl || (match && match.previewUrl) || "",
+        pendingBlob: file.pendingBlob || (match && match.pendingBlob) || null
       };
     });
     next.forEach(function (file, index) {

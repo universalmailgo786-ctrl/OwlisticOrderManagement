@@ -67,12 +67,21 @@ function doGet(e) {
   if (action === "getOrder") {
     return json_(getOrder_(params));
   }
+  if (action === "getUpload") {
+    return json_(getUpload_(params));
+  }
+  if (action === "driveStatus") {
+    return json_(driveStatus_());
+  }
   return json_({ ok: true, service: "Ashar Orders Management System", sheetColumns: HEADERS.length });
 }
 
 function doPost(e) {
   try {
     var data = JSON.parse((e.postData && e.postData.contents) || "{}");
+    if (data.action === "uploadFile") {
+      return json_(uploadFile_(data));
+    }
     if (data.action === "login") {
       return json_(login_(data.username, data.password));
     }
@@ -332,12 +341,111 @@ function filesFromCell_(rich, fallbackText) {
   return parseFiles_(fallbackText);
 }
 
+function rememberDriveError_(message) {
+  try {
+    PropertiesService.getScriptProperties().setProperty("driveLastError", String(message || "").slice(0, 500));
+  } catch (err) {}
+}
+
+function uploadKey_(id) {
+  return "up_" + String(id || "").replace(/[^A-Za-z0-9_\-]/g, "").slice(0, 80);
+}
+
+function setUpload_(id, obj) {
+  PropertiesService.getScriptProperties().setProperty(uploadKey_(id), JSON.stringify(obj || {}));
+}
+
+function getUpload_(params) {
+  var id = String((params && (params.uploadId || params.localId)) || "");
+  var raw = "";
+  try {
+    raw = PropertiesService.getScriptProperties().getProperty(uploadKey_(id)) || "";
+  } catch (err) {
+    raw = "";
+  }
+  if (!raw) {
+    return {
+      ok: true,
+      action: "getUpload",
+      status: "pending",
+      uploadId: id,
+      driveLastError: PropertiesService.getScriptProperties().getProperty("driveLastError") || ""
+    };
+  }
+  var data = JSON.parse(raw);
+  data.ok = data.status !== "error";
+  data.action = "getUpload";
+  data.uploadId = id;
+  return data;
+}
+
+function driveStatus_() {
+  var folderName = "";
+  var folderError = "";
+  try {
+    folderName = filesFolder_().getName();
+  } catch (err) {
+    folderError = String(err);
+  }
+  return {
+    ok: !folderError,
+    action: "driveStatus",
+    folderId: FILES_FOLDER_ID,
+    folderName: folderName,
+    folderError: folderError,
+    lastError: PropertiesService.getScriptProperties().getProperty("driveLastError") || ""
+  };
+}
+
+function uploadFile_(data) {
+  var uploadId = String((data && (data.uploadId || data.localId)) || "");
+  if (uploadId) setUpload_(uploadId, { status: "pending" });
+  try {
+    var saved = saveOneUpload_((data && data.orderId) || "", {
+      name: (data && data.name) || "file",
+      mimeType: (data && data.mimeType) || "application/octet-stream",
+      data: (data && data.data) || ""
+    });
+    if (!saved) {
+      var err = PropertiesService.getScriptProperties().getProperty("driveLastError") || "Drive upload failed.";
+      if (uploadId) setUpload_(uploadId, { status: "error", error: err });
+      return { ok: false, action: "uploadFile", status: "error", error: err, uploadId: uploadId };
+    }
+    var result = {
+      status: "ok",
+      name: saved.name,
+      id: saved.id,
+      url: saved.url,
+      previewUrl: saved.previewUrl
+    };
+    if (uploadId) setUpload_(uploadId, result);
+    result.ok = true;
+    result.action = "uploadFile";
+    result.uploadId = uploadId;
+    return result;
+  } catch (err) {
+    var message = String(err);
+    rememberDriveError_(message);
+    if (uploadId) setUpload_(uploadId, { status: "error", error: message });
+    return { ok: false, action: "uploadFile", status: "error", error: message, uploadId: uploadId };
+  }
+}
+
 function filesFolder_() {
-  return DriveApp.getFolderById(FILES_FOLDER_ID);
+  try {
+    return DriveApp.getFolderById(FILES_FOLDER_ID);
+  } catch (err) {
+    rememberDriveError_("Cannot open Images folder " + FILES_FOLDER_ID + ": " + err);
+    throw err;
+  }
 }
 
 function driveUrl_(fileId) {
   return "https://drive.google.com/uc?export=download&id=" + fileId;
+}
+
+function drivePreviewUrl_(fileId) {
+  return "https://lh3.googleusercontent.com/d/" + fileId + "=w800";
 }
 
 function sharePublic_(file) {
@@ -350,36 +458,76 @@ function sharePublic_(file) {
   } catch (err2) {}
 }
 
+function savedFileInfo_(originalName, file) {
+  var id = file.getId();
+  return {
+    name: originalName,
+    id: id,
+    url: driveUrl_(id),
+    previewUrl: drivePreviewUrl_(id)
+  };
+}
+
+function createDriveFile_(folder, blob) {
+  try {
+    return folder.createFile(blob);
+  } catch (errCreate) {
+    rememberDriveError_("createFile in Images folder failed: " + errCreate);
+    var file = DriveApp.createFile(blob);
+    try {
+      file.moveTo(folder);
+    } catch (errMove) {
+      rememberDriveError_("File landed in My Drive; could not move to Images folder: " + errMove + " | first error: " + errCreate);
+    }
+    return file;
+  }
+}
+
+function saveOneUpload_(orderId, item) {
+  var list = saveUploads_(orderId, [item]);
+  return list[0] || null;
+}
+
 function saveUploads_(orderId, uploads) {
   var list = uploads || [];
   var saved = [];
   if (!list.length) return saved;
-  var folder;
-  try {
-    folder = filesFolder_();
-  } catch (err) {
-    return saved;
-  }
+  var folder = filesFolder_();
   var prefix = String(orderId || "order").replace(/[\\/:*?"<>|]+/g, "-").trim() || "order";
   for (var i = 0; i < list.length; i++) {
     try {
       var item = list[i] || {};
       var data = String(item.data || "").replace(/\s+/g, "");
-      if (!data) continue;
+      if (!data) {
+        rememberDriveError_("Upload had no file data for " + (item.name || "file"));
+        continue;
+      }
       var originalName = String(item.name || "file").replace(/[\\/:*?"<>|]+/g, "-") || "file";
       var driveName = originalName.indexOf(prefix + "_") === 0 ? originalName : prefix + "_" + originalName;
       var bytes = Utilities.base64Decode(data);
       var blob = Utilities.newBlob(bytes, item.mimeType || "application/octet-stream", driveName);
-      var file = folder.createFile(blob);
+      var file = createDriveFile_(folder, blob);
       sharePublic_(file);
-      saved.push({
-        name: originalName,
-        id: file.getId(),
-        url: driveUrl_(file.getId())
-      });
-    } catch (err2) {}
+      saved.push(savedFileInfo_(originalName, file));
+    } catch (err2) {
+      rememberDriveError_("Drive upload failed: " + err2);
+    }
   }
   return saved;
+}
+
+function testDriveFolder() {
+  var folder = filesFolder_();
+  var blob = Utilities.newBlob("owlistic-drive-check", "text/plain", "ORD-TEST_drive-check.txt");
+  var file = createDriveFile_(folder, blob);
+  sharePublic_(file);
+  return {
+    ok: true,
+    folder: folder.getName(),
+    folderId: folder.getId(),
+    fileId: file.getId(),
+    url: driveUrl_(file.getId())
+  };
 }
 
 function writeFilesCell_(range, files) {

@@ -1163,7 +1163,11 @@
     editMeta.hidden = false;
     if (deleteOrderBtn) deleteOrderBtn.hidden = false;
     editMeta.textContent = "Editing " + saved.id + " · Created " + store.formatDateTime(saved.createdAt) + " · Last updated " + store.formatDateTime(saved.updatedAt);
-    if (saved.requirementFiles) requirementFiles = saved.requirementFiles.slice();
+    if (saved.requirementFiles) {
+      requirementFiles = store.mergeRequirementFiles
+        ? store.mergeRequirementFiles(requirementFiles, saved.requirementFiles)
+        : saved.requirementFiles.slice();
+    }
     refreshRequirementFiles();
     updateStatusUI();
     if (window.history && window.history.replaceState) {
@@ -1302,6 +1306,77 @@
       return activeSheetSave;
     }
     return run;
+  }
+
+  function persistLocalOrder() {
+    if (!formHasFilledOrderData()) return null;
+    const saved = store.upsertOrder(collectOrder());
+    document.getElementById("order-id").value = saved.id;
+    editMeta.hidden = false;
+    if (deleteOrderBtn) deleteOrderBtn.hidden = false;
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, "", "index.html?order=" + encodeURIComponent(saved.id));
+    }
+    return saved;
+  }
+
+  function syncLinksInBackground() {
+    const sheet = window.OwlisticSheet;
+    if (!sheet || typeof sheet.sync !== "function") return;
+    const saved = persistLocalOrder();
+    if (!saved) return;
+    sheet.sync(saved).catch(function () {});
+  }
+
+  function stampFileUrl(file, result) {
+    if (!file || !result || !result.url) return;
+    file.url = result.url;
+    if (result.id) file.driveId = result.id;
+    if (result.previewUrl) file.previewUrl = result.previewUrl;
+  }
+
+  function uploadAttachedFiles(files) {
+    const sheet = window.OwlisticSheet;
+    const pending = (files || []).filter(function (file) {
+      return file && file.id && !file.url;
+    });
+    if (!pending.length) return Promise.resolve([]);
+    const saved = persistLocalOrder();
+    const orderId = (saved && saved.id) || document.getElementById("order-id").value;
+    if (!sheet || typeof sheet.uploadFile !== "function") {
+      showToast("Image added on the form. Click Save to store it in Drive.", 4000);
+      return Promise.resolve([]);
+    }
+    showToast("Image added. Uploading to Drive…", 2200);
+    return pending.reduce(function (chain, file) {
+      return chain.then(function (results) {
+        return sheet.uploadFile(file, orderId).then(function (result) {
+          stampFileUrl(file, result);
+          results.push(result);
+          return results;
+        });
+      });
+    }, Promise.resolve([])).then(function (results) {
+      const ok = results.filter(function (item) { return item && item.url; });
+      const failed = results.filter(function (item) { return !item || !item.url; });
+      if (ok.length) {
+        persistLocalOrder();
+        syncLinksInBackground();
+        refreshRequirementFiles();
+        renderMessageThread();
+        renderRevisions();
+        showToast(ok.length === 1 ? "Image saved to Drive." : ok.length + " images saved to Drive.");
+      }
+      if (failed.length) {
+        const err = (failed[0] && (failed[0].error || failed[0].driveLastError)) || "Drive upload failed.";
+        showToast("Could not save image to Drive: " + err, 7000);
+      }
+      restoreSaveButton();
+      return results;
+    }).catch(function (err) {
+      restoreSaveButton();
+      showToast("Could not save image to Drive: " + ((err && err.message) || "upload failed"), 7000);
+    });
   }
 
   function restoreSaveButton() {
@@ -1475,7 +1550,7 @@
       requirementFiles = requirementFiles.concat(saved);
       fileInput.value = "";
       refreshRequirementFiles();
-      return saveFilesToDrive();
+      return uploadAttachedFiles(saved);
     }).catch(function () {
       refreshRequirementFiles();
     });
@@ -1564,7 +1639,7 @@
         message.files = (message.files || []).concat(saved);
         filesInput.value = "";
         renderMessageThread();
-        return saveFilesToDrive();
+        return uploadAttachedFiles(saved);
       });
     });
 
@@ -1668,7 +1743,7 @@
       message.files = (message.files || []).concat(saved);
       filesInput.value = "";
       renderRevisions();
-      return saveFilesToDrive();
+      return uploadAttachedFiles(saved);
     });
   });
 

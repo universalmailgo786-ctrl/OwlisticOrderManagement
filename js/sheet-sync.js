@@ -123,6 +123,7 @@
 
   const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
   const sentFileIds = {};
+  const inFlightUploads = {};
 
   function blobToBase64(blob) {
     return new Promise(function (resolve, reject) {
@@ -139,32 +140,79 @@
     });
   }
 
+  function compressImageBlob(blob) {
+    if (!blob || !/^image\/(png|jpeg|jpg|webp|bmp)$/i.test(blob.type || "")) {
+      return Promise.resolve(blob);
+    }
+    if ((blob.size || 0) <= 1.2 * 1024 * 1024) return Promise.resolve(blob);
+    return new Promise(function (resolve) {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = function () {
+        try {
+          const max = 1600;
+          let width = img.naturalWidth || img.width;
+          let height = img.naturalHeight || img.height;
+          const scale = Math.min(1, max / Math.max(width, height));
+          width = Math.max(1, Math.round(width * scale));
+          height = Math.max(1, Math.round(height * scale));
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+          canvas.toBlob(function (out) {
+            URL.revokeObjectURL(url);
+            if (out && out.size && out.size < blob.size) resolve(out);
+            else resolve(blob);
+          }, "image/jpeg", 0.84);
+        } catch (err) {
+          URL.revokeObjectURL(url);
+          resolve(blob);
+        }
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        resolve(blob);
+      };
+      img.src = url;
+    });
+  }
+
+  function fileBlob(file) {
+    if (file && file.pendingBlob) return Promise.resolve(file.pendingBlob);
+    const getFile = store && store.getFile;
+    if (typeof getFile !== "function" || !file || !file.id) return Promise.resolve(null);
+    return getFile(file.id).then(function (record) {
+      return (record && record.blob) || null;
+    });
+  }
+
   function collectUploads(files, options) {
     const force = options && options.forceUploads;
     const skippedLarge = [];
     const pending = (files || []).filter(function (file) {
       if (!file || file.url || !file.id) return false;
+      if (inFlightUploads[file.id]) return false;
       if (!force && sentFileIds[file.id]) return false;
       return true;
     });
     return Promise.all(pending.map(function (file) {
-      const getFile = store && (store.getFile || store.getFile);
-      if (typeof getFile !== "function") return Promise.resolve(null);
-      return getFile(file.id).then(function (record) {
-        const blob = record && (record.blob || record.blob);
+      return fileBlob(file).then(function (blob) {
         if (!blob) return null;
         const size = blob.size || file.size || 0;
         if (size > MAX_UPLOAD_BYTES) {
           skippedLarge.push(file.name || "file");
           return null;
         }
-        return blobToBase64(blob).then(function (data) {
-          return {
-            name: file.name || record.name || "file",
-            mimeType: record.type || file.type || blob.type || "application/octet-stream",
-            data: data,
-            localId: file.id
-          };
+        return compressImageBlob(blob).then(function (ready) {
+          return blobToBase64(ready).then(function (data) {
+            return {
+              name: file.name || "file",
+              mimeType: (ready && ready.type) || file.type || blob.type || "application/octet-stream",
+              data: data,
+              localId: file.id
+            };
+          });
         });
       }).catch(function () {
         return null;
@@ -278,7 +326,7 @@
     });
   }
 
-  function postPayload(payload) {
+  function postPayload(payload, timeoutMs) {
     if (!isConfigured()) {
       return Promise.resolve({ skipped: true });
     }
@@ -290,7 +338,7 @@
       mode: "no-cors",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(payload)
-    }, 60000).then(function () {
+    }, timeoutMs || 60000).then(function () {
       return { ok: true };
     }).catch(function () {
       return { ok: false, error: "Could not reach Google Sheet." };
@@ -536,6 +584,87 @@
     return delay(700).then(attempt);
   }
 
+  function waitForUpload(uploadId) {
+    const timeout = 50000;
+    const started = Date.now();
+    function attempt() {
+      const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+      const url = getWebAppUrl() + join +
+        "action=getUpload" +
+        "&uploadId=" + encodeURIComponent(uploadId) +
+        "&_=" + Date.now();
+      return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 8000).then(function (response) {
+        return response.text();
+      }).then(function (text) {
+        const data = parseJson(text);
+        if (data && data.status === "ok" && data.url) return data;
+        if (data && data.status === "error") return data;
+        if (Date.now() - started >= timeout) {
+          return {
+            status: "error",
+            error: (data && (data.error || data.driveLastError)) || "Drive upload timed out."
+          };
+        }
+        return delay(700).then(attempt);
+      }).catch(function () {
+        if (Date.now() - started >= timeout) {
+          return { status: "error", error: "Could not reach Drive." };
+        }
+        return delay(700).then(attempt);
+      });
+    }
+    return delay(400).then(attempt);
+  }
+
+  function uploadFile(file, orderId) {
+    if (!file || !file.id) {
+      return Promise.resolve({ status: "error", error: "Missing file." });
+    }
+    if (file.url) {
+      return Promise.resolve({ status: "ok", url: file.url, name: file.name, id: file.driveId || "" });
+    }
+    if (!isConfigured()) {
+      return Promise.resolve({ status: "error", error: "Google Sheet is not connected." });
+    }
+    if (inFlightUploads[file.id]) return inFlightUploads[file.id];
+    const uploadId = file.id;
+    sentFileIds[file.id] = true;
+    const task = fileBlob(file).then(function (blob) {
+      if (!blob) throw new Error("The image was not kept in this browser.");
+      if ((blob.size || 0) > MAX_UPLOAD_BYTES) throw new Error("Image is larger than 20 MB.");
+      return compressImageBlob(blob).then(function (ready) {
+        return blobToBase64(ready).then(function (data) {
+          return postPayload({
+            action: "uploadFile",
+            uploadId: uploadId,
+            orderId: orderId || "",
+            name: file.name || "file",
+            mimeType: (ready && ready.type) || file.type || blob.type || "application/octet-stream",
+            data: data
+          }, 90000);
+        });
+      });
+    }).then(function (posted) {
+      if (posted && posted.ok === false) {
+        throw new Error(posted.error || "Could not reach Drive.");
+      }
+      return waitForUpload(uploadId);
+    }).then(function (result) {
+      if (!result || result.status !== "ok" || !result.url) {
+        delete sentFileIds[file.id];
+      }
+      return result;
+    }).catch(function (err) {
+      delete sentFileIds[file.id];
+      return { status: "error", error: (err && err.message) || "Drive upload failed." };
+    });
+    inFlightUploads[file.id] = task.then(function (result) {
+      delete inFlightUploads[file.id];
+      return result;
+    });
+    return inFlightUploads[file.id];
+  }
+
   function fetchOrder(order) {
     if (!isConfigured() || !order || !order.id) {
       return Promise.resolve({ skipped: true, found: false });
@@ -691,6 +820,7 @@
     hasOrder: hasOrder,
     fetchOrder: fetchOrder,
     waitForDriveLinks: waitForDriveLinks,
+    uploadFile: uploadFile,
     fetchOrders: fetchOrders,
     findDuplicateOrder: findDuplicateOrder,
     confirmSheetWrite: confirmSheetWrite,
