@@ -1022,7 +1022,9 @@
       name: document.getElementById("name").value.trim(),
       businessName: existing && existing.businessName ? existing.businessName : "",
       clientName: existing && existing.clientName ? existing.clientName : "",
-      boardStatus: boardStatusSelect ? boardStatusSelect.value : "",
+      boardStatus: boardStatusSelect && boardStatusSelect.value === "on-revision"
+        ? "in-progress"
+        : (boardStatusSelect ? boardStatusSelect.value : ""),
       orderValue: document.getElementById("orderValue").value,
       paymentStatus: selectedPayment("paymentStatus"),
       searchKeyword: document.getElementById("searchKeyword").value.trim(),
@@ -1159,7 +1161,8 @@
     document.getElementById("whatsapp").value = order.whatsapp || "";
     document.getElementById("name").value = order.name || "";
     if (boardStatusSelect) {
-      boardStatusSelect.value = (store.boardStatusOf && store.boardStatusOf(order)) || "in-progress";
+      const loaded = (store.boardStatusOf && store.boardStatusOf(order)) || "in-progress";
+      boardStatusSelect.value = loaded === "on-revision" ? "in-progress" : loaded;
     }
     document.getElementById("orderValue").value = order.orderValue || "";
     setPayment("paymentStatus", order.paymentStatus || "");
@@ -1374,9 +1377,6 @@
     };
     addMessage(revision, "buyer");
     revisions.push(revision);
-    if (boardStatusSelect && boardStatusSelect.value !== "on-revision") {
-      boardStatusSelect.value = "on-revision";
-    }
     renderRevisions();
     updateStatusUI();
     maybePersist();

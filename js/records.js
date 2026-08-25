@@ -175,12 +175,14 @@
   }
 
   function tabOf(order) {
-    if (typeof store.recordTab === "function") return store.recordTab(order);
-    if (typeof store.recordTab === "function") return store.recordTab(order);
+    if (typeof store.recordTab === "function") {
+      const tab = store.recordTab(order);
+      if (tab === "on-revision") return "in-progress";
+      return tab;
+    }
     const status = store.computeStatus(order);
     if (status === "completed") return "completed";
     if (status === "ready-to-approve") return "ready-to-approve";
-    if (status === "revision-pending" || status === "revision-pending") return "on-revision";
     return "in-progress";
   }
 
@@ -214,15 +216,44 @@
     return "";
   }
 
-  function columnCount(pairCount) {
-    return 15 + (pairCount * 2);
+  function revisionRounds(order) {
+    return store.normalizeRevisions((order && order.revisions) || []);
   }
 
-  function renderHead(pairCount) {
+  function revisionRoleText(round, role) {
+    const wanted = role === "seller" || role === "client" ? "seller" : "buyer";
+    return ((round && round.messages) || []).map(function (message) {
+      const messageRole = message && (message.role === "seller" || message.kind === "seller" || message.role === "client")
+        ? "seller"
+        : "buyer";
+      if (messageRole !== wanted) return "";
+      return messageCopy(message);
+    }).filter(Boolean).join("\n\n");
+  }
+
+  function maxRevisionCount(orders) {
+    let max = 0;
+    (orders || []).forEach(function (order) {
+      const count = revisionRounds(order).length;
+      if (count > max) max = count;
+    });
+    return max;
+  }
+
+  function columnCount(pairCount, revisionCount) {
+    return 15 + (pairCount * 2) + (revisionCount * 2);
+  }
+
+  function renderHead(pairCount, revisionCount) {
     const messageHeads = [];
     for (let i = 1; i <= pairCount; i += 1) {
       messageHeads.push("<th>Buyer Message " + i + "</th>");
       messageHeads.push("<th>Client Reply " + i + "</th>");
+    }
+    const revisionHeads = [];
+    for (let i = 1; i <= revisionCount; i += 1) {
+      revisionHeads.push("<th>Revision " + i + " Buyer</th>");
+      revisionHeads.push("<th>Revision " + i + " Seller</th>");
     }
     headRow.innerHTML =
       "<th>Order</th>" +
@@ -238,10 +269,11 @@
       "<th>Fiverr ID Name</th>" +
       "<th>Fiverr GIG URL</th>" +
       "<th>Review Text (Feedback)</th>" +
+      revisionHeads.join("") +
       "<th>Payment</th>" +
       "<th>Status</th>" +
       "<th>Actions</th>";
-    if (table) table.style.minWidth = String(1680 + pairCount * 360) + "px";
+    if (table) table.style.minWidth = String(1680 + pairCount * 360 + revisionCount * 360) + "px";
   }
 
   function renderAccountFilter() {
@@ -290,6 +322,9 @@
       order.accountName,
       order.messageText,
       messages,
+      revisionRounds(order).map(function (round) {
+        return revisionRoleText(round, "buyer") + " " + revisionRoleText(round, "seller");
+      }).join(" "),
       order.directRequirements,
       order.fiverrGigUrl,
       order.reviewText,
@@ -326,7 +361,8 @@
     const all = auth.visibleOrders();
     updateTabCounts(all);
     const pairCount = maxMessagePairs(all);
-    renderHead(pairCount);
+    const revisionCount = maxRevisionCount(all);
+    renderHead(pairCount, revisionCount);
     const orders = all.slice().sort(function (a, b) {
       return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
     }).filter(function (order) {
@@ -339,7 +375,7 @@
     if (!orders.length) {
       const tabLabel = TAB_LABELS[activeTab] || activeTab;
       body.innerHTML =
-        '<tr><td colspan="' + columnCount(pairCount) + '"><div class="empty-state">' +
+        '<tr><td colspan="' + columnCount(pairCount, revisionCount) + '"><div class="empty-state">' +
           "<strong>No " + escapeHtml(tabLabel) + " orders</strong>" +
           "<p>Orders in this category will appear here. Try another tab, or clear a filter.</p>" +
         "</div></td></tr>";
@@ -348,10 +384,8 @@
 
     body.innerHTML = orders.map(function (order) {
       const status = store.computeStatus(order);
-      const openRevisions = typeof store.hasOpenRevisions === "function"
-        ? store.hasOpenRevisions(order)
-        : store.normalizeRevisions(order.revisions || []).some(function (item) { return !item.completed; });
       const pairs = threadPairs(order);
+      const rounds = revisionRounds(order);
       const paymentLabel = paymentCopyLabel(order);
       const typeLabel = store.orderTypeLabel(order);
       const statusLabel = statusCopyLabel(order);
@@ -364,7 +398,17 @@
           '<td class="records-clip-cell">' + withCopy(messageCellHtml(pair.buyer), messageCopy(pair.buyer), buyerLabel) + "</td>" +
           '<td class="records-clip-cell">' + withCopy(messageCellHtml(pair.client), messageCopy(pair.client), clientLabel) + "</td>";
       }
-      return '<tr class="records-row is-' + status + (openRevisions ? " has-open-revision" : "") + '">' +
+      let revisionCells = "";
+      for (let r = 0; r < revisionCount; r += 1) {
+        const round = rounds[r];
+        const buyerText = revisionRoleText(round, "buyer");
+        const sellerText = revisionRoleText(round, "seller");
+        const revLabel = "Revision " + (r + 1);
+        revisionCells +=
+          '<td class="records-clip-cell">' + withCopy(clipText(buyerText), buyerText, revLabel + " buyer") + "</td>" +
+          '<td class="records-clip-cell">' + withCopy(clipText(sellerText), sellerText, revLabel + " seller") + "</td>";
+      }
+      return '<tr class="records-row is-' + status + '">' +
         "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
         "<td>" + withCopy(escapeHtml(order.whatsapp || "—"), order.whatsapp || "", "WhatsApp number") + "</td>" +
         "<td>" + withCopy(escapeHtml(order.name || "—"), order.name || "", "name") + "</td>" +
@@ -378,6 +422,7 @@
         "<td>" + withCopy(escapeHtml(order.fiverrId || "—"), order.fiverrId || "", "Fiverr ID name") + "</td>" +
         '<td class="records-clip-cell">' + withCopy(linkCell(order.fiverrGigUrl), order.fiverrGigUrl || "", "Fiverr GIG URL") + "</td>" +
         '<td class="records-clip-cell">' + withCopy(clipText(order.reviewText), order.reviewText || "", "review text") + "</td>" +
+        revisionCells +
         "<td>" + withCopy(badge(order.paymentStatus || "in-progress", paymentLabel || "—"), paymentLabel, "payment") + "</td>" +
         "<td>" + withCopy(statusSelect(order), statusLabel, "status") + "</td>" +
         '<td class="records-actions">' +
@@ -540,11 +585,11 @@
       else if (typeof store.addRevision === "function") store.addRevision(order);
       store.upsertOrder(order);
       const finishAdd = function () {
-        setActiveTab("on-revision");
+        render();
         showToast("Revision " + (order.revisions && order.revisions.length ? order.revisions.length : 1) + " added");
       };
       const sheet = window.OwlisticSheet;
-      setActiveTab("on-revision");
+      render();
       if (sheet && typeof sheet.sync === "function") {
         addBtn.disabled = true;
         sheet.sync(order).then(function () {
@@ -671,7 +716,7 @@
     store.upsertOrder(order);
     const label = (store.boardStatusLabel && store.boardStatusLabel(nextTab)) || select.options[select.selectedIndex].text;
     const sheet = window.OwlisticSheet;
-    setActiveTab(nextTab);
+    setActiveTab(tabOf(order));
     showToast("Status set to " + label);
     if (sheet && typeof sheet.sync === "function") {
       sheet.sync(order).catch(function () {});

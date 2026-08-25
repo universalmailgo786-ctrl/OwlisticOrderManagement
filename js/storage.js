@@ -252,14 +252,10 @@
 
   function boardStatusOf(order) {
     const fromBoard = parseBoardStatus(order && order.boardStatus);
-    if (fromBoard) return fromBoard;
+    if (fromBoard === "ready-to-approve" || fromBoard === "completed") return fromBoard;
     const fromOverall = parseBoardStatus(order && order.overallStatus);
-    if (fromOverall) return fromOverall;
+    if (fromOverall === "ready-to-approve" || fromOverall === "completed") return fromOverall;
     if (order && order.readyToApprove) return "ready-to-approve";
-    const revisions = normalizeRevisions((order && order.revisions) || []);
-    if (revisions.length && revisions.some(function (item) { return !item.completed; })) {
-      return "on-revision";
-    }
     return "in-progress";
   }
 
@@ -371,7 +367,6 @@
         files: []
       }]
     });
-    setBoardStatus(order, "on-revision");
     return order;
   }
 
@@ -405,7 +400,9 @@
   }
 
   function recordTab(order) {
-    return boardStatusOf(order);
+    const tab = boardStatusOf(order);
+    if (tab === "on-revision") return "in-progress";
+    return tab;
   }
 
   function currentRevision(order) {
