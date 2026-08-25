@@ -1166,26 +1166,41 @@ function findOrderOnSheet_(sheet, orderId) {
   return null;
 }
 
+function orderLookup_(params) {
+  var orderId = String((params && params.orderId) || "").trim();
+  var role = String((params && params.role) || "").toLowerCase().replace(/\s+/g, "");
+  var forced = (role === "user" || role === "account")
+    ? tabName_((params && (params.userAccount || params.account)) || "")
+    : "";
+  var tab = tabName_((params && params.tab) || "") || forced;
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var found = null;
+  if (tab) {
+    var sheet = sheetForAccount_(ss, tab);
+    if (sheet) found = findOrderOnSheet_(sheet, orderId);
+  }
+  if (!found) found = findOrder_(ss, orderId);
+  if (found && forced && !canAccessFound_(found, forced)) {
+    return { orderId: orderId, found: null, denied: true, forced: forced, tab: tab };
+  }
+  return { orderId: orderId, found: found, denied: false, forced: forced, tab: tab };
+}
+
 function hasOrder_(params) {
   var orderId = String((params && params.orderId) || "").trim();
   if (!orderId) {
     return { ok: false, action: "hasOrder", found: false, error: "Order ID is required." };
   }
-  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var tab = tabName_((params && (params.tab || params.userAccount || params.account)) || "");
-  var found = null;
-  if (tab) {
-    var sheet = sheetForAccount_(ss, tab);
-    if (sheet) found = findOrderOnSheet_(sheet, orderId);
-  } else {
-    found = findOrder_(ss, orderId);
+  var lookup = orderLookup_(params);
+  if (lookup.denied) {
+    return { ok: false, action: "hasOrder", found: false, orderId: orderId, error: "You can only open orders for " + lookup.forced + "." };
   }
   return {
     ok: true,
     action: "hasOrder",
-    found: Boolean(found),
+    found: Boolean(lookup.found),
     orderId: orderId,
-    tab: found ? found.sheet.getName() : tab
+    tab: lookup.found ? lookup.found.sheet.getName() : lookup.tab
   };
 }
 
@@ -1194,15 +1209,11 @@ function getOrder_(params) {
   if (!orderId) {
     return { ok: false, action: "getOrder", found: false, error: "Order ID is required." };
   }
-  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var tab = tabName_((params && (params.tab || params.userAccount || params.account)) || "");
-  var found = null;
-  if (tab) {
-    var sheet = sheetForAccount_(ss, tab);
-    if (sheet) found = findOrderOnSheet_(sheet, orderId);
-  } else {
-    found = findOrder_(ss, orderId);
+  var lookup = orderLookup_(params);
+  if (lookup.denied) {
+    return { ok: false, action: "getOrder", found: false, orderId: orderId, order: null, error: "You can only open orders for " + lookup.forced + "." };
   }
+  var found = lookup.found;
   if (!found) {
     return { ok: true, action: "getOrder", found: false, orderId: orderId, order: null };
   }

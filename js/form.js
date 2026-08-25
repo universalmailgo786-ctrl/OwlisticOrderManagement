@@ -1576,7 +1576,85 @@
     });
   }
 
+  function formOrderFromSheet(raw) {
+    if (!raw) return null;
+    const order = Object.assign({}, raw);
+    const accounts = (store.getAccounts && store.getAccounts()) || [];
+    const wanted = String(order.accountName || order.tabName || "").trim().toLowerCase();
+    const match = accounts.find(function (account) {
+      const name = String((account && account.name) || "").trim().toLowerCase();
+      const label = String((store.accountLabel && store.accountLabel(account)) || "").trim().toLowerCase();
+      return wanted && (name === wanted || label === wanted || (name && wanted.indexOf(name + " ") === 0));
+    });
+    if (match) order.accountId = match.id;
+    if (typeof store.normalizeRevisions === "function") {
+      order.revisions = store.normalizeRevisions(order.revisions || []);
+    }
+    if (typeof store.messageThreadOf === "function") {
+      order.messageThread = store.messageThreadOf(order);
+    }
+    return order;
+  }
+
+  function openExistingOrder(orderId) {
+    document.getElementById("order-id").value = orderId;
+    const local = store.getOrder(orderId);
+    if (local && !auth.canSeeOrder(local)) {
+      showToast("You can only open orders for your account.");
+      goToDefaultPage();
+      return;
+    }
+    if (local && auth.canSeeOrder(local)) {
+      loadOrder(local);
+    }
+    const sheet = window.OwlisticSheet;
+    const session = auth.getSession && auth.getSession();
+    const hint = local || {
+      id: orderId,
+      accountName: (session && session.account) || "",
+      tabName: (session && session.account) || ""
+    };
+    const applyRemote = function (remote) {
+      const raw = remote && remote.order;
+      if (!raw) {
+        if (local && auth.canSeeOrder(local)) {
+          loadOrder(local);
+          return;
+        }
+        showToast("This order was not found in the Google Sheet.");
+        goToDefaultPage();
+        return;
+      }
+      const order = formOrderFromSheet(raw);
+      if (!auth.canSeeOrder(order)) {
+        showToast("You can only open orders for your account.");
+        goToDefaultPage();
+        return;
+      }
+      loadOrder(order);
+    };
+    if (!sheet || typeof sheet.fetchOrder !== "function") {
+      if (local && auth.canSeeOrder(local)) loadOrder(local);
+      else {
+        showToast("Could not load this order from the Google Sheet.");
+        goToDefaultPage();
+      }
+      return;
+    }
+    sheet.fetchOrder(hint).then(applyRemote).catch(function () {
+      if (local && auth.canSeeOrder(local)) loadOrder(local);
+      else {
+        showToast("Could not load this order from the Google Sheet.");
+        goToDefaultPage();
+      }
+    });
+  }
+
   function bootForm() {
+    const existingId = new URLSearchParams(window.location.search).get("order");
+    if (existingId) {
+      document.getElementById("order-id").value = existingId;
+    }
     populateAccounts();
     refreshRequirementFiles();
     if (!threadMessages.length) threadMessages = emptyMessageThread();
@@ -1584,15 +1662,8 @@
     renderRevisions();
     updateStatusUI();
 
-    const existingId = new URLSearchParams(window.location.search).get("order");
     if (existingId) {
-      const existing = store.getOrder(existingId);
-      if (existing && auth.canSeeOrder(existing)) {
-        loadOrder(existing);
-      } else if (existing) {
-        showToast("You can only open orders for your account.");
-        goToDefaultPage();
-      }
+      openExistingOrder(existingId);
     } else {
       applyAccount(lockedAccount());
       [200, 800].forEach(function (ms) {

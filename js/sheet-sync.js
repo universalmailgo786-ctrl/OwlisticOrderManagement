@@ -394,24 +394,27 @@
     const id = order.id;
     return deleteOrder(order).then(function () {
       if (store && typeof store.deleteOrder === "function") store.deleteOrder(id);
-      return fetchOrders().then(function (result) {
-        const sheetOrders = (result && result.orders) || [];
-        const stillOnSheet = sheetOrders.some(function (item) { return item.id === id; });
-        if (store && typeof store.replaceOrders === "function") {
-          store.replaceOrders(sheetOrders.filter(function (item) { return item.id !== id; }));
-        } else if (store && typeof store.importOrders === "function") {
-          store.importOrders(sheetOrders.filter(function (item) { return item.id !== id; }));
-        }
-        if (store && typeof store.deleteOrder === "function") store.deleteOrder(id);
-        return {
-          ok: true,
-          removedLocal: true,
-          sheetRemaining: stillOnSheet,
-          error: stillOnSheet ? "Deleted in the portal, but the Google Sheet row is still there. Deploy the latest Apps Script." : ""
-        };
-      }).catch(function () {
-        return { ok: true, removedLocal: true, sheetUnknown: true };
-      });
+      function check(attempt) {
+        return hasOrder(order).then(function (result) {
+          if (result && result.unsupported) {
+            return { ok: true, removedLocal: true };
+          }
+          if (!result || !result.found) {
+            if (store && typeof store.deleteOrder === "function") store.deleteOrder(id);
+            return { ok: true, removedLocal: true, sheetRemaining: false };
+          }
+          if (attempt >= 10) {
+            return {
+              ok: true,
+              removedLocal: true,
+              sheetRemaining: true,
+              error: "Deleted in the portal, but the Google Sheet row is still there."
+            };
+          }
+          return delay(500).then(function () { return check(attempt + 1); });
+        });
+      }
+      return delay(400).then(function () { return check(0); });
     });
   }
 
@@ -929,14 +932,14 @@
       "&role=" + encodeURIComponent((session && session.role) || "") +
       "&userAccount=" + encodeURIComponent((session && session.account) || "") +
       "&_=" + Date.now();
-    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 8000).then(function (response) {
+    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
       return response.text();
     }).then(function (text) {
       const data = parseJson(text);
       if (!data || data.action !== "getOrder") {
         return { unsupported: true, found: false };
       }
-      return { ok: Boolean(data.ok), found: Boolean(data.found), order: data.order || null };
+      return { ok: Boolean(data.ok), found: Boolean(data.found), order: data.order || null, error: data.error || "" };
     }).catch(function () {
       return { ok: false, found: false };
     });
@@ -1121,7 +1124,7 @@
       "&username=" + encodeURIComponent((session && session.username) || "") +
       "&tabs=" + encodeURIComponent(tabs.join(",")) +
       "&_=" + Date.now();
-    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 8000).then(function (response) {
+    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 30000).then(function (response) {
       return response.text();
     }).then(function (text) {
       const data = parseJson(text);

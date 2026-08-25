@@ -1425,9 +1425,17 @@
     const button = event.target.closest("[data-delete-order]");
     if (!button) return;
     const id = button.getAttribute("data-delete-order");
-    const order = store.getOrder(id) || store.getOrder(id);
-    const canSee = auth.canSeeOrder || auth.canSeeOrder;
-    if (!order || (typeof canSee === "function" && !canSee.call(auth, order))) return;
+    const session = auth.getSession && auth.getSession();
+    const order = store.getOrder(id) || {
+      id: id,
+      accountName: (session && session.account) || "",
+      tabName: (session && session.account) || ""
+    };
+    const canSee = auth.canSeeOrder;
+    if (store.getOrder(id) && typeof canSee === "function" && !canSee.call(auth, store.getOrder(id))) {
+      showToast("You can only delete orders for your account.");
+      return;
+    }
     const sheet = window.OwlisticSheet;
     if (sheet && typeof sheet.confirmDelete === "function") {
       if (!sheet.confirmDelete(order)) return;
@@ -1439,7 +1447,7 @@
       if (store.deleteOrder) store.deleteOrder(id);
       render();
       if (result && result.sheetRemaining) {
-        showToast("Deleted from the portal. Deploy Apps Script to remove the Google Sheet row too.");
+        showToast("Deleted from the portal. The Google Sheet row is still there. Try Delete again.");
       } else {
         showToast("Order " + id + " deleted");
       }
