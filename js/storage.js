@@ -267,9 +267,9 @@
 
   function boardStatusOf(order) {
     const fromBoard = parseBoardStatus(order && order.boardStatus);
-    if (fromBoard === "ready-to-approve" || fromBoard === "completed") return fromBoard;
+    if (fromBoard) return fromBoard;
     const fromOverall = parseBoardStatus(order && order.overallStatus);
-    if (fromOverall === "ready-to-approve" || fromOverall === "completed") return fromOverall;
+    if (fromOverall) return fromOverall;
     if (order && order.readyToApprove) return "ready-to-approve";
     return "in-progress";
   }
@@ -721,9 +721,7 @@
   }
 
   function recordTab(order) {
-    const tab = boardStatusOf(order);
-    if (tab === "on-revision") return "in-progress";
-    return tab;
+    return boardStatusOf(order) || "in-progress";
   }
 
   function currentRevision(order) {

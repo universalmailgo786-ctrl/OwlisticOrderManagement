@@ -1138,9 +1138,9 @@
       name: document.getElementById("name").value.trim(),
       businessName: existing && existing.businessName ? existing.businessName : "",
       clientName: existing && existing.clientName ? existing.clientName : "",
-      boardStatus: boardStatusSelect && boardStatusSelect.value === "on-revision"
-        ? "in-progress"
-        : (boardStatusSelect ? boardStatusSelect.value : ""),
+      boardStatus: existing && existing.boardStatus
+        ? existing.boardStatus
+        : (boardStatusSelect ? boardStatusSelect.value : "in-progress"),
       orderValue: document.getElementById("orderValue").value,
       paymentStatus: selectedPayment("paymentStatus"),
       searchKeyword: document.getElementById("searchKeyword").value.trim(),
@@ -1154,9 +1154,9 @@
       fiverrGigUrl: document.getElementById("fiverrGigUrl").value.trim(),
       reviewText: document.getElementById("reviewText").value,
       revisions: revisions,
-      readyToApprove: boardStatusSelect
-        ? (boardStatusSelect.value === "completed" || boardStatusSelect.value === "ready-to-approve")
-        : Boolean(existing && existing.readyToApprove)
+      readyToApprove: existing
+        ? (existing.boardStatus === "completed" || existing.boardStatus === "ready-to-approve" || Boolean(existing.readyToApprove))
+        : Boolean(boardStatusSelect && (boardStatusSelect.value === "completed" || boardStatusSelect.value === "ready-to-approve"))
     };
   }
 
@@ -1479,8 +1479,8 @@
     document.getElementById("whatsapp").value = order.whatsapp || "";
     document.getElementById("name").value = order.name || "";
     if (boardStatusSelect) {
-      const loaded = (store.boardStatusOf && store.boardStatusOf(order)) || "in-progress";
-      boardStatusSelect.value = loaded === "on-revision" ? "in-progress" : loaded;
+      const loaded = (store.boardStatusOf && store.boardStatusOf(order)) || order.boardStatus || "in-progress";
+      boardStatusSelect.value = loaded;
     }
     document.getElementById("orderValue").value = order.orderValue || "";
     setPayment("paymentStatus", order.paymentStatus || "");

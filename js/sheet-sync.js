@@ -276,9 +276,12 @@
   function toRow(order) {
     const rounds = callStore("normalizeRevisions", "normalizeRevisions", order.revisions || []) || [];
     const current = callStore("currentRevision", "currentRevision", order);
+    const tab = callStore("boardStatusOf", "boardStatusOf", order) || "";
     const status = callStore("computeStatus", "computeStatus", order);
     const typeLabel = callStore("orderTypeLabel", "orderTypeLabel", order) || "";
-    const statusLabel = callStore("statusLabel", "statusLabel", status) || String(status || "");
+    const statusLabel = callStore("boardStatusLabel", "boardStatusLabel", tab) ||
+      callStore("statusLabel", "statusLabel", status) ||
+      String(order.overallStatus || status || "");
     return [
       order.id || "",
       formatDate(order.createdAt || order.createdAt),
@@ -776,6 +779,20 @@
     });
   }
 
+  let statusSyncQueue = Promise.resolve();
+
+  function updateOrderStatus(order) {
+    if (!isConfigured() || !order || !order.id) {
+      return Promise.resolve({ skipped: true });
+    }
+    const orderId = order.id;
+    statusSyncQueue = statusSyncQueue.catch(function () {}).then(function () {
+      const latest = (store && store.getOrder && store.getOrder(orderId)) || order;
+      return sync(latest, { skipUploads: true });
+    });
+    return statusSyncQueue;
+  }
+
   function sync(order, options) {
     if (!order) {
       return Promise.resolve({ skipped: true });
@@ -910,6 +927,7 @@
     filesMissingDrive: filesMissingDrive,
     fetchOrders: fetchOrders,
     updateOrderNames: updateOrderNames,
+    updateOrderStatus: updateOrderStatus,
     findDuplicateOrder: findDuplicateOrder,
     confirmSheetWrite: confirmSheetWrite,
     recordFingerprint: recordFingerprint,

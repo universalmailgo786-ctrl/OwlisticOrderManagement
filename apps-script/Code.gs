@@ -76,6 +76,9 @@ function doGet(e) {
   if (action === "updateOrderNames") {
     return json_(updateOrderNames_(SpreadsheetApp.openById(SPREADSHEET_ID), params));
   }
+  if (action === "updateOrderStatus") {
+    return json_(updateOrderStatus_(SpreadsheetApp.openById(SPREADSHEET_ID), params));
+  }
   return json_({ ok: true, service: "Ashar Orders Management System", sheetColumns: HEADERS.length });
 }
 
@@ -117,6 +120,9 @@ function doPost(e) {
     }
     if (data.action === "updateOrderNames") {
       return json_(updateOrderNames_(ss, data));
+    }
+    if (data.action === "updateOrderStatus") {
+      return json_(updateOrderStatus_(ss, data));
     }
 
     return json_(upsertOrder_(ss, data));
@@ -1143,6 +1149,51 @@ function updateOrderNames_(ss, data) {
     tab: found.sheet.getName(),
     businessName: biz,
     clientName: client
+  };
+}
+
+function updateOrderStatus_(ss, data) {
+  var orderId = String((data && (data.orderId || data.orderid)) || "").trim();
+  if (!orderId) {
+    return { ok: false, action: "updateOrderStatus", error: "Order ID is required." };
+  }
+  var forced = forcedAccount_(data);
+  var wantedName = tabName_(data.tabName || data.tab || data.accountName || "");
+  var found = null;
+  if (wantedName) {
+    var sheet = sheetForAccount_(ss, wantedName);
+    if (sheet) found = findOrderOnSheet_(sheet, orderId);
+  }
+  if (!found) found = findOrder_(ss, orderId);
+  if (!found) {
+    return { ok: false, action: "updateOrderStatus", found: false, error: "Order " + orderId + " was not found on the Google Sheet." };
+  }
+  if (forced && !canAccessFound_(found, forced)) {
+    return { ok: false, action: "updateOrderStatus", error: "You can only edit orders for " + forced + "." };
+  }
+  var tab = parseBoardStatus_(data.status || data.statusLabel || data.overallStatus || data.boardStatus) || "in-progress";
+  var label = String((data.statusLabel != null ? data.statusLabel : data.statuslabel) || "").trim();
+  if (!label) {
+    label = tab === "completed" ? "Completed"
+      : tab === "ready-to-approve" ? "Ready to Approve"
+      : tab === "on-revision" ? "On Revision"
+      : "In Progress";
+  }
+  var ready = (tab === "completed" || tab === "ready-to-approve") ? "Ready to Approve" : "Not Ready";
+  var now = new Date();
+  found.sheet.getRange(found.row, 4).setValue(now);
+  found.sheet.getRange(found.row, 5).setValue(now);
+  found.sheet.getRange(found.row, 24).setValue(ready);
+  found.sheet.getRange(found.row, 25).setValue(label);
+  return {
+    ok: true,
+    action: "updateOrderStatus",
+    updated: true,
+    orderId: orderId,
+    tab: found.sheet.getName(),
+    status: tab,
+    statusLabel: label,
+    readyToApprove: ready
   };
 }
 

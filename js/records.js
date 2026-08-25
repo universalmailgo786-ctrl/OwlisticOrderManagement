@@ -585,6 +585,7 @@
 
   function columnCount(revisionCount) {
     if (activeTab === "on-revision") return 10;
+    if (activeTab === "in-progress") return 17;
     return 17 + (revisionCount * 2);
   }
 
@@ -608,10 +609,13 @@
       return;
     }
     if (table) table.classList.remove("is-revision-board");
+    const hideRevisionColumns = activeTab === "in-progress";
     const revisionHeads = [];
-    for (let i = 1; i <= revisionCount; i += 1) {
-      revisionHeads.push("<th>Revision " + i + " Buyer</th>");
-      revisionHeads.push("<th>Revision " + i + " Seller</th>");
+    if (!hideRevisionColumns) {
+      for (let i = 1; i <= revisionCount; i += 1) {
+        revisionHeads.push("<th>Revision " + i + " Buyer</th>");
+        revisionHeads.push("<th>Revision " + i + " Seller</th>");
+      }
     }
     headRow.innerHTML =
       "<th>Order</th>" +
@@ -632,7 +636,7 @@
       "<th>Payment</th>" +
       "<th>Status</th>" +
       "<th>Actions</th>";
-    if (table) table.style.minWidth = String(1760 + revisionCount * 360) + "px";
+    if (table) table.style.minWidth = String(1760 + (hideRevisionColumns ? 0 : revisionCount * 360)) + "px";
   }
 
   function renderAccountFilter() {
@@ -770,14 +774,16 @@
         "</tr>";
       }
       let revisionCells = "";
-      for (let r = 0; r < revisionCount; r += 1) {
-        const round = rounds[r];
-        const buyerText = revisionRoleText(round, "buyer");
-        const sellerText = revisionRoleText(round, "seller");
-        const revLabel = "Revision " + (r + 1);
-        revisionCells +=
-          mediaCell(revisionRoleHtml(round, "buyer"), buyerText, revLabel + " buyer", revisionRoleHasFiles(round, "buyer")) +
-          mediaCell(revisionRoleHtml(round, "seller"), sellerText, revLabel + " seller", revisionRoleHasFiles(round, "seller"));
+      if (activeTab !== "in-progress") {
+        for (let r = 0; r < revisionCount; r += 1) {
+          const round = rounds[r];
+          const buyerText = revisionRoleText(round, "buyer");
+          const sellerText = revisionRoleText(round, "seller");
+          const revLabel = "Revision " + (r + 1);
+          revisionCells +=
+            mediaCell(revisionRoleHtml(round, "buyer"), buyerText, revLabel + " buyer", revisionRoleHasFiles(round, "buyer")) +
+            mediaCell(revisionRoleHtml(round, "seller"), sellerText, revLabel + " seller", revisionRoleHasFiles(round, "seller"));
+        }
       }
       return '<tr class="records-row is-' + status + '">' +
         "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
@@ -1440,7 +1446,6 @@
     if (typeof canSee === "function" && !canSee.call(auth, order)) return;
     const nextTab = select.value;
     if (typeof store.setBoardStatus === "function") store.setBoardStatus(order, nextTab);
-    else if (typeof store.setBoardStatus === "function") store.setBoardStatus(order, nextTab);
     else {
       order.boardStatus = nextTab;
       order.overallStatus = (store.boardStatusLabel && store.boardStatusLabel(nextTab)) || nextTab;
@@ -1451,8 +1456,31 @@
     const sheet = window.OwlisticSheet;
     setActiveTab(tabOf(order));
     showToast("Status set to " + label);
+    const finish = function (result) {
+      render();
+      if (result && result.skipped) return;
+      if (result && result.ok === false) {
+        showToast(result.error || "Status updated here, but not on the Google Sheet.");
+        return;
+      }
+      showToast("Status set to " + label + " and saved to Google Sheet");
+    };
+    if (sheet && typeof sheet.updateOrderStatus === "function") {
+      sheet.updateOrderStatus(order).then(finish).catch(function () {
+        if (sheet.sync) {
+          sheet.sync(order, { skipUploads: true }).then(finish).catch(function () {
+            finish({ ok: false, error: "Status updated here, but not on the Google Sheet." });
+          });
+          return;
+        }
+        finish({ ok: false, error: "Status updated here, but not on the Google Sheet." });
+      });
+      return;
+    }
     if (sheet && typeof sheet.sync === "function") {
-      sheet.sync(order).catch(function () {});
+      sheet.sync(order, { skipUploads: true }).then(finish).catch(function () {
+        finish({ ok: false, error: "Status updated here, but not on the Google Sheet." });
+      });
     }
   });
   [search, dateFilter, accountFilter, paymentFilter, revisionFilter, readyFilter].forEach(function (input) {
