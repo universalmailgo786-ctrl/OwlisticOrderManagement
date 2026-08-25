@@ -427,26 +427,32 @@
   function canAddMessage(revision, role) {
     const last = lastPair(revision);
     if (role === "buyer") {
-      if (!last) return true;
-      if (!messageFilled(last.buyer)) return false;
-      if (!messageFilled(last.seller)) return false;
-      return true;
+      return !last;
     }
     if (!last || !messageFilled(last.buyer)) return false;
     if (last.seller && !messageFilled(last.seller)) return false;
     return !last.seller;
   }
 
+  function canStartNextRevision() {
+    if (!revisions.length) return true;
+    const last = revisions[revisions.length - 1];
+    const pair = lastPair(last);
+    const number = last && last.number ? last.number : revisions.length;
+    if (!pair || !messageFilled(pair.buyer)) return false;
+    if (!messageFilled(pair.seller)) return false;
+    return true;
+  }
+
   function addHint(revision, role) {
     const last = lastPair(revision);
+    const number = revision && revision.number ? revision.number : pairNumber(revision);
     if (role === "buyer") {
-      if (last && !messageFilled(last.buyer)) return "Fill Buyer Message " + pairNumber(revision) + " before adding another";
-      if (last && !messageFilled(last.seller)) return "Add Seller Message " + pairNumber(revision) + " first";
-      return "Fill the current buyer message before adding another";
+      if (last) return "Use Add Revision to start Revision " + (number + 1);
+      return "Fill Buyer Message " + number + " first";
     }
-    if (!last || !messageFilled(last.buyer)) return "Fill Buyer Message " + pairNumber(revision) + " first";
-    if (last.seller && !messageFilled(last.seller)) return "Fill Seller Message " + pairNumber(revision) + " before adding another";
-    if (pairFilled(last)) return "Add the next buyer message first";
+    if (!last || !messageFilled(last.buyer)) return "Fill Buyer Message " + number + " first";
+    if (last.seller && !messageFilled(last.seller)) return "Fill Seller Message " + number + " before adding another";
     return "Fill the buyer message first";
   }
 
@@ -559,16 +565,18 @@
     });
   }
 
-  function nextRowButtonHtml(revision, pairs) {
-    const nextNumber = pairs.length + 1;
-    const allowed = canAddMessage(revision, "buyer");
+  function nextRowButtonHtml() {
+    const nextNumber = revisions.length + 1;
+    const allowed = canStartNextRevision();
+    const last = revisions.length ? revisions[revisions.length - 1] : null;
+    const hint = allowed
+      ? "This starts Revision " + nextNumber + ": Buyer Message " + nextNumber + " on the left, Seller Message " + nextNumber + " on the right."
+      : (last ? addHint(last, messageFilled(lastPair(last) && lastPair(last).seller) ? "buyer" : "seller") : "Add Revision 1 first");
     return '<div class="chat-next">' +
-      '<button type="button" class="next-row-btn" data-add-next-row data-revision-id="' + revision.id + '"' + (allowed ? "" : " disabled") + ' title="' + escapeHtml(allowed ? "Add Buyer Message " + nextNumber : addHint(revision, "buyer")) + '">' +
-        "+ Add Buyer Message " + nextNumber +
+      '<button type="button" class="next-row-btn" data-add-next-row' + (allowed ? "" : " disabled") + ' title="' + escapeHtml(allowed ? "Add Revision " + nextNumber : hint) + '">' +
+        "+ Add Revision " + nextNumber +
       "</button>" +
-      (allowed
-        ? "<p>This starts row " + nextNumber + ": Buyer Message " + nextNumber + " on the left, Seller Message " + nextNumber + " on the right.</p>"
-        : '<p data-next-hint>' + escapeHtml(addHint(revision, "buyer")) + "</p>") +
+      '<p data-next-hint>' + escapeHtml(hint) + "</p>" +
     "</div>";
   }
 
@@ -583,9 +591,8 @@
       if (wait) {
         wait.classList.toggle("is-ready", allowed);
         const copy = wait.querySelector("[data-wait-copy]");
-        const last = revision && lastPair(revision);
-        const number = last ? pairMessages(revision.messages).length : 1;
         if (copy && role === "seller") {
+          const number = revision && revision.number ? revision.number : 1;
           copy.textContent = allowed
             ? "Buyer Message " + number + " is ready. Add Seller Message " + number + "."
             : "Fill Buyer Message " + number + " first.";
@@ -593,21 +600,23 @@
       }
     });
     revisionsList.querySelectorAll("[data-add-next-row]").forEach(function (button) {
-      const revision = findRevision(button.getAttribute("data-revision-id"));
-      const allowed = Boolean(revision && canAddMessage(revision, "buyer"));
-      const nextNumber = revision ? pairMessages(revision.messages || []).length + 1 : 1;
+      const allowed = canStartNextRevision();
+      const nextNumber = revisions.length + 1;
+      const last = revisions.length ? revisions[revisions.length - 1] : null;
+      const hint = allowed
+        ? "This starts Revision " + nextNumber + ": Buyer Message " + nextNumber + " on the left, Seller Message " + nextNumber + " on the right."
+        : (last ? addHint(last, "seller") : "Add Revision 1 first");
       button.disabled = !allowed;
-      button.title = allowed ? "Add Buyer Message " + nextNumber : addHint(revision, "buyer");
-      const hint = button.parentNode && button.parentNode.querySelector("p");
-      if (hint) {
-        hint.textContent = allowed
-          ? "This starts row " + nextNumber + ": Buyer Message " + nextNumber + " on the left, Seller Message " + nextNumber + " on the right."
-          : addHint(revision, "buyer");
-      }
+      button.title = allowed ? "Add Revision " + nextNumber : hint;
+      const copy = button.parentNode && button.parentNode.querySelector("p");
+      if (copy) copy.textContent = hint;
     });
   }
 
   function renderRevisions() {
+    if (store.normalizeRevisions) {
+      revisions = store.normalizeRevisions(revisions);
+    }
     let pruned = false;
     revisions.forEach(function (revision) {
       const before = (revision.messages || []).length;
@@ -623,20 +632,20 @@
       return;
     }
 
-    visibleFormRevisions().forEach(function (revision) {
+    visibleFormRevisions().forEach(function (revision, revisionIndex) {
       const round = document.createElement("article");
       round.className = "revision-round" + (revision.completed ? " is-complete" : "");
       round.setAttribute("data-revision-id", revision.id);
 
       const messages = revision.messages || [];
       const pairs = pairMessages(messages);
+      const number = revision.number || revisionIndex + 1;
       const thread = pairs.length
-        ? pairs.map(function (pair, index) {
-          const number = index + 1;
-          return '<div class="chat-pair" data-pair-index="' + index + '">' +
+        ? pairs.slice(0, 1).map(function (pair) {
+          return '<div class="chat-pair" data-pair-index="0">' +
             '<div class="chat-step-col">' +
               '<span class="chat-step" aria-hidden="true">' + number + "</span>" +
-              '<button type="button" class="chat-row-delete" data-delete-row="' + index + '" data-revision-id="' + revision.id + '" title="Delete row ' + number + '">Delete row</button>' +
+              '<button type="button" class="chat-row-delete" data-delete-row="0" data-revision-id="' + revision.id + '" title="Delete Revision ' + number + '">Delete row</button>' +
             "</div>" +
             slotHtml(revision, pair.buyer, "buyer", number) +
             slotHtml(revision, pair.seller, "seller", number) +
@@ -647,8 +656,8 @@
       round.innerHTML =
         '<div class="revision-round-head">' +
           "<div>" +
-            '<p class="revision-title">Revision ' + revision.number + "</p>" +
-            '<p class="revision-meta">' + store.formatDateTime(revision.createdAt) + " · " + (pairs.length === 1 ? "1 row" : pairs.length + " rows") + "</p>" +
+            '<p class="revision-title">Revision ' + number + "</p>" +
+            '<p class="revision-meta">' + store.formatDateTime(revision.createdAt) + "</p>" +
           "</div>" +
           '<div class="revision-round-actions">' +
             '<label class="revision-complete">' +
@@ -663,7 +672,7 @@
             "<span></span><span>Buyer</span><span>Seller</span>" +
           "</div>" +
           thread +
-          nextRowButtonHtml(revision, pairs) +
+          (revisionIndex === revisions.length - 1 ? nextRowButtonHtml() : "") +
         "</div>";
 
       revisionsList.appendChild(round);
@@ -1881,12 +1890,10 @@
 
     const deleteRowBtn = event.target.closest("[data-delete-row]");
     if (deleteRowBtn) {
-      const revision = findRevision(deleteRowBtn.getAttribute("data-revision-id"));
-      if (!revision) return;
-      removePair(revision, Number(deleteRowBtn.getAttribute("data-delete-row")));
+      removeRevision(deleteRowBtn.getAttribute("data-revision-id"));
       renderRevisions();
       maybePersist();
-      showToast("Row deleted");
+      showToast("Revision deleted");
       return;
     }
 
@@ -1902,11 +1909,30 @@
     }
 
     const nextRow = event.target.closest("[data-add-next-row]");
-    const button = nextRow || event.target.closest("[data-add-message]");
+    if (nextRow) {
+      if (!canStartNextRevision()) {
+        const last = revisions[revisions.length - 1];
+        showToast(last ? addHint(last, "seller") : "Add Revision 1 first");
+        return;
+      }
+      const revision = {
+        id: store.uid("rev"),
+        number: revisions.length + 1,
+        createdAt: store.nowIso(),
+        completed: false,
+        messages: []
+      };
+      addMessage(revision, "buyer");
+      revisions.push(revision);
+      renderRevisions();
+      maybePersist();
+      return;
+    }
+    const button = event.target.closest("[data-add-message]");
     if (!button) return;
     const revision = findRevision(button.getAttribute("data-revision-id"));
     if (!revision) return;
-    const role = nextRow ? "buyer" : button.getAttribute("data-add-message");
+    const role = button.getAttribute("data-add-message");
     if (!canAddMessage(revision, role)) {
       showToast(addHint(revision, role));
       return;

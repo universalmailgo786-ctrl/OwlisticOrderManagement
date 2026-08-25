@@ -244,7 +244,54 @@
       round.number = index + 1;
       round.messages = repairRevisionMessages(round.messages);
     });
-    return rounds;
+    return splitRevisionRounds(rounds);
+  }
+
+  function revisionMessageRole(message) {
+    return message && (message.role === "seller" || message.kind === "seller") ? "seller" : "buyer";
+  }
+
+  function pairRevisionMessages(messages) {
+    const pairs = [];
+    let pendingBuyer = null;
+    (messages || []).forEach(function (message) {
+      if (revisionMessageRole(message) === "buyer") {
+        if (pendingBuyer) pairs.push({ buyer: pendingBuyer, seller: null });
+        pendingBuyer = message;
+        return;
+      }
+      pairs.push({ buyer: pendingBuyer, seller: message });
+      pendingBuyer = null;
+    });
+    if (pendingBuyer) pairs.push({ buyer: pendingBuyer, seller: null });
+    return pairs;
+  }
+
+  function splitRevisionRounds(rounds) {
+    const out = [];
+    (rounds || []).forEach(function (revision) {
+      const pairs = pairRevisionMessages(revision.messages || []);
+      if (pairs.length <= 1) {
+        out.push(revision);
+        return;
+      }
+      pairs.forEach(function (pair, index) {
+        const messages = [];
+        if (pair.buyer) messages.push(pair.buyer);
+        if (pair.seller) messages.push(pair.seller);
+        out.push({
+          id: index === 0 ? revision.id : String(revision.id || "rev") + "__r" + (index + 1),
+          number: out.length + 1,
+          createdAt: (pair.buyer && pair.buyer.createdAt) || revision.createdAt,
+          completed: Boolean(revision.completed),
+          messages: messages
+        });
+      });
+    });
+    out.forEach(function (round, index) {
+      round.number = index + 1;
+    });
+    return out;
   }
 
   function parseBoardStatus(value) {
