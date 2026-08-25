@@ -2133,3 +2133,7 @@ function ensureOrderTabForAccount_(account) {
   var sheet = getOrCreateSheet_(ss, name);
   styleSheet_(ss, sheet);
 }
+
+function setupAccounts() {
+  return setupAccountProfiles_();
+}
