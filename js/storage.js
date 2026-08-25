@@ -667,26 +667,16 @@
   }
 
   function visibleRevisions(order) {
-    const rounds = normalizeRevisions((order && order.revisions) || []);
-    const visible = [];
-    let i;
-    for (i = 0; i < rounds.length; i += 1) {
-      visible.push(rounds[i]);
-      if (!rounds[i].completed) break;
-    }
-    return visible;
+    return normalizeRevisions((order && order.revisions) || []);
   }
 
-  function canAddRevision(order) {
-    const rounds = normalizeRevisions((order && order.revisions) || []);
-    if (!rounds.length) return true;
-    return rounds.every(function (item) { return item.completed; });
+  function canAddRevision() {
+    return true;
   }
 
   function addRevision(order) {
     if (!order) return order;
     order.revisions = normalizeRevisions(order.revisions || []);
-    if (!canAddRevision(order)) return order;
     order.revisions.push({
       id: uid("rev"),
       number: order.revisions.length + 1,
@@ -710,10 +700,6 @@
       return String(round.id) === String(revisionId);
     });
     if (index < 0) return order;
-    if (completed) {
-      const previousOpen = rounds.slice(0, index).some(function (round) { return !round.completed; });
-      if (previousOpen) return order;
-    }
     rounds[index].completed = Boolean(completed);
     order.revisions = rounds;
     return order;

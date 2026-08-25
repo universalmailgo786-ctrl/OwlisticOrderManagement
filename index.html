@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=urlwrap2" />
+  <link rel="stylesheet" href="css/styles.css?v=typecheck2" />
 </head>
 <body>
   <nav class="app-nav">
@@ -279,16 +279,16 @@
           </div>
         </div>
         <div class="row-control">
-          <fieldset class="choice-group" role="radiogroup" aria-labelledby="order-type-label">
+          <fieldset class="choice-group choice-group-check" aria-labelledby="order-type-label">
             <legend class="sr-only">Custom (Message) Order or Direct</legend>
-            <label class="choice choice-custom">
-              <input type="radio" name="orderType" id="order-custom" value="custom" />
-              <span class="choice-mark"></span>
+            <label class="choice choice-check choice-custom">
+              <input type="checkbox" id="order-custom" name="orderTypeCustom" value="custom" />
+              <span class="choice-box"></span>
               <span>Custom (Message)</span>
             </label>
-            <label class="choice choice-direct">
-              <input type="radio" name="orderType" id="order-direct" value="direct" />
-              <span class="choice-mark"></span>
+            <label class="choice choice-check choice-direct">
+              <input type="checkbox" id="order-direct" name="orderTypeDirect" value="direct" />
+              <span class="choice-box"></span>
               <span>Direct</span>
             </label>
           </fieldset>
@@ -390,7 +390,7 @@
         <div class="revisions-head">
           <div>
             <h2 id="revisions-title">Revisions</h2>
-            <p>Complete Revision 1, then add Revision 2, then 3, and so on. When every revision is done, set status to Ready to Approve.</p>
+            <p>Each row is Buyer Message 1 with Seller Message 1, then 2, 3, and so on. Add another revision whenever you need one.</p>
             <p class="revisions-count" id="revisions-count">0 revisions</p>
           </div>
           <button type="button" class="ghost-btn" id="add-revision">+ Add Revision</button>
@@ -503,9 +503,9 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="js/storage.js?v=urlwrap2"></script>
-  <script src="js/sheet-sync.js?v=urlwrap2"></script>
-  <script src="js/auth.js?v=urlwrap2"></script>
-  <script src="js/form.js?v=urlwrap2"></script>
+  <script src="js/storage.js?v=typecheck2"></script>
+  <script src="js/sheet-sync.js?v=typecheck2"></script>
+  <script src="js/auth.js?v=typecheck2"></script>
+  <script src="js/form.js?v=typecheck2"></script>
 </body>
 </html>

@@ -354,49 +354,25 @@
     return null;
   }
 
-  function canAddNextRevision() {
-    if (typeof store.canAddRevision === "function") {
-      return store.canAddRevision({ revisions: revisions });
-    }
-    return !revisions.length || revisions.every(function (item) { return item.completed; });
-  }
-
   function visibleFormRevisions() {
-    if (typeof store.visibleRevisions === "function") {
-      return store.visibleRevisions({ revisions: revisions });
-    }
-    const list = [];
-    let i;
-    for (i = 0; i < revisions.length; i += 1) {
-      list.push(revisions[i]);
-      if (!revisions[i].completed) break;
-    }
-    return list;
+    return revisions.slice();
   }
 
   function updateAddRevisionButton() {
     const button = document.getElementById("add-revision");
     if (!button) return;
-    const allowed = canAddNextRevision();
     const nextNumber = revisions.length + 1;
-    button.disabled = !allowed;
-    button.textContent = "+ Add Revision " + nextNumber;
-    button.title = allowed
-      ? (revisions.length ? "Add revision " + nextNumber : "Add revision 1")
-      : "Complete the current revision before adding the next one.";
+    button.disabled = false;
+    button.textContent = "+ Add Revision";
+    button.title = revisions.length ? "Add revision " + nextNumber : "Add revision 1";
   }
 
   function updateRevisionsCount() {
     const countEl = document.getElementById("revisions-count");
     if (!countEl) return;
     const count = revisions.length;
-    const visible = visibleFormRevisions();
     if (!count) {
       countEl.textContent = "0 revisions";
-      return;
-    }
-    if (visible.length < count) {
-      countEl.textContent = "Showing revision " + visible.length + " of " + count;
       return;
     }
     countEl.textContent = count === 1 ? "1 revision" : count + " revisions";
@@ -1537,7 +1513,7 @@
     setPayment("paymentStatus", order.paymentStatus || "");
     document.getElementById("searchKeyword").value = order.searchKeyword || "";
     document.getElementById("order-custom").checked = Boolean(order.orderTypeCustom);
-    document.getElementById("order-direct").checked = !order.orderTypeCustom && Boolean(order.orderTypeDirect);
+    document.getElementById("order-direct").checked = Boolean(order.orderTypeDirect);
     threadMessages = store.messageThreadOf ? store.messageThreadOf(order) : (order.messageThread || []).slice();
     if (!threadMessages.length) threadMessages = emptyMessageThread();
     document.getElementById("messageText").value = order.messageText || "";
@@ -1580,6 +1556,8 @@
       }).catch(function () {});
     });
   }
+
+  function loadAccountsFromSheet() {
     const sheet = window.OwlisticSheet;
     if (!sheet || typeof sheet.fetchAccounts !== "function") {
       return Promise.resolve(null);
@@ -1836,10 +1814,6 @@
   }
 
   document.getElementById("add-revision").addEventListener("click", function () {
-    if (!canAddNextRevision()) {
-      showToast("Complete the current revision before adding the next one.");
-      return;
-    }
     const revision = {
       id: store.uid("rev"),
       number: revisions.length + 1,
@@ -1937,10 +1911,10 @@
     revision.completed = box.checked;
     renderRevisions();
     maybePersist();
-    if (box.checked && canAddNextRevision()) {
+    if (box.checked && revisions.length && revisions.every(function (item) { return item.completed; })) {
       showToast("All revisions complete. Set status to Ready to Approve when it is ready.");
     } else if (box.checked) {
-      showToast("Revision completed. The next revision is now showing.");
+      showToast("Revision completed");
     }
   });
 
