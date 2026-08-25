@@ -69,46 +69,85 @@
   function requirementFileList(files) {
     if (!files) return [];
     if (typeof files === "string") {
+      if (store.parseFileRefs) return store.parseFileRefs(files);
       return files.split(/\n|;|,/).map(function (part) {
         const chunk = String(part || "").trim();
         if (!chunk) return null;
         const pipe = chunk.indexOf("|");
         if (pipe >= 0) {
-          return { name: chunk.slice(0, pipe).trim(), url: chunk.slice(pipe + 1).trim() };
+          return { name: chunk.slice(0, pipe).trim(), url: chunk.slice(pipe + 1).trim(), id: "" };
         }
         const match = chunk.match(/^(.*)\s+(https?:\/\/\S+)\s*$/i);
-        if (match) return { name: String(match[1] || "").trim(), url: String(match[2] || "").trim() };
-        return { name: chunk, url: "" };
+        if (match) return { name: String(match[1] || "").trim(), url: String(match[2] || "").trim(), id: "" };
+        return { name: chunk, url: "", id: "" };
       }).filter(function (file) { return file && file.name; });
     }
     if (!Array.isArray(files)) return [];
     return files.map(function (file) {
       if (!file) return null;
-      if (typeof file === "string") return { name: file, url: "" };
+      if (typeof file === "string") return { name: file, url: "", id: "" };
       return {
         name: file.name || file.fileName || "",
-        url: file.url || file.link || ""
+        url: file.url || file.link || "",
+        id: file.id || "",
+        type: file.type || ""
       };
     }).filter(function (file) { return file && file.name; });
   }
 
-  function filesCell(files) {
+  function isImageFile(file) {
+    return store.isImageFile ? store.isImageFile(file) : /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/i.test(String((file && file.name) || ""));
+  }
+
+  function filePreviewSrc(file) {
+    return store.filePreviewUrl ? store.filePreviewUrl(file) : (file && file.url) || "";
+  }
+
+  function fileDownloadHref(file) {
+    return store.fileDownloadUrl ? store.fileDownloadUrl(file) : (file && file.url) || "";
+  }
+
+  function fileCardsHtml(files) {
     const list = requirementFileList(files);
-    if (!list.length) return '<span class="muted">—</span>';
-    const title = escapeHtml(filesCopyText(files));
-    return '<div class="records-files" title="' + title + '">' + list.map(function (file, index) {
+    if (!list.length) return "";
+    return '<div class="records-files">' + list.map(function (file) {
       const name = escapeHtml(file.name);
-      const item = file.url
-        ? '<a class="records-file-link" href="' + escapeHtml(file.url) + '" target="_blank" rel="noopener noreferrer">' + name + "</a>"
-        : "<span>" + name + "</span>";
-      return item + (index < list.length - 1 ? '<span class="records-file-sep">, </span>' : "");
+      const preview = filePreviewSrc(file);
+      const download = fileDownloadHref(file);
+      const idAttr = file.id ? ' data-file-id="' + escapeHtml(file.id) + '"' : "";
+      const thumb = isImageFile(file)
+        ? '<img class="records-file-thumb" alt="' + name + '" referrerpolicy="no-referrer"' +
+          (preview ? ' src="' + escapeHtml(preview) + '"' : "") +
+          idAttr + ' data-file-name="' + name + '">'
+        : '<div class="records-file-icon"' + idAttr + ' data-file-name="' + name + '">File</div>';
+      const link = download
+        ? '<a class="records-file-link" href="' + escapeHtml(download) + '" target="_blank" rel="noopener noreferrer" download="' + name + '">Download</a>'
+        : (file.id
+          ? '<button type="button" class="records-file-link" data-download-file-id="' + escapeHtml(file.id) + '" data-file-name="' + name + '">Download</button>'
+          : "");
+      return '<div class="records-file-card">' + thumb + '<span class="records-file-name">' + name + "</span>" + link + "</div>";
     }).join("") + "</div>";
+  }
+
+  function filesCell(files) {
+    const html = fileCardsHtml(files);
+    return html || '<span class="muted">—</span>';
   }
 
   function filesCopyText(files) {
     return requirementFileList(files).map(function (file) {
       return file.url ? file.name + " " + file.url : file.name;
     }).join("\n");
+  }
+
+  function hasFiles(files) {
+    return requirementFileList(files).length > 0;
+  }
+
+  function mediaCell(html, copyText, label, filesPresent) {
+    return '<td class="records-clip-cell' + (filesPresent ? " records-media-cell" : "") + '">' +
+      withCopy(html, copyText, label) +
+    "</td>";
   }
 
   function linkCell(url) {
@@ -127,18 +166,18 @@
   function messageCopy(message) {
     if (!message) return "";
     const text = String(message.text || "").trim();
-    const files = (message.files || []).map(function (file) { return file && file.name; }).filter(Boolean).join(", ");
-    if (text && files) return text + "\nFiles: " + files;
-    return text || (files ? "Files: " + files : "");
+    const files = filesCopyText(message.files);
+    if (text && files) return text + "\n" + files;
+    return text || files;
   }
 
   function messageCellHtml(message) {
     if (!message) return '<span class="muted">—</span>';
     const text = String(message.text || "").trim();
-    const files = (message.files || []).map(function (file) { return file && file.name; }).filter(Boolean).join(", ");
-    const display = text && files ? text + " · " + files : (text || files);
-    if (!display) return '<span class="muted">—</span>';
-    return '<div class="records-clip" title="' + escapeHtml(messageCopy(message)) + '">' + escapeHtml(display) + "</div>";
+    const filesHtml = fileCardsHtml(message.files);
+    if (!text && !filesHtml) return '<span class="muted">—</span>';
+    const textHtml = text ? '<div class="records-clip" title="' + escapeHtml(text) + '">' + escapeHtml(text) + "</div>" : "";
+    return '<div class="records-message-cell">' + textHtml + filesHtml + "</div>";
   }
 
   function maxMessagePairs(orders) {
@@ -229,6 +268,28 @@
       if (messageRole !== wanted) return "";
       return messageCopy(message);
     }).filter(Boolean).join("\n\n");
+  }
+
+  function revisionRoleMessages(round, role) {
+    const wanted = role === "seller" || role === "client" ? "seller" : "buyer";
+    return ((round && round.messages) || []).filter(function (message) {
+      const messageRole = message && (message.role === "seller" || message.kind === "seller" || message.role === "client")
+        ? "seller"
+        : "buyer";
+      return messageRole === wanted;
+    });
+  }
+
+  function revisionRoleHtml(round, role) {
+    const messages = revisionRoleMessages(round, role);
+    if (!messages.length) return '<span class="muted">—</span>';
+    return messages.map(function (message) { return messageCellHtml(message); }).join("");
+  }
+
+  function revisionRoleHasFiles(round, role) {
+    return revisionRoleMessages(round, role).some(function (message) {
+      return hasFiles(message.files);
+    });
   }
 
   function maxRevisionCount(orders) {
@@ -395,8 +456,8 @@
         const buyerLabel = "Buyer Message " + (i + 1);
         const clientLabel = "Client Reply " + (i + 1);
         messageCells +=
-          '<td class="records-clip-cell">' + withCopy(messageCellHtml(pair.buyer), messageCopy(pair.buyer), buyerLabel) + "</td>" +
-          '<td class="records-clip-cell">' + withCopy(messageCellHtml(pair.client), messageCopy(pair.client), clientLabel) + "</td>";
+          mediaCell(messageCellHtml(pair.buyer), messageCopy(pair.buyer), buyerLabel, hasFiles(pair.buyer && pair.buyer.files)) +
+          mediaCell(messageCellHtml(pair.client), messageCopy(pair.client), clientLabel, hasFiles(pair.client && pair.client.files));
       }
       let revisionCells = "";
       for (let r = 0; r < revisionCount; r += 1) {
@@ -405,8 +466,8 @@
         const sellerText = revisionRoleText(round, "seller");
         const revLabel = "Revision " + (r + 1);
         revisionCells +=
-          '<td class="records-clip-cell">' + withCopy(clipText(buyerText), buyerText, revLabel + " buyer") + "</td>" +
-          '<td class="records-clip-cell">' + withCopy(clipText(sellerText), sellerText, revLabel + " seller") + "</td>";
+          mediaCell(revisionRoleHtml(round, "buyer"), buyerText, revLabel + " buyer", revisionRoleHasFiles(round, "buyer")) +
+          mediaCell(revisionRoleHtml(round, "seller"), sellerText, revLabel + " seller", revisionRoleHasFiles(round, "seller"));
       }
       return '<tr class="records-row is-' + status + '">' +
         "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
@@ -418,7 +479,7 @@
         "<td>" + withCopy(escapeHtml(typeLabel || "—"), typeLabel || "", "type") + "</td>" +
         messageCells +
         '<td class="records-clip-cell">' + withCopy(clipText(order.directRequirements), order.directRequirements || "", "direct order requirements") + "</td>" +
-        '<td class="records-clip-cell">' + withCopy(filesCell(order.requirementFiles), filesCopyText(order.requirementFiles), "requirement files") + "</td>" +
+        mediaCell(filesCell(order.requirementFiles), filesCopyText(order.requirementFiles), "requirement files", hasFiles(order.requirementFiles)) +
         "<td>" + withCopy(escapeHtml(order.fiverrId || "—"), order.fiverrId || "", "Fiverr ID name") + "</td>" +
         '<td class="records-clip-cell">' + withCopy(linkCell(order.fiverrGigUrl), order.fiverrGigUrl || "", "Fiverr GIG URL") + "</td>" +
         '<td class="records-clip-cell">' + withCopy(clipText(order.reviewText), order.reviewText || "", "review text") + "</td>" +
@@ -431,6 +492,58 @@
         "</td>" +
       "</tr>";
     }).join("");
+    hydrateLocalFilePreviews();
+  }
+
+  function hydrateLocalFilePreviews() {
+    document.querySelectorAll(".records-file-thumb").forEach(function (img) {
+      if (img.getAttribute("src")) {
+        img.addEventListener("error", function () {
+          const card = img.closest(".records-file-card");
+          const link = card && card.querySelector("a.records-file-link");
+          if (link && link.href && img.src !== link.href) img.src = link.href;
+        }, { once: true });
+        return;
+      }
+      const id = img.getAttribute("data-file-id");
+      if (!id || typeof store.getFile !== "function") return;
+      store.getFile(id).then(function (record) {
+        const blob = record && record.blob;
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        img.src = url;
+        const card = img.closest(".records-file-card");
+        const button = card && card.querySelector("[data-download-file-id]");
+        if (button && button.tagName === "BUTTON") {
+          button.addEventListener("click", function () {
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = img.getAttribute("data-file-name") || "file";
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+          });
+        }
+      });
+    });
+    document.querySelectorAll("[data-download-file-id]").forEach(function (button) {
+      if (button.tagName !== "BUTTON" || button.getAttribute("data-bound") === "1") return;
+      button.setAttribute("data-bound", "1");
+      button.addEventListener("click", function () {
+        const id = button.getAttribute("data-download-file-id");
+        if (!id || typeof store.getFile !== "function") return;
+        store.getFile(id).then(function (record) {
+          const blob = record && record.blob;
+          if (!blob) return;
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = button.getAttribute("data-file-name") || (record && record.name) || "file";
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+        });
+      });
+    });
   }
 
   function applySheetOrders(result) {

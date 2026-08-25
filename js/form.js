@@ -117,8 +117,12 @@
   }
 
   function openRequirementFile(file) {
+    if (file && file.pendingBlob) {
+      window.open(URL.createObjectURL(file.pendingBlob), "_blank", "noopener");
+      return;
+    }
     if (file && file.url) {
-      window.open(file.url, "_blank", "noopener");
+      window.open(fileDownloadHref(file) || file.url, "_blank", "noopener");
       return;
     }
     if (!file || !file.id) return;
@@ -130,6 +134,15 @@
   }
 
   function downloadRequirementFile(file) {
+    if (file && file.pendingBlob) {
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(file.pendingBlob);
+      link.download = file.name || "file";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      return;
+    }
     if (file && file.url) {
       const link = document.createElement("a");
       link.href = file.url;
@@ -154,15 +167,74 @@
     });
   }
 
+  function isImageFile(file) {
+    return store.isImageFile ? store.isImageFile(file) : /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/i.test(String((file && file.name) || ""));
+  }
+
+  function filePreviewSrc(file) {
+    return store.filePreviewUrl ? store.filePreviewUrl(file) : (file && file.url) || "";
+  }
+
+  function fileDownloadHref(file) {
+    return store.fileDownloadUrl ? store.fileDownloadUrl(file) : (file && file.url) || "";
+  }
+
+  function bindPreviewImage(img, file) {
+    if (!isImageFile(file)) return;
+    if (file.pendingBlob) {
+      img.src = URL.createObjectURL(file.pendingBlob);
+      img.hidden = false;
+      return;
+    }
+    const remote = filePreviewSrc(file);
+    if (remote) {
+      img.src = remote;
+      img.hidden = false;
+      img.addEventListener("error", function () {
+        if (file.url && img.src !== file.url) img.src = file.url;
+      });
+      return;
+    }
+    if (!file.id || typeof store.getFile !== "function") return;
+    store.getFile(file.id).then(function (record) {
+      const blob = storedBlob(record);
+      if (!blob) return;
+      img.src = URL.createObjectURL(blob);
+      img.hidden = false;
+    });
+  }
+
   function renderFileList(target, files, onChange) {
     target.innerHTML = "";
     files.forEach(function (file, index) {
       const item = document.createElement("li");
-      const info = document.createElement("span");
-      info.textContent = file.name + (file.uploadedAt ? " · " + store.formatDateTime(file.uploadedAt) : "");
-      const actions = document.createElement("span");
+      item.className = "file-list-item";
 
-      if (file.id || file.url) {
+      const preview = document.createElement("div");
+      preview.className = "file-preview";
+      if (isImageFile(file)) {
+        const img = document.createElement("img");
+        img.className = "file-preview-img";
+        img.alt = file.name || "image";
+        img.hidden = true;
+        img.referrerPolicy = "no-referrer";
+        bindPreviewImage(img, file);
+        preview.appendChild(img);
+      } else {
+        const icon = document.createElement("span");
+        icon.className = "file-preview-icon";
+        icon.textContent = "File";
+        preview.appendChild(icon);
+      }
+
+      const info = document.createElement("span");
+      info.className = "file-preview-name";
+      info.textContent = file.name + (file.uploadedAt ? " · " + store.formatDateTime(file.uploadedAt) : "");
+
+      const actions = document.createElement("span");
+      actions.className = "file-preview-actions";
+
+      if (file.id || file.url || file.pendingBlob) {
         const openBtn = document.createElement("button");
         openBtn.type = "button";
         openBtn.textContent = "Open";
@@ -171,12 +243,22 @@
         });
         actions.appendChild(openBtn);
 
-        const downloadBtn = document.createElement("button");
-        downloadBtn.type = "button";
+        const downloadBtn = document.createElement("a");
         downloadBtn.textContent = "Download";
-        downloadBtn.addEventListener("click", function () {
-          downloadRequirementFile(file);
-        });
+        downloadBtn.className = "file-download-link";
+        const href = fileDownloadHref(file);
+        if (href) {
+          downloadBtn.href = href;
+          downloadBtn.target = "_blank";
+          downloadBtn.rel = "noopener noreferrer";
+          downloadBtn.setAttribute("download", file.name || "file");
+        } else {
+          downloadBtn.href = "#";
+          downloadBtn.addEventListener("click", function (event) {
+            event.preventDefault();
+            downloadRequirementFile(file);
+          });
+        }
         actions.appendChild(downloadBtn);
       }
 
@@ -184,13 +266,37 @@
       removeBtn.type = "button";
       removeBtn.textContent = "Remove";
       removeBtn.addEventListener("click", function () {
+        const removed = files[index];
         files.splice(index, 1);
+        if (removed && removed.pendingBlob && fileInput) {
+          const transfer = new DataTransfer();
+          Array.from(fileInput.files || []).forEach(function (item) {
+            if (item !== removed.pendingBlob) transfer.items.add(item);
+          });
+          fileInput.files = transfer.files;
+        }
         if (onChange) onChange();
       });
       actions.appendChild(removeBtn);
-      item.appendChild(info);
-      item.appendChild(actions);
+
+      const body = document.createElement("div");
+      body.className = "file-preview-body";
+      body.appendChild(info);
+      body.appendChild(actions);
+      item.appendChild(preview);
+      item.appendChild(body);
       target.appendChild(item);
+    });
+  }
+
+  function pendingRequirementFiles() {
+    return Array.from((fileInput && fileInput.files) || []).map(function (file) {
+      return {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        pendingBlob: file
+      };
     });
   }
 
@@ -200,7 +306,7 @@
       : "";
     fileName.textContent = extra;
     fileName.classList.toggle("is-visible", Boolean(extra));
-    renderFileList(requirementList, requirementFiles, function () {
+    renderFileList(requirementList, requirementFiles.concat(pendingRequirementFiles()), function () {
       refreshRequirementFiles();
       maybePersist();
     });
@@ -1049,11 +1155,28 @@
     editMeta.hidden = false;
     if (deleteOrderBtn) deleteOrderBtn.hidden = false;
     editMeta.textContent = "Editing " + saved.id + " · Created " + store.formatDateTime(saved.createdAt) + " · Last updated " + store.formatDateTime(saved.updatedAt);
+    if (saved.requirementFiles) requirementFiles = saved.requirementFiles.slice();
     refreshRequirementFiles();
     updateStatusUI();
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, "", "index.html?order=" + encodeURIComponent(saved.id));
     }
+  }
+
+  function mergeRemoteFileUrls(local, remote) {
+    if (!local || !remote) return local;
+    if (store.mergeRequirementFiles) {
+      local.requirementFiles = store.mergeRequirementFiles(local.requirementFiles, remote.requirementFiles);
+    }
+    const remoteThread = store.messageThreadOf ? store.messageThreadOf(remote) : (remote.messageThread || []);
+    if (store.overlayMessageFiles) {
+      local.messageThread = store.overlayMessageFiles(local.messageThread, remoteThread);
+      local.messageText = store.formatMessageThread(local.messageThread) || local.messageText;
+    }
+    if (store.overlayRevisionFiles) {
+      local.revisions = store.overlayRevisionFiles(local.revisions, remote.revisions);
+    }
+    return local;
   }
 
   function refreshFromSheetOrders(list, orderId) {
@@ -1099,12 +1222,28 @@
         : Promise.resolve({ ok: true, confirmed: true });
       return confirmPromise.then(function (confirm) {
         if (confirm && confirm.confirmed) {
-          return {
+          const done = {
             saved: saved,
             sheet: syncResult,
             confirmed: true,
             duplicate: Boolean(confirm.duplicate)
           };
+          if (typeof sheet.fetchOrder !== "function") return done;
+          return sheet.fetchOrder(saved).then(function (remote) {
+            if (remote && remote.order) {
+              const merged = mergeRemoteFileUrls(saved, remote.order);
+              const stored = store.upsertOrder(merged);
+              applySavedOrder(stored);
+              if (stored.messageThread) threadMessages = stored.messageThread.slice();
+              if (stored.revisions) revisions = stored.revisions.slice();
+              renderMessageThread();
+              renderRevisions();
+              done.saved = stored;
+            }
+            return done;
+          }).catch(function () {
+            return done;
+          });
         }
         return { saved: saved, sheet: syncResult, confirmed: false, sheetFailed: true };
       });

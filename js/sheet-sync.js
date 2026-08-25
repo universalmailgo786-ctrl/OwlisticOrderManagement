@@ -91,7 +91,34 @@
   }
 
   function fileNames(files) {
-    return (files || []).map(function (file) { return file.name; }).filter(Boolean).join(", ");
+    return (files || []).map(function (file) { return file && file.name; }).filter(Boolean).join(", ");
+  }
+
+  function fileRefs(files) {
+    return (files || []).map(function (file) {
+      if (!file || !file.name) return "";
+      if (file.url) return file.name + " " + file.url;
+      return file.name;
+    }).filter(Boolean).join("\n");
+  }
+
+  function orderUploadFiles(order) {
+    const files = [];
+    function add(list) {
+      (list || []).forEach(function (file) {
+        if (file) files.push(file);
+      });
+    }
+    add(order && order.requirementFiles);
+    ((order && order.messageThread) || []).forEach(function (message) {
+      add(message && message.files);
+    });
+    ((order && order.revisions) || []).forEach(function (round) {
+      ((round && round.messages) || []).forEach(function (message) {
+        add(message && message.files);
+      });
+    });
+    return files;
   }
 
   const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
@@ -189,8 +216,8 @@
         const role = message.role === "seller" || message.kind === "seller" ? "Seller" : "Buyer";
         const stamp = formatDateTime(message.createdAt || message.createdAt);
         const parts = [role + (stamp ? " (" + stamp + ")" : ""), (message.text || "").trim() || "(no text)"];
-        const files = fileNames(message.files);
-        if (files) parts.push("Files: " + files);
+        const files = fileRefs(message.files);
+        if (files) parts.push("Files: " + files.replace(/\n/g, ", "));
         return parts.join(" — ");
       });
       return "Revision " + (round.number || "") + (round.completed ? " [Completed]" : " [Open]") + (messages.length ? ": " + messages.join(" | ") : ": (empty)");
@@ -218,7 +245,7 @@
       typeLabel,
       order.messageText || callStore("formatMessageThread", "formatMessageThread", order.messageThread || []) || "",
       order.directRequirements || order.directRequirements || "",
-      fileNames(order.requirementFiles || order.requirementFiles),
+      fileRefs(order.requirementFiles || order.requirementFiles),
       order.fiverrId || order.fiverrId || "",
       order.fiverrGigUrl || order.fiverrGigUrl || "",
       order.reviewText || order.reviewText || "",
@@ -439,16 +466,38 @@
     });
   }
 
+  function fetchOrder(order) {
+    if (!isConfigured() || !order || !order.id) {
+      return Promise.resolve({ skipped: true, found: false });
+    }
+    const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+    const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+    const url = getWebAppUrl() + join +
+      "action=getOrder" +
+      "&orderId=" + encodeURIComponent(order.id) +
+      "&tab=" + encodeURIComponent(tabNameOf(accountNameOf(order))) +
+      "&role=" + encodeURIComponent((session && session.role) || "") +
+      "&userAccount=" + encodeURIComponent((session && session.account) || "") +
+      "&_=" + Date.now();
+    return fetch(url, { method: "GET", credentials: "omit", cache: "no-store" }).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      const data = parseJson(text);
+      if (!data || data.action !== "getOrder") {
+        return { unsupported: true, found: false };
+      }
+      return { ok: Boolean(data.ok), found: Boolean(data.found), order: data.order || null };
+    }).catch(function () {
+      return { ok: false, found: false };
+    });
+  }
+
   function sync(order, options) {
     if (!order) {
       return Promise.resolve({ skipped: true });
     }
     const tabName = tabNameOf(accountNameOf(order));
-    const extraFiles = [];
-    (order.messageThread || []).forEach(function (message) {
-      (message.files || []).forEach(function (file) { extraFiles.push(file); });
-    });
-    return collectUploads((order.requirementFiles || []).concat(extraFiles), options || {}).then(function (collected) {
+    return collectUploads(orderUploadFiles(order), options || {}).then(function (collected) {
       (collected.uploads || []).forEach(function (item) {
         if (item.localId) sentFileIds[item.localId] = true;
       });
@@ -568,6 +617,8 @@
     SPREADSHEET_ID: SPREADSHEET_ID,
     sync: sync,
     hasOrder: hasOrder,
+    fetchOrder: fetchOrder,
+    fetchOrders: fetchOrders,
     findDuplicateOrder: findDuplicateOrder,
     confirmSheetWrite: confirmSheetWrite,
     recordFingerprint: recordFingerprint,

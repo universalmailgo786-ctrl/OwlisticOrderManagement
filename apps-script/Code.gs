@@ -64,6 +64,9 @@ function doGet(e) {
   if (action === "hasOrder") {
     return json_(hasOrder_(params));
   }
+  if (action === "getOrder") {
+    return json_(getOrder_(params));
+  }
   return json_({ ok: true, service: "Ashar Orders Management System", sheetColumns: HEADERS.length });
 }
 
@@ -260,10 +263,13 @@ function cellText_(value) {
 function parseFiles_(text) {
   var raw = String(text == null ? "" : text).replace(/\r/g, "").trim();
   if (!raw) return [];
-  var chunks = raw.split(/\n|;/).map(function (part) { return String(part || "").trim(); }).filter(function (part) { return part; });
-  if (chunks.length === 1 && chunks[0].indexOf("|") === -1 && !/https?:\/\//i.test(chunks[0])) {
-    chunks = chunks[0].split(/\s*,\s*/).map(function (part) { return String(part || "").trim(); }).filter(function (part) { return part; });
-  }
+  var chunks = [];
+  String(raw).split(/\n|;/).forEach(function (part) {
+    String(part || "").split(/\s*,\s*/).forEach(function (item) {
+      var chunk = String(item || "").trim();
+      if (chunk) chunks.push(chunk);
+    });
+  });
   var files = [];
   for (var i = 0; i < chunks.length; i++) {
     var chunk = chunks[i];
@@ -403,15 +409,58 @@ function writeFilesCell_(range, files) {
   range.setRichTextValue(builder.build());
 }
 
-function mergeRequirementFiles_(existingRich, existingText, incomingText, uploads, orderId) {
+function attachUrlToFileName_(segment, name, url) {
+  var text = String(segment || "");
+  name = String(name || "");
+  url = String(url || "");
+  if (!name || !url || !text) return text;
+  if (text.indexOf(url) >= 0 && text.indexOf(name) >= 0) return text;
+  var out = "";
+  var i = 0;
+  var idx;
+  while ((idx = text.indexOf(name, i)) >= 0) {
+    var after = text.slice(idx + name.length).replace(/^\s+/, "");
+    if (/^https?:\/\//i.test(after) || after.charAt(0) === "|") {
+      out += text.slice(i, idx + name.length);
+      i = idx + name.length;
+      continue;
+    }
+    out += text.slice(i, idx) + name + " " + url;
+    i = idx + name.length;
+  }
+  return out + text.slice(i);
+}
+
+function applySavedUrlsToText_(text, saved) {
+  var list = saved || [];
+  if (!list.length) return String(text || "");
+  return String(text || "").split("\n").map(function (line) {
+    var marker = "Files:";
+    var pos = 0;
+    var out = "";
+    var found;
+    while ((found = line.indexOf(marker, pos)) >= 0) {
+      out += line.slice(pos, found + marker.length);
+      var start = found + marker.length;
+      var rest = line.slice(start);
+      var stop = rest.search(/\s\|\s(?:Buyer|Seller)\b/i);
+      var segment = stop >= 0 ? rest.slice(0, stop) : rest;
+      var i;
+      for (i = 0; i < list.length; i++) {
+        segment = attachUrlToFileName_(segment, list[i].name, list[i].url);
+      }
+      out += segment;
+      if (stop < 0) return out;
+      pos = start + stop;
+    }
+    return out + line.slice(pos);
+  }).join("\n");
+}
+
+function mergeRequirementFiles_(existingRich, existingText, incomingText, saved) {
   var existing = filesFromCell_(existingRich, existingText);
   var incoming = parseFiles_(incomingText);
-  var saved = [];
-  try {
-    saved = saveUploads_(orderId, uploads);
-  } catch (err) {
-    saved = [];
-  }
+  saved = (saved || []).slice();
   if (!incoming.length && existing.length && !saved.length) return existing;
 
   var out = [];
@@ -478,10 +527,21 @@ function parseRevisionMessages_(rest, createdAt, number) {
   for (i = 0; i < parts.length; i++) {
     var part = String(parts[i] || "").trim();
     if (!part) continue;
+    var cleaned = part.replace(/^(Buyer|Seller)(?:\s*\([^)]*\))?\s*—\s*/i, "");
+    var files = [];
+    var body = cleaned;
+    var fileMatch = cleaned.match(/^(.*?)(?:\s*—\s*Files:\s*|\s+\|\s*Files:\s*)(.*)$/);
+    if (fileMatch) {
+      body = String(fileMatch[1] || "").replace(/^\(no text\)\s*$/i, "").trim();
+      files = parseFiles_(fileMatch[2]);
+    } else {
+      body = body.replace(/^\(no text\)\s*$/i, "").trim();
+    }
     messages.push({
       id: "msg_sheet_" + number + "_" + i,
       role: /^Seller/i.test(part) ? "seller" : "buyer",
-      text: part.replace(/^(Buyer|Seller)(?:\s*\([^)]*\))?\s*—\s*/i, ""),
+      text: body,
+      files: files,
       createdAt: createdAt
     });
   }
@@ -722,8 +782,18 @@ function upsertOrderLocked_(ss, data) {
     existingRich = found.sheet.getRange(found.row, 15).getRichTextValue();
     existingText = found.sheet.getRange(found.row, 15).getDisplayValue();
   }
-  var files = mergeRequirementFiles_(existingRich, existingText, row[14], data.uploads || data.files || [], orderId);
-  row[14] = (files || []).map(function (file) { return file.name; }).join("\n");
+  var savedUploads = [];
+  try {
+    savedUploads = saveUploads_(orderId, data.uploads || data.files || []);
+  } catch (err) {
+    savedUploads = [];
+  }
+  var files = mergeRequirementFiles_(existingRich, existingText, row[14], savedUploads.slice());
+  row[12] = applySavedUrlsToText_(row[12], savedUploads);
+  row[19] = applySavedUrlsToText_(row[19], savedUploads);
+  row[14] = (files || []).map(function (file) {
+    return file.url ? file.name + " " + file.url : file.name;
+  }).join("\n");
 
   if (found) {
     if (found.sheet.getSheetId() === target.getSheetId()) {
@@ -821,6 +891,42 @@ function hasOrder_(params) {
     found: Boolean(found),
     orderId: orderId,
     tab: found ? found.sheet.getName() : tab
+  };
+}
+
+function getOrder_(params) {
+  var orderId = String((params && params.orderId) || "").trim();
+  if (!orderId) {
+    return { ok: false, action: "getOrder", found: false, error: "Order ID is required." };
+  }
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var tab = tabName_((params && (params.tab || params.userAccount || params.account)) || "");
+  var found = null;
+  if (tab) {
+    var sheet = sheetForAccount_(ss, tab);
+    if (sheet) found = findOrderOnSheet_(sheet, orderId);
+  } else {
+    found = findOrder_(ss, orderId);
+  }
+  if (!found) {
+    return { ok: true, action: "getOrder", found: false, orderId: orderId, order: null };
+  }
+  var cols = Math.max(found.sheet.getLastColumn(), HEADERS.length);
+  var row = found.sheet.getRange(found.row, 1, 1, cols).getValues()[0];
+  while (row.length < HEADERS.length) row.push("");
+  var rich = null;
+  try {
+    rich = found.sheet.getRange(found.row, 15).getRichTextValue();
+  } catch (err) {
+    rich = null;
+  }
+  return {
+    ok: true,
+    action: "getOrder",
+    found: true,
+    orderId: orderId,
+    tab: found.sheet.getName(),
+    order: orderFromRow_(row, found.sheet.getName(), filesFromCell_(rich, row[14]))
   };
 }
 

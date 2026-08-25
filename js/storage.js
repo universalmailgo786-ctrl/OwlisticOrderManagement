@@ -276,6 +276,150 @@
     return order;
   }
 
+  function parseFileRefs(text) {
+    const raw = String(text == null ? "" : text).replace(/\r/g, "").trim();
+    if (!raw) return [];
+    const chunks = [];
+    String(raw).split(/\n|;/).forEach(function (part) {
+      String(part || "").split(/\s*,\s*/).forEach(function (item) {
+        const chunk = String(item || "").trim();
+        if (chunk) chunks.push(chunk);
+      });
+    });
+    return chunks.map(function (chunk) {
+      const pipe = chunk.indexOf("|");
+      if (pipe >= 0) {
+        return { id: "", name: chunk.slice(0, pipe).trim(), url: chunk.slice(pipe + 1).trim(), type: "", size: 0 };
+      }
+      const match = chunk.match(/^(.*)\s+(https?:\/\/\S+)\s*$/i);
+      if (match) {
+        return { id: "", name: String(match[1] || "").trim(), url: String(match[2] || "").trim(), type: "", size: 0 };
+      }
+      return { id: "", name: chunk, url: "", type: "", size: 0 };
+    }).filter(function (file) { return file && file.name; });
+  }
+
+  function formatFileRef(file) {
+    if (!file || !file.name) return "";
+    return file.url ? file.name + " " + file.url : file.name;
+  }
+
+  function splitMessageBody(raw) {
+    const text = String(raw || "").trim();
+    const match = text.match(/^(.*?)(?:\s*—\s*Files:\s*|\s+\|\s*Files:\s*)(.*)$/);
+    if (!match) {
+      return { text: text.replace(/^\(no text\)\s*$/i, "").trim(), files: [] };
+    }
+    return {
+      text: String(match[1] || "").replace(/^\(no text\)\s*$/i, "").trim(),
+      files: parseFileRefs(match[2])
+    };
+  }
+
+  function driveFileId(url) {
+    const value = String(url || "");
+    const query = value.match(/[?&]id=([^&]+)/i);
+    if (query) return decodeURIComponent(query[1]);
+    const path = value.match(/\/d\/([^/]+)/);
+    return path ? path[1] : "";
+  }
+
+  function isImageFile(file) {
+    const type = String((file && file.type) || "");
+    if (/^image\//i.test(type)) return true;
+    return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/i.test(String((file && file.name) || ""));
+  }
+
+  function filePreviewUrl(file) {
+    if (!file || !file.url) return "";
+    const id = driveFileId(file.url);
+    if (id) return "https://drive.google.com/thumbnail?id=" + encodeURIComponent(id) + "&sz=w240";
+    return file.url;
+  }
+
+  function fileDownloadUrl(file) {
+    if (!file || !file.url) return "";
+    const id = driveFileId(file.url);
+    if (id) return "https://drive.google.com/uc?export=download&id=" + encodeURIComponent(id);
+    return file.url;
+  }
+
+  function overlayFileUrls(previous, incoming) {
+    const prev = previous || [];
+    const next = incoming || [];
+    if (!prev.length) return mergeRequirementFiles([], next);
+    const used = {};
+    const merged = prev.map(function (file, index) {
+      const match = next.find(function (item, itemIndex) {
+        if (used[itemIndex]) return false;
+        if (file.id && item.id && item.id === file.id) return true;
+        return item.name && file.name && item.name === file.name;
+      });
+      if (match) used[next.indexOf(match)] = true;
+      return {
+        id: file.id || (match && match.id) || "",
+        name: file.name || (match && match.name) || "",
+        url: file.url || (match && match.url) || "",
+        type: file.type || (match && match.type) || "",
+        size: file.size || (match && match.size) || 0,
+        uploadedAt: file.uploadedAt || (match && match.uploadedAt) || ""
+      };
+    });
+    next.forEach(function (file, index) {
+      if (used[index] || !file || !file.name) return;
+      merged.push({
+        id: file.id || "",
+        name: file.name || "",
+        url: file.url || "",
+        type: file.type || "",
+        size: file.size || 0,
+        uploadedAt: file.uploadedAt || ""
+      });
+    });
+    return merged;
+  }
+
+  function overlayMessageFiles(previousList, incomingList) {
+    const prev = normalizeMessageThread(previousList);
+    const incoming = normalizeMessageThread(incomingList);
+    if (!prev.length) return incoming;
+    if (!incoming.length) return prev;
+    const leftover = incoming.slice();
+    return prev.map(function (message) {
+      const role = threadRole(message);
+      const index = leftover.findIndex(function (item) { return threadRole(item) === role; });
+      const match = index >= 0 ? leftover.splice(index, 1)[0] : null;
+      return Object.assign({}, message, {
+        files: overlayFileUrls(message.files || [], (match && match.files) || [])
+      });
+    });
+  }
+
+  function overlayRevisionFiles(previousRounds, incomingRounds) {
+    const prev = normalizeRevisions(previousRounds || []);
+    const incoming = normalizeRevisions(incomingRounds || []);
+    if (!prev.length) return incoming;
+    if (!incoming.length) return prev;
+    return prev.map(function (round) {
+      const match = incoming.find(function (item) {
+        return Number(item.number) === Number(round.number);
+      }) || null;
+      const leftover = ((match && match.messages) || []).slice();
+      const messages = (round.messages || []).map(function (message) {
+        const role = message.role === "seller" || message.kind === "seller" ? "seller" : "buyer";
+        const index = leftover.findIndex(function (item) {
+          const itemRole = item.role === "seller" || item.kind === "seller" ? "seller" : "buyer";
+          return itemRole === role;
+        });
+        const found = index >= 0 ? leftover.splice(index, 1)[0] : null;
+        return Object.assign({}, message, {
+          files: overlayFileUrls(message.files || [], (found && found.files) || [])
+        });
+      });
+      return Object.assign({}, round, { messages: messages });
+    });
+  }
+
   function parseRevisionHistoryText(text, createdAt) {
     const rounds = [];
     String(text || "").replace(/\r/g, "").split(/\n+/).forEach(function (line) {
@@ -288,10 +432,12 @@
         rest.split(" | ").forEach(function (part, index) {
           const chunk = String(part || "").trim();
           if (!chunk) return;
+          const body = splitMessageBody(chunk.replace(/^(Buyer|Seller)(?:\s*\([^)]*\))?\s*—\s*/i, ""));
           messages.push({
             id: "msg_sheet_" + number + "_" + index,
             role: /^Seller/i.test(chunk) ? "seller" : "buyer",
-            text: chunk.replace(/^(Buyer|Seller)(?:\s*\([^)]*\))?\s*—\s*/i, ""),
+            text: body.text,
+            files: body.files,
             createdAt: createdAt
           });
         });
@@ -556,7 +702,7 @@
       function line(label, message) {
         if (!message) return;
         const text = String(message.text || "").trim();
-        const files = (message.files || []).map(function (file) { return file && file.name; }).filter(Boolean).join(", ");
+        const files = (message.files || []).map(formatFileRef).filter(Boolean).join(", ");
         if (!text && !files) return;
         lines.push(label + " " + number + ": " + (text || "(no text)") + (files ? " | Files: " + files : ""));
       }
@@ -574,22 +720,24 @@
       const buyer = raw.match(/^Buyer Message\s+(\d+)\s*:\s*(.*)$/i);
       const client = raw.match(/^Client Reply\s+(\d+)\s*:\s*(.*)$/i);
       if (buyer) {
+        const body = splitMessageBody(buyer[2]);
         rounds.push({
           id: "mt_sheet_b_" + buyer[1],
           role: "buyer",
           createdAt: "",
-          text: String(buyer[2] || "").replace(/\s*\|\s*Files:.*$/, "").trim(),
-          files: []
+          text: body.text,
+          files: body.files
         });
         return;
       }
       if (client) {
+        const body = splitMessageBody(client[2]);
         rounds.push({
           id: "mt_sheet_c_" + client[1],
           role: "client",
           createdAt: "",
-          text: String(client[2] || "").replace(/\s*\|\s*Files:.*$/, "").trim(),
-          files: []
+          text: body.text,
+          files: body.files
         });
         return;
       }
@@ -636,7 +784,9 @@
       return String(item.id || "").indexOf("rev_sheet") !== 0;
     });
     if (previous.revisions && previous.revisions.length && (!incomingRevisions.length || (looksLikeSheetStub && previousIsLocal))) {
-      order.revisions = previous.revisions;
+      order.revisions = overlayRevisionFiles(previous.revisions, incomingRevisions);
+    } else if (previous.revisions && previous.revisions.length) {
+      order.revisions = overlayRevisionFiles(order.revisions, previous.revisions);
     }
     const incomingThread = order.messageThread || [];
     const threadLooksSheet = incomingThread.length && incomingThread.every(function (item) {
@@ -646,8 +796,11 @@
       return String(item.id || "").indexOf("mt_sheet") !== 0;
     });
     if (previous.messageThread && previous.messageThread.length && (!incomingThread.length || (threadLooksSheet && previousThreadLocal))) {
-      order.messageThread = previous.messageThread;
-      order.messageText = formatMessageThread(previous.messageThread) || previous.messageText || order.messageText;
+      order.messageThread = overlayMessageFiles(previous.messageThread, incomingThread);
+      order.messageText = formatMessageThread(order.messageThread) || previous.messageText || order.messageText;
+    } else if (previous.messageThread && previous.messageThread.length) {
+      order.messageThread = overlayMessageFiles(order.messageThread, previous.messageThread);
+      order.messageText = formatMessageThread(order.messageThread) || order.messageText;
     }
     if (previous.accountId && !order.accountId) order.accountId = previous.accountId;
     order.requirementFiles = mergeRequirementFiles(previous.requirementFiles, order.requirementFiles);
@@ -771,6 +924,15 @@
     formatMessageThread: formatMessageThread,
     parseMessageThreadText: parseMessageThreadText,
     messageThreadOf: messageThreadOf,
+    parseFileRefs: parseFileRefs,
+    formatFileRef: formatFileRef,
+    isImageFile: isImageFile,
+    filePreviewUrl: filePreviewUrl,
+    fileDownloadUrl: fileDownloadUrl,
+    mergeRequirementFiles: mergeRequirementFiles,
+    overlayFileUrls: overlayFileUrls,
+    overlayMessageFiles: overlayMessageFiles,
+    overlayRevisionFiles: overlayRevisionFiles,
     saveFileBlobs: saveFileBlobs,
     saveFileBlobs: saveFileBlobs,
     getFile: getFile,

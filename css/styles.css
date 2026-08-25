@@ -1657,9 +1657,10 @@ body.modal-open {
   padding: 0;
 }
 
-.file-list li {
+.file-list li,
+.file-list-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   padding: 8px 0;
@@ -1667,6 +1668,49 @@ body.modal-open {
   font-size: 13px;
 }
 
+.file-preview {
+  flex-shrink: 0;
+}
+
+.file-preview-img {
+  display: block;
+  width: 72px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #eadfd4;
+  background: #fff;
+}
+
+.file-preview-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 56px;
+  border-radius: 8px;
+  border: 1px solid #eadfd4;
+  background: #fffdf8;
+  color: #8a3d22;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.file-preview-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.file-preview-name {
+  min-width: 0;
+  word-break: break-word;
+}
+
+.file-preview-actions,
 .file-list li > span:last-child {
   display: flex;
   gap: 8px;
@@ -1674,13 +1718,15 @@ body.modal-open {
 }
 
 .file-list a,
-.file-list button {
+.file-list button,
+.file-download-link {
   background: none;
   border: 0;
   color: var(--link);
   cursor: pointer;
   font-family: inherit;
   font-size: 13px;
+  text-decoration: none;
 }
 
 .badge {
@@ -2173,16 +2219,50 @@ body.modal-open {
 }
 
 .records-files {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 220px;
+  overflow: visible;
+}
+
+.records-file-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 76px;
+  min-width: 76px;
+}
+
+.records-file-thumb,
+.records-file-icon {
+  display: block;
+  width: 76px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #eadfd4;
+  background: #fff;
+}
+
+.records-file-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8a3d22;
+  font-size: 11px;
+  font-weight: 600;
+  background: #fffdf8;
+}
+
+.records-file-name {
+  display: block;
+  max-width: 76px;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 200px;
-  max-height: 2.7em;
-  line-height: 1.35;
-  word-break: break-all;
+  white-space: nowrap;
+  color: #8a3d22;
+  font-size: 11px;
 }
 
 .records-file-link,
@@ -2193,6 +2273,23 @@ body.modal-open {
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: break-all;
+}
+
+.records-file-card .records-file-link {
+  font-size: 11px;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.records-message-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
 .records-link {
@@ -2332,6 +2429,24 @@ body.modal-open {
   gap: 8px;
   min-width: 0;
   max-height: 48px;
+}
+
+.records-media-cell .records-cell-with-copy {
+  align-items: flex-start;
+  max-height: none;
+}
+
+.records-table tbody tr.records-row td.records-media-cell {
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  vertical-align: top;
+}
+
+.records-media-cell .records-cell-value {
+  max-height: none;
+  overflow: visible;
+  display: block;
 }
 
 .records-cell-value {
