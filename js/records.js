@@ -169,6 +169,186 @@
     return [];
   }
 
+  function repairedMessage(message) {
+    if (!message) return null;
+    if (store.repairRevisionMessages) {
+      return store.repairRevisionMessages([message])[0] || message;
+    }
+    return message;
+  }
+
+  function messageFilled(message) {
+    const item = repairedMessage(message);
+    if (!item) return false;
+    if (String(item.text || "").trim()) return true;
+    return hasFiles(item.files);
+  }
+
+  function messagePlainText(message) {
+    const item = repairedMessage(message);
+    return item ? String(item.text || "").replace(/\s+/g, " ").trim() : "";
+  }
+
+  function clampText(value, limit) {
+    const text = String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+    if (!text) return "";
+    if (text.length <= limit) return text;
+    return text.slice(0, Math.max(0, limit - 1)).trim() + "…";
+  }
+
+  function filledPairs(order) {
+    return threadPairs(order).filter(function (pair) {
+      return messageFilled(pair.buyer) || messageFilled(pair.client);
+    }).map(function (pair) {
+      return {
+        buyer: repairedMessage(pair.buyer),
+        client: repairedMessage(pair.client)
+      };
+    });
+  }
+
+  function isImageAttachment(file) {
+    if (store.isImageFile) return store.isImageFile(file);
+    return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/i.test(String((file && file.name) || ""));
+  }
+
+  function fileExtLabel(file) {
+    const name = String((file && file.name) || "");
+    const ext = name.indexOf(".") >= 0 ? name.split(".").pop() : "";
+    if (ext) return ext.toUpperCase();
+    const type = String((file && file.type) || "");
+    if (type.indexOf("/") >= 0) return type.split("/")[1].toUpperCase();
+    return "FILE";
+  }
+
+  function formatBytes(size) {
+    const n = Number(size);
+    if (!n || n < 0) return "";
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10 * 1024 ? 1 : 0) + " KB";
+    return (n / (1024 * 1024)).toFixed(n < 10 * 1024 * 1024 ? 1 : 0) + " MB";
+  }
+
+  function previewSrc(file) {
+    if (store.filePreviewUrl) return store.filePreviewUrl(file) || "";
+    return (file && file.url) || "";
+  }
+
+  function latestPreview(pairs) {
+    if (!pairs.length) return "";
+    const pair = pairs[pairs.length - 1];
+    const client = messagePlainText(pair.buyer);
+    const reply = messagePlainText(pair.client);
+    if (client && reply) return client + " → " + reply;
+    return client || reply || "Attachment added";
+  }
+
+  function chatSummaryHtml(order) {
+    const pairs = filledPairs(order);
+    if (!pairs.length) {
+      return '<div class="chat-summary"><p class="chat-summary-empty">No chats yet</p></div>';
+    }
+    const latest = pairs.length - 1;
+    const steps = pairs.map(function (pair, index) {
+      const done = messageFilled(pair.buyer) && messageFilled(pair.client);
+      const current = index === latest;
+      const cls = current ? " is-current" : (done ? " is-done" : "");
+      const mark = current ? " Current" : (done ? " ✓" : "");
+      return '<span class="chat-step' + cls + '">C' + (index + 1) + " / R" + (index + 1) + mark + "</span>";
+    }).join('<span class="chat-step-arrow" aria-hidden="true">→</span>');
+    return '<div class="chat-summary">' +
+      '<div class="chat-steps">' + steps + "</div>" +
+      '<p class="chat-summary-preview" title="' + escapeHtml(latestPreview(pairs)) + '">' + escapeHtml(clampText(latestPreview(pairs), 78)) + "</p>" +
+      '<button type="button" class="chat-open-btn" data-open-chat="' + escapeHtml(order.id) + '">View full chat →</button>' +
+    "</div>";
+  }
+
+  function totalChatsHtml(order) {
+    const count = filledPairs(order).length;
+    const label = count === 1 ? "1 pair" : count + " pairs";
+    return '<span class="chat-pairs-pill">' + escapeHtml(label) + "</span>";
+  }
+
+  function latestMessageHtml(order) {
+    const pairs = filledPairs(order);
+    if (!pairs.length) return '<span class="muted">—</span>';
+    const number = pairs.length;
+    const pair = pairs[number - 1];
+    const client = clampText(messagePlainText(pair.buyer), 52) || "—";
+    const reply = clampText(messagePlainText(pair.client), 52) || "—";
+    const stamp = (pair.client && pair.client.createdAt) || (pair.buyer && pair.buyer.createdAt) || order.updatedAt || "";
+    const copy = [messagePlainText(pair.buyer), messagePlainText(pair.client)].filter(Boolean).join("\n");
+    return '<div class="chat-latest">' +
+      '<div class="chat-latest-head">' +
+        "<span>Latest: C" + number + " / R" + number + "</span>" +
+        copyButton(copy, "latest message") +
+      "</div>" +
+      '<p class="chat-latest-line"><span>Client:</span> ' + escapeHtml(client) + "</p>" +
+      '<p class="chat-latest-line"><span>Reply:</span> ' + escapeHtml(reply) + "</p>" +
+      (stamp ? '<p class="chat-latest-time">' + escapeHtml(store.formatDateTime(stamp)) + "</p>" : "") +
+    "</div>";
+  }
+
+  function attachmentAttrs(file) {
+    return ' data-file-name="' + escapeHtml(file.name || "file") + '"' +
+      ' data-file-id="' + escapeHtml(file.id || "") + '"' +
+      ' data-file-url="' + escapeHtml(fileDownloadHref(file) || "") + '"' +
+      ' data-preview-url="' + escapeHtml(previewSrc(file) || fileDownloadHref(file) || "") + '"';
+  }
+
+  function attachmentsHtml(files) {
+    const list = requirementFileList(files);
+    if (!list.length) return "";
+    return '<div class="chat-attach-list">' + list.map(function (file) {
+      const download = fileDownloadHref(file);
+      const missing = !download && !file.id;
+      if (isImageAttachment(file)) {
+        const src = previewSrc(file) || download;
+        return '<div class="chat-attach chat-attach-image">' +
+          '<button type="button" class="chat-thumb-btn"' + attachmentAttrs(file) + ' data-open-preview>' +
+            (src
+              ? '<img class="chat-thumb" alt="' + escapeHtml(file.name) + '" src="' + escapeHtml(src) + '"' + (file.id ? ' data-local-file-id="' + escapeHtml(file.id) + '"' : "") + ">"
+              : '<span class="chat-thumb-fallback">Image</span>') +
+          "</button>" +
+          '<div class="chat-attach-meta">' +
+            '<p class="chat-attach-name">' + escapeHtml(file.name) + "</p>" +
+            (missing
+              ? '<p class="records-file-missing">Not on Drive</p>'
+              : '<button type="button" class="chat-file-btn" data-save-file' + attachmentAttrs(file) + ">Save / Download image</button>") +
+          "</div>" +
+        "</div>";
+      }
+      const size = formatBytes(file.size);
+      return '<div class="chat-attach chat-attach-file">' +
+        '<div class="chat-file-icon" aria-hidden="true">' + escapeHtml(fileExtLabel(file)) + "</div>" +
+        '<div class="chat-attach-meta">' +
+          '<p class="chat-attach-name">' + escapeHtml(file.name) + "</p>" +
+          '<p class="chat-attach-sub">' + escapeHtml(fileExtLabel(file) + (size ? " · " + size : "")) + "</p>" +
+          (missing
+            ? '<p class="records-file-missing">Not on Drive</p>'
+            : '<div class="chat-attach-actions">' +
+                '<button type="button" class="chat-file-btn" data-open-file' + attachmentAttrs(file) + ">Open / View</button>" +
+                '<button type="button" class="chat-file-btn" data-save-file' + attachmentAttrs(file) + ">Download / Save file</button>" +
+              "</div>") +
+        "</div>" +
+      "</div>";
+    }).join("") + "</div>";
+  }
+
+  function chatMessageBlock(message, title, roleClass) {
+    const item = repairedMessage(message);
+    const text = messagePlainText(item);
+    const files = item && item.files;
+    if (!text && !hasFiles(files)) {
+      return '<article class="chat-full-msg ' + roleClass + ' is-empty"><h3>' + escapeHtml(title) + '</h3><p class="muted">No message yet.</p></article>';
+    }
+    return '<article class="chat-full-msg ' + roleClass + '">' +
+      "<h3>" + escapeHtml(title) + "</h3>" +
+      (text ? '<p class="chat-full-text">' + escapeHtml(text) + "</p>" : "") +
+      attachmentsHtml(files) +
+    "</article>";
+  }
+
   function messageCopy(message) {
     if (!message) return "";
     const text = String(message.text || "").trim();
@@ -310,16 +490,11 @@
     return max;
   }
 
-  function columnCount(pairCount, revisionCount) {
-    return 15 + (pairCount * 2) + (revisionCount * 2);
+  function columnCount(revisionCount) {
+    return 18 + (revisionCount * 2);
   }
 
-  function renderHead(pairCount, revisionCount) {
-    const messageHeads = [];
-    for (let i = 1; i <= pairCount; i += 1) {
-      messageHeads.push("<th>Buyer Message " + i + "</th>");
-      messageHeads.push("<th>Client Reply " + i + "</th>");
-    }
+  function renderHead(revisionCount) {
     const revisionHeads = [];
     for (let i = 1; i <= revisionCount; i += 1) {
       revisionHeads.push("<th>Revision " + i + " Buyer</th>");
@@ -335,7 +510,9 @@
       "<th>Business Name</th>" +
       "<th>Value</th>" +
       "<th>Type</th>" +
-      messageHeads.join("") +
+      "<th>Chat Summary</th>" +
+      "<th>Total Chats</th>" +
+      "<th>Latest Message</th>" +
       "<th>Direct Order Requirements</th>" +
       "<th>Requirement Files</th>" +
       "<th>Review Text (Feedback)</th>" +
@@ -343,7 +520,7 @@
       "<th>Payment</th>" +
       "<th>Status</th>" +
       "<th>Actions</th>";
-    if (table) table.style.minWidth = String(1680 + pairCount * 360 + revisionCount * 360) + "px";
+    if (table) table.style.minWidth = String(1980 + revisionCount * 360) + "px";
   }
 
   function renderAccountFilter() {
@@ -430,9 +607,8 @@
   function render() {
     const all = auth.visibleOrders();
     updateTabCounts(all);
-    const pairCount = maxMessagePairs(all);
     const revisionCount = maxRevisionCount(all);
-    renderHead(pairCount, revisionCount);
+    renderHead(revisionCount);
     const orders = all.slice().sort(function (a, b) {
       const na = orderNumber(a);
       const nb = orderNumber(b);
@@ -448,7 +624,7 @@
     if (!orders.length) {
       const tabLabel = TAB_LABELS[activeTab] || activeTab;
       body.innerHTML =
-        '<tr><td colspan="' + columnCount(pairCount, revisionCount) + '"><div class="empty-state">' +
+        '<tr><td colspan="' + columnCount(revisionCount) + '"><div class="empty-state">' +
           "<strong>No " + escapeHtml(tabLabel) + " orders</strong>" +
           "<p>Orders in this category will appear here. Try another tab, or clear a filter.</p>" +
         "</div></td></tr>";
@@ -457,20 +633,10 @@
 
     body.innerHTML = orders.map(function (order) {
       const status = store.computeStatus(order);
-      const pairs = threadPairs(order);
       const rounds = revisionRounds(order);
       const paymentLabel = paymentCopyLabel(order);
       const typeLabel = store.orderTypeLabel(order);
       const statusLabel = statusCopyLabel(order);
-      let messageCells = "";
-      for (let i = 0; i < pairCount; i += 1) {
-        const pair = pairs[i] || { buyer: null, client: null };
-        const buyerLabel = "Buyer Message " + (i + 1);
-        const clientLabel = "Client Reply " + (i + 1);
-        messageCells +=
-          mediaCell(messageCellHtml(pair.buyer), messageCopy(pair.buyer), buyerLabel, hasFiles(pair.buyer && pair.buyer.files)) +
-          mediaCell(messageCellHtml(pair.client), messageCopy(pair.client), clientLabel, hasFiles(pair.client && pair.client.files));
-      }
       let revisionCells = "";
       for (let r = 0; r < revisionCount; r += 1) {
         const round = rounds[r];
@@ -491,7 +657,9 @@
         "<td>" + editableNameCell(order, "businessName", "Add business name", "business name") + "</td>" +
         '<td class="records-value">' + withCopy(formatValue(order.orderValue), order.orderValue == null ? "" : String(order.orderValue), "value") + "</td>" +
         "<td>" + withCopy(escapeHtml(typeLabel || "—"), typeLabel || "", "type") + "</td>" +
-        messageCells +
+        '<td class="records-chat-cell">' + chatSummaryHtml(order) + "</td>" +
+        '<td class="records-chat-cell records-chat-total">' + totalChatsHtml(order) + "</td>" +
+        '<td class="records-chat-cell">' + latestMessageHtml(order) + "</td>" +
         '<td class="records-clip-cell">' + withCopy(clipText(order.directRequirements), order.directRequirements || "", "direct order requirements") + "</td>" +
         mediaCell(filesCell(order.requirementFiles), filesCopyText(order.requirementFiles), "requirement files", hasFiles(order.requirementFiles)) +
         '<td class="records-clip-cell">' + withCopy(clipText(order.reviewText), order.reviewText || "", "review text") + "</td>" +
@@ -524,6 +692,177 @@
           link.click();
           link.remove();
         });
+      });
+    });
+  }
+
+  const chatDrawer = document.getElementById("chat-drawer");
+  const chatDrawerBody = document.getElementById("chat-drawer-body");
+  const chatDrawerTitle = document.getElementById("chat-drawer-title");
+  const chatLightbox = document.getElementById("chat-lightbox");
+  const chatLightboxImage = document.getElementById("chat-lightbox-image");
+  const chatLightboxName = document.getElementById("chat-lightbox-name");
+  let lightboxFile = null;
+
+  function fileFromButton(el) {
+    if (!el) return null;
+    return {
+      name: el.getAttribute("data-file-name") || "file",
+      id: el.getAttribute("data-file-id") || "",
+      url: el.getAttribute("data-file-url") || "",
+      previewUrl: el.getAttribute("data-preview-url") || ""
+    };
+  }
+
+  function saveBlob(blob, name) {
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = name || "file";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(function () { URL.revokeObjectURL(link.href); }, 1500);
+  }
+
+  function downloadAttachment(file) {
+    if (!file) return;
+    const name = file.name || "file";
+    const href = fileDownloadHref(file) || file.url || file.previewUrl || "";
+    function fallback() {
+      if (!href) {
+        showToast("This file is not on Drive. Re-attach it on the order form.");
+        return;
+      }
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = name;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+    if (file.id && typeof store.getFile === "function") {
+      store.getFile(file.id).then(function (record) {
+        if (record && record.blob) {
+          saveBlob(record.blob, record.name || name);
+          return;
+        }
+        if (!href) {
+          fallback();
+          return;
+        }
+        return fetch(href, { mode: "cors", credentials: "omit" }).then(function (response) {
+          if (!response.ok) throw new Error("download");
+          return response.blob();
+        }).then(function (blob) {
+          saveBlob(blob, name);
+        }).catch(fallback);
+      }).catch(fallback);
+      return;
+    }
+    if (href) {
+      fetch(href, { mode: "cors", credentials: "omit" }).then(function (response) {
+        if (!response.ok) throw new Error("download");
+        return response.blob();
+      }).then(function (blob) {
+        saveBlob(blob, name);
+      }).catch(fallback);
+      return;
+    }
+    fallback();
+  }
+
+  function openAttachment(file) {
+    if (!file) return;
+    const href = fileDownloadHref(file) || file.url || file.previewUrl || "";
+    if (file.id && typeof store.getFile === "function") {
+      store.getFile(file.id).then(function (record) {
+        if (record && record.blob) {
+          window.open(URL.createObjectURL(record.blob), "_blank", "noopener");
+          return;
+        }
+        if (href) window.open(href, "_blank", "noopener");
+        else showToast("This file is not on Drive. Re-attach it on the order form.");
+      }).catch(function () {
+        if (href) window.open(href, "_blank", "noopener");
+      });
+      return;
+    }
+    if (href) window.open(href, "_blank", "noopener");
+    else showToast("This file is not on Drive. Re-attach it on the order form.");
+  }
+
+  function hydrateLocalThumbs(root) {
+    if (!root || typeof store.getFile !== "function") return;
+    root.querySelectorAll("img[data-local-file-id]").forEach(function (img) {
+      const id = img.getAttribute("data-local-file-id");
+      if (!id) return;
+      store.getFile(id).then(function (record) {
+        if (!record || !record.blob) return;
+        img.src = URL.createObjectURL(record.blob);
+      }).catch(function () {});
+    });
+  }
+
+  function closeLightbox() {
+    if (chatLightbox) chatLightbox.hidden = true;
+    lightboxFile = null;
+    if (chatLightboxImage) chatLightboxImage.removeAttribute("src");
+  }
+
+  function openLightbox(file) {
+    if (!file || !chatLightbox) return;
+    lightboxFile = file;
+    const src = file.previewUrl || fileDownloadHref(file) || file.url || "";
+    if (chatLightboxName) chatLightboxName.textContent = file.name || "Image";
+    if (chatLightboxImage) {
+      chatLightboxImage.alt = file.name || "Image preview";
+      chatLightboxImage.src = src;
+    }
+    chatLightbox.hidden = false;
+    if (file.id && typeof store.getFile === "function") {
+      store.getFile(file.id).then(function (record) {
+        if (record && record.blob && chatLightboxImage) {
+          chatLightboxImage.src = URL.createObjectURL(record.blob);
+        }
+      }).catch(function () {});
+    }
+  }
+
+  function closeChat() {
+    if (chatDrawer) chatDrawer.hidden = true;
+    document.body.classList.remove("modal-open");
+    closeLightbox();
+  }
+
+  function openChat(orderId) {
+    const order = store.getOrder(orderId);
+    if (!order || !chatDrawer || !chatDrawerBody) return;
+    const pairs = filledPairs(order);
+    if (chatDrawerTitle) chatDrawerTitle.textContent = order.id + " · " + (pairs.length === 1 ? "1 chat pair" : pairs.length + " chat pairs");
+    if (!pairs.length) {
+      chatDrawerBody.innerHTML = '<p class="chat-full-empty">No client / seller messages on this order yet.</p>';
+    } else {
+      chatDrawerBody.innerHTML = pairs.map(function (pair, index) {
+        const number = index + 1;
+        const current = index === pairs.length - 1 ? ' <span class="chat-current-tag">Current</span>' : "";
+        return '<section class="chat-full-pair">' +
+          '<p class="chat-full-pair-label">C' + number + " / R" + number + current + "</p>" +
+          chatMessageBlock(pair.buyer, "Client Message " + number, "is-client") +
+          chatMessageBlock(pair.client, "Seller Reply " + number, "is-seller") +
+        "</section>";
+      }).join("");
+    }
+    chatDrawer.hidden = false;
+    document.body.classList.add("modal-open");
+    hydrateLocalThumbs(chatDrawerBody);
+    chatDrawerBody.querySelectorAll("img.chat-thumb").forEach(function (img) {
+      img.addEventListener("error", function () {
+        const fallback = document.createElement("span");
+        fallback.className = "chat-thumb-fallback";
+        fallback.textContent = "Image";
+        img.replaceWith(fallback);
       });
     });
   }
@@ -656,6 +995,13 @@
   }
 
   body.addEventListener("click", function (event) {
+    const openChatBtn = event.target.closest("[data-open-chat]");
+    if (openChatBtn) {
+      event.preventDefault();
+      openChat(openChatBtn.getAttribute("data-open-chat"));
+      return;
+    }
+
     const copyBtn = event.target.closest("[data-copy]");
     if (copyBtn) {
       event.preventDefault();
@@ -820,5 +1166,48 @@
   [search, dateFilter, accountFilter, paymentFilter, revisionFilter, readyFilter].forEach(function (input) {
     input.addEventListener("input", render);
     input.addEventListener("change", render);
+  });
+
+  document.addEventListener("click", function (event) {
+    if (event.target.closest("[data-close-chat]")) {
+      closeChat();
+      return;
+    }
+    if (event.target.closest("[data-close-lightbox]")) {
+      closeLightbox();
+      return;
+    }
+    const saveLightbox = event.target.closest("#chat-lightbox-save");
+    if (saveLightbox) {
+      event.preventDefault();
+      downloadAttachment(lightboxFile);
+      return;
+    }
+    const previewBtn = event.target.closest("[data-open-preview]");
+    if (previewBtn) {
+      event.preventDefault();
+      openLightbox(fileFromButton(previewBtn));
+      return;
+    }
+    const saveBtn = event.target.closest("[data-save-file]");
+    if (saveBtn) {
+      event.preventDefault();
+      downloadAttachment(fileFromButton(saveBtn));
+      return;
+    }
+    const openBtn = event.target.closest("[data-open-file]");
+    if (openBtn) {
+      event.preventDefault();
+      openAttachment(fileFromButton(openBtn));
+    }
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape") return;
+    if (chatLightbox && !chatLightbox.hidden) {
+      closeLightbox();
+      return;
+    }
+    if (chatDrawer && !chatDrawer.hidden) closeChat();
   });
 })();

@@ -547,14 +547,17 @@
     if (!prev.length) return incoming;
     if (!incoming.length) return prev;
     const leftover = incoming.slice();
-    return prev.map(function (message) {
+    const merged = prev.map(function (message) {
       const role = threadRole(message);
       const index = leftover.findIndex(function (item) { return threadRole(item) === role; });
       const match = index >= 0 ? leftover.splice(index, 1)[0] : null;
       return Object.assign({}, message, {
+        text: String(message.text || "").trim() || (match && match.text) || "",
         files: overlayFileUrls(message.files || [], (match && match.files) || [])
       });
     });
+    leftover.forEach(function (item) { merged.push(item); });
+    return merged;
   }
 
   function overlayRevisionFiles(previousRounds, incomingRounds) {
@@ -934,18 +937,18 @@
       order.revisions = overlayRevisionFiles(order.revisions, previous.revisions);
     }
     const incomingThread = order.messageThread || [];
-    const threadLooksSheet = incomingThread.length && incomingThread.every(function (item) {
-      return String(item.id || "").indexOf("mt_sheet") === 0;
-    });
-    const previousThreadLocal = (previous.messageThread || []).some(function (item) {
-      return String(item.id || "").indexOf("mt_sheet") !== 0;
-    });
-    if (previous.messageThread && previous.messageThread.length && (!incomingThread.length || (threadLooksSheet && previousThreadLocal))) {
-      order.messageThread = overlayMessageFiles(previous.messageThread, incomingThread);
-      order.messageText = formatMessageThread(order.messageThread) || previous.messageText || order.messageText;
-    } else if (previous.messageThread && previous.messageThread.length) {
-      order.messageThread = overlayMessageFiles(order.messageThread, previous.messageThread);
-      order.messageText = formatMessageThread(order.messageThread) || order.messageText;
+    const previousThread = previous.messageThread || [];
+    if (previousThread.length || incomingThread.length) {
+      if (!previousThread.length) {
+        order.messageThread = incomingThread;
+      } else if (!incomingThread.length) {
+        order.messageThread = previousThread;
+      } else if (incomingThread.length >= previousThread.length) {
+        order.messageThread = overlayMessageFiles(incomingThread, previousThread);
+      } else {
+        order.messageThread = overlayMessageFiles(previousThread, incomingThread);
+      }
+      order.messageText = formatMessageThread(order.messageThread) || order.messageText || previous.messageText;
     }
     if (previous.accountId && !order.accountId) order.accountId = previous.accountId;
     order.requirementFiles = mergeRequirementFiles(previous.requirementFiles, order.requirementFiles);
