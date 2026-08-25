@@ -971,11 +971,27 @@
     if (field === "businessName") order.businessName = next;
     store.upsertOrder(order);
     render();
-    showToast(field === "clientName" ? "Client name saved" : "Business name saved");
     const sheet = window.OwlisticSheet;
-    if (sheet && typeof sheet.sync === "function") {
-      sheet.sync(order).catch(function () {});
+    const send = sheet && (typeof sheet.updateOrderNames === "function"
+      ? sheet.updateOrderNames
+      : (typeof sheet.sync === "function" ? function (item) { return sheet.sync(item, { skipUploads: true }); } : null));
+    if (!send) {
+      showToast(field === "clientName" ? "Client name saved" : "Business name saved");
+      return;
     }
+    send.call(sheet, order).then(function (result) {
+      if (result && result.skipped) {
+        showToast(field === "clientName" ? "Client name saved" : "Business name saved");
+        return;
+      }
+      if (result && result.ok === false) {
+        showToast(result.error || "Name saved here, but not on the Google Sheet.");
+        return;
+      }
+      showToast(field === "clientName" ? "Client name saved to Google Sheet" : "Business name saved to Google Sheet");
+    }).catch(function () {
+      showToast("Name saved here, but not on the Google Sheet.");
+    });
   }
 
   function startNameEdit(button) {
@@ -1082,9 +1098,12 @@
   body.addEventListener("focusout", function (event) {
     const input = event.target.closest("[data-name-input]");
     if (!input) return;
+    if (input.getAttribute("data-cancel") === "1") return;
+    const orderId = input.getAttribute("data-edit-order");
+    const field = input.getAttribute("data-edit-field");
+    const value = input.value;
     window.setTimeout(function () {
-      if (!input.isConnected) return;
-      saveNameField(input.getAttribute("data-edit-order"), input.getAttribute("data-edit-field"), input.value);
+      saveNameField(orderId, field, value);
     }, 0);
   });
 
@@ -1097,6 +1116,7 @@
     }
     if (event.key === "Escape") {
       event.preventDefault();
+      input.setAttribute("data-cancel", "1");
       render();
     }
   });

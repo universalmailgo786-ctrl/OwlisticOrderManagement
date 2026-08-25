@@ -73,6 +73,9 @@ function doGet(e) {
   if (action === "driveStatus") {
     return json_(driveStatus_());
   }
+  if (action === "updateOrderNames") {
+    return json_(updateOrderNames_(SpreadsheetApp.openById(SPREADSHEET_ID), params));
+  }
   return json_({ ok: true, service: "Ashar Orders Management System", sheetColumns: HEADERS.length });
 }
 
@@ -111,6 +114,9 @@ function doPost(e) {
     }
     if (data.action === "deleteOrder") {
       return json_(deleteOrder_(ss, data));
+    }
+    if (data.action === "updateOrderNames") {
+      return json_(updateOrderNames_(ss, data));
     }
 
     return json_(upsertOrder_(ss, data));
@@ -922,6 +928,12 @@ function upsertOrderLocked_(ss, data) {
     return { ok: false, error: "You can only edit orders for " + forced + "." };
   }
 
+  var existingRow = null;
+  if (found) {
+    existingRow = found.sheet.getRange(found.row, 1, 1, HEADERS.length).getValues()[0];
+    while (existingRow.length < HEADERS.length) existingRow.push("");
+  }
+
   while (row.length < HEADERS.length) {
     row.push("");
   }
@@ -935,6 +947,11 @@ function upsertOrderLocked_(ss, data) {
   if ("clientName" in data) {
     row[26] = String(data.clientName || "").trim();
   }
+  if (existingRow) {
+    if (!String(row[25] || "").trim()) row[25] = String(existingRow[25] || "").trim();
+    if (!String(row[26] || "").trim()) row[26] = String(existingRow[26] || "").trim();
+  }
+  ensureNameColumns_(target);
 
   var existingRich = null;
   var existingText = "";
@@ -1085,10 +1102,57 @@ function getOrder_(params) {
   };
 }
 
+function ensureNameColumns_(sheet) {
+  if (!sheet) return;
+  var lastCol = Math.max(sheet.getLastColumn(), 1);
+  var bizHeader = lastCol >= 26 ? String(sheet.getRange(1, 26).getValue() || "").trim() : "";
+  var clientHeader = lastCol >= 27 ? String(sheet.getRange(1, 27).getValue() || "").trim() : "";
+  if (bizHeader !== "Business Name") sheet.getRange(1, 26).setValue("Business Name");
+  if (clientHeader !== "Client Name") sheet.getRange(1, 27).setValue("Client Name");
+}
+
+function updateOrderNames_(ss, data) {
+  var orderId = String((data && (data.orderId || data.orderid)) || "").trim();
+  if (!orderId) {
+    return { ok: false, action: "updateOrderNames", error: "Order ID is required." };
+  }
+  var forced = forcedAccount_(data);
+  var wantedName = tabName_(data.tabName || data.tab || data.accountName || "");
+  var found = null;
+  if (wantedName) {
+    var sheet = sheetForAccount_(ss, wantedName);
+    if (sheet) found = findOrderOnSheet_(sheet, orderId);
+  }
+  if (!found) found = findOrder_(ss, orderId);
+  if (!found) {
+    return { ok: false, action: "updateOrderNames", found: false, error: "Order " + orderId + " was not found on the Google Sheet." };
+  }
+  if (forced && !canAccessFound_(found, forced)) {
+    return { ok: false, action: "updateOrderNames", error: "You can only edit orders for " + forced + "." };
+  }
+  ensureNameColumns_(found.sheet);
+  var biz = String((data.businessName != null ? data.businessName : data.businessname) || "").trim();
+  var client = String((data.clientName != null ? data.clientName : data.clientname) || "").trim();
+  found.sheet.getRange(found.row, 26).setValue(biz);
+  found.sheet.getRange(found.row, 27).setValue(client);
+  return {
+    ok: true,
+    action: "updateOrderNames",
+    updated: true,
+    orderId: orderId,
+    tab: found.sheet.getName(),
+    businessName: biz,
+    clientName: client
+  };
+}
+
 function ensureOrderSheet_(ss, sheet) {
   if (!sheet) return;
   var first = String(sheet.getRange(1, 1).getValue() || "").trim();
-  if (first === "Order ID") return;
+  if (first === "Order ID") {
+    ensureNameColumns_(sheet);
+    return;
+  }
   styleSheet_(ss, sheet);
 }
 

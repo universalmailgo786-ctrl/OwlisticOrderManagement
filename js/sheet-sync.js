@@ -741,12 +741,48 @@
     });
   }
 
+  function updateOrderNames(order) {
+    if (!isConfigured() || !order || !order.id) {
+      return Promise.resolve({ skipped: true });
+    }
+    const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+    const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+    const url = getWebAppUrl() + join +
+      "action=updateOrderNames" +
+      "&orderId=" + encodeURIComponent(order.id) +
+      "&tab=" + encodeURIComponent(tabNameOf(accountNameOf(order))) +
+      "&accountName=" + encodeURIComponent(accountNameOf(order)) +
+      "&businessName=" + encodeURIComponent(order.businessName || "") +
+      "&clientName=" + encodeURIComponent(order.clientName || "") +
+      "&role=" + encodeURIComponent((session && session.role) || "") +
+      "&userAccount=" + encodeURIComponent((session && session.account) || "") +
+      "&username=" + encodeURIComponent((session && session.username) || "") +
+      "&_=" + Date.now();
+    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      const data = parseJson(text);
+      if (data && data.action === "updateOrderNames") return data;
+      return postPayload({
+        action: "updateOrderNames",
+        orderId: order.id,
+        accountName: accountNameOf(order),
+        tabName: tabNameOf(accountNameOf(order)),
+        businessName: order.businessName || "",
+        clientName: order.clientName || ""
+      });
+    }).catch(function () {
+      return { ok: false, error: "Could not save the name to Google Sheet." };
+    });
+  }
+
   function sync(order, options) {
     if (!order) {
       return Promise.resolve({ skipped: true });
     }
     const tabName = tabNameOf(accountNameOf(order));
-    return uploadOrderFiles(order).then(function (uploadResults) {
+    const start = options && options.skipUploads ? Promise.resolve([]) : uploadOrderFiles(order);
+    return start.then(function (uploadResults) {
       const missing = filesMissingDrive(order).map(function (file) { return file.name; });
       const uploadedNames = (uploadResults || []).filter(function (item) {
         return item && item.file && item.file.url;
@@ -873,6 +909,7 @@
     filesNeedingDrive: filesNeedingDrive,
     filesMissingDrive: filesMissingDrive,
     fetchOrders: fetchOrders,
+    updateOrderNames: updateOrderNames,
     findDuplicateOrder: findDuplicateOrder,
     confirmSheetWrite: confirmSheetWrite,
     recordFingerprint: recordFingerprint,
