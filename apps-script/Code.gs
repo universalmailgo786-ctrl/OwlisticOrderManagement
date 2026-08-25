@@ -160,12 +160,17 @@ function listOrders_(params) {
       return { ok: false, error: "This user has no Account assigned." };
     }
   }
+  var allowedTabs = allowedTabs_(params, forced);
+  if (!allowedTabs.length) {
+    return { ok: true, action: "listOrders", count: 0, orders: [] };
+  }
   var sheets = ss.getSheets();
   var orders = [];
   for (var i = 0; i < sheets.length; i++) {
     var sheet = sheets[i];
     var name = sheet.getName();
     if (name === "Users") continue;
+    if (!sheetMatchesAny_(name, allowedTabs)) continue;
     if (String(sheet.getRange(1, 1).getValue() || "").trim() !== "Order ID") continue;
     var last = sheet.getLastRow();
     if (last < 2) continue;
@@ -182,12 +187,44 @@ function listOrders_(params) {
       while (row.length < HEADERS.length) row.push("");
       var id = String(row[0] || "").trim();
       if (!id) continue;
-      if (forced && !rowBelongsToAccount_(row, name, forced)) continue;
+      if (!rowBelongsToAny_(row, name, allowedTabs)) continue;
       var rich = fileRich[r] && fileRich[r][0];
       orders.push(orderFromRow_(row, name, filesFromCell_(rich, row[14])));
     }
   }
   return { ok: true, action: "listOrders", count: orders.length, orders: orders };
+}
+
+function allowedTabs_(params, forced) {
+  if (forced) return [forced];
+  var raw = String((params && params.tabs) || "");
+  if (!raw) return [];
+  var parts = raw.split(",");
+  var out = [];
+  var i;
+  for (i = 0; i < parts.length; i++) {
+    var name = tabName_(parts[i]);
+    if (name) out.push(name);
+  }
+  return out;
+}
+
+function sheetMatchesAny_(sheetName, allowed) {
+  if (!allowed || !allowed.length) return false;
+  var i;
+  for (i = 0; i < allowed.length; i++) {
+    if (sheetMatchesAccount_(sheetName, allowed[i])) return true;
+  }
+  return false;
+}
+
+function rowBelongsToAny_(row, tabName, allowed) {
+  if (!allowed || !allowed.length) return false;
+  var i;
+  for (i = 0; i < allowed.length; i++) {
+    if (rowBelongsToAccount_(row, tabName, allowed[i])) return true;
+  }
+  return false;
 }
 
 function isoFrom_(datePart, timePart) {
@@ -613,6 +650,7 @@ function findDuplicateRecord_(ss, row, tabName, excludeOrderId) {
     var sheet = sheets[s];
     var name = sheet.getName();
     if (name === "Users") continue;
+    if (tabName && !sheetMatchesAccount_(name, tabName)) continue;
     if (String(sheet.getRange(1, 1).getValue() || "").trim() !== "Order ID") continue;
     var last = sheet.getLastRow();
     if (last < 2) continue;

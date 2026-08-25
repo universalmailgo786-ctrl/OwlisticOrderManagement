@@ -467,17 +467,59 @@
     }
   }
 
+  function createdAccountTabs() {
+    const accounts = (store && typeof store.getAccounts === "function" && store.getAccounts()) || [];
+    return accounts.map(function (account) {
+      return tabNameOf(accountNameOf(account));
+    }).filter(Boolean);
+  }
+
+  function fetchTabNames(session) {
+    const role = String((session && session.role) || "").toLowerCase().replace(/\s+/g, "");
+    if (role === "user" || role === "account") {
+      const forced = tabNameOf(session && session.account);
+      return forced ? [forced] : [];
+    }
+    return createdAccountTabs();
+  }
+
+  function tabMatchesAllowed(name, allowed) {
+    const key = tabNameOf(name).toLowerCase();
+    if (!key) return false;
+    for (let i = 0; i < (allowed || []).length; i += 1) {
+      const wanted = tabNameOf(allowed[i]).toLowerCase();
+      if (!wanted) continue;
+      if (key === wanted) return true;
+      if (key.indexOf(wanted + " ") === 0) return true;
+    }
+    return false;
+  }
+
+  function isLeftoverTab(name) {
+    return /^(unassigned|sheet1|users)$/i.test(tabNameOf(name));
+  }
+
+  function orderOnCreatedAccountTab(order, allowed) {
+    if (!allowed || !allowed.length) return false;
+    if (isLeftoverTab(order && order.tabName)) return false;
+    if (tabMatchesAllowed(order && order.tabName, allowed)) return true;
+    if (order && order.tabName) return false;
+    return tabMatchesAllowed(order && order.accountName, allowed);
+  }
+
   function fetchOrders() {
     if (!isConfigured()) {
       return Promise.resolve({ skipped: true, orders: [] });
     }
     const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+    const tabs = fetchTabNames(session);
     const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
     const url = getWebAppUrl() + join +
       "action=listOrders" +
       "&role=" + encodeURIComponent((session && session.role) || "") +
       "&userAccount=" + encodeURIComponent((session && session.account) || "") +
       "&username=" + encodeURIComponent((session && session.username) || "") +
+      "&tabs=" + encodeURIComponent(tabs.join(",")) +
       "&_=" + Date.now();
     return fetch(url, { method: "GET", credentials: "omit", cache: "no-store" }).then(function (response) {
       return response.text();
@@ -492,7 +534,10 @@
           orders: []
         };
       }
-      return { ok: true, orders: data.orders || [] };
+      const orders = (data.orders || []).filter(function (order) {
+        return orderOnCreatedAccountTab(order, tabs);
+      });
+      return { ok: true, orders: orders };
     }).catch(function () {
       return { ok: false, error: "Could not reach Google Sheet.", orders: [] };
     });
