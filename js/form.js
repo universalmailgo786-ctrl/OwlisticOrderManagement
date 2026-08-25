@@ -32,14 +32,16 @@
   let threadMessages = [];
   let persistTimer = null;
   let isSubmitting = false;
+  let saveQueue = Promise.resolve();
+  let activeSheetSave = null;
 
-  function showToast(message) {
+  function showToast(message, duration) {
     toast.textContent = message;
     toast.hidden = false;
     window.clearTimeout(showToast.timer);
     showToast.timer = window.setTimeout(function () {
       toast.hidden = true;
-    }, 2400);
+    }, duration || 2400);
   }
 
   function selectedPayment(name) {
@@ -1018,60 +1020,128 @@
     };
   }
 
-  function saveOrder(silent) {
+  function applySavedOrder(saved) {
+    document.getElementById("order-id").value = saved.id;
+    editMeta.hidden = false;
+    if (deleteOrderBtn) deleteOrderBtn.hidden = false;
+    editMeta.textContent = "Editing " + saved.id + " · Created " + store.formatDateTime(saved.createdAt) + " · Last updated " + store.formatDateTime(saved.updatedAt);
+    refreshRequirementFiles();
+    updateStatusUI();
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, "", "index.html?order=" + encodeURIComponent(saved.id));
+    }
+  }
+
+  function refreshFromSheetOrders(list, orderId) {
+    if (!list || !list.length) return;
+    store.importOrders(list);
+    const updated = store.getOrder(orderId);
+    if (updated && updated.requirementFiles) {
+      requirementFiles = updated.requirementFiles.slice();
+      refreshRequirementFiles();
+    }
+  }
+
+  function writeOrderToSheet(saved) {
+    const sheet = window.OwlisticSheet;
+    if (!sheet || typeof sheet.sync !== "function") {
+      showToast("Order " + saved.id + " saved locally. Connect Google Sheet to sync.");
+      return Promise.resolve({ saved: saved, sheet: { skipped: true } });
+    }
+    if (submitBtn) submitBtn.textContent = "Saving to Google Sheet…";
+    const existingListPromise = typeof sheet.fetchOrders === "function"
+      ? sheet.fetchOrders().catch(function () { return { orders: [] }; })
+      : Promise.resolve({ orders: [] });
+    return existingListPromise.then(function (listResult) {
+      const existingList = (listResult && listResult.orders) || [];
+      const alreadyById = existingList.some(function (item) {
+        return String((item && item.id) || "") === String(saved.id);
+      });
+      const duplicate = typeof sheet.findDuplicateOrder === "function"
+        ? sheet.findDuplicateOrder(existingList, saved)
+        : null;
+      if (duplicate && !alreadyById) {
+        refreshFromSheetOrders(existingList, duplicate.id || saved.id);
+        return {
+          saved: saved,
+          duplicate: true,
+          confirmed: true,
+          existing: duplicate,
+          sheet: { ok: true, duplicate: true }
+        };
+      }
+      return sheet.sync(saved, { forceUploads: true }).then(function (syncResult) {
+        if (syncResult && syncResult.skipped) {
+          showToast("Order " + saved.id + " saved locally. Connect Google Sheet to sync.");
+          return { saved: saved, sheet: syncResult };
+        }
+        if (submitBtn) submitBtn.textContent = "Confirming Google Sheet…";
+        const confirmPromise = typeof sheet.confirmSheetWrite === "function"
+          ? sheet.confirmSheetWrite(saved, { existedBefore: alreadyById })
+          : sheet.fetchOrders().then(function (result) {
+            const list = (result && result.orders) || [];
+            const found = list.some(function (item) {
+              return String((item && item.id) || "") === String(saved.id);
+            });
+            return { ok: found, confirmed: found, orders: list };
+          });
+        return confirmPromise.then(function (confirm) {
+          if (confirm && confirm.orders) {
+            refreshFromSheetOrders(confirm.orders, saved.id);
+          }
+          if (confirm && confirm.confirmed) {
+            return {
+              saved: saved,
+              sheet: syncResult,
+              confirmed: true,
+              duplicate: Boolean(confirm.duplicate)
+            };
+          }
+          return { saved: saved, sheet: syncResult, confirmed: false, sheetFailed: true };
+        });
+      });
+    }).catch(function () {
+      showToast("Order " + saved.id + " saved locally, but Google Sheet sync failed");
+      return { saved: saved, sheetFailed: true };
+    });
+  }
+
+  function doSaveOrder(silent) {
     return store.saveFileBlobs(fileInput.files).then(function (newFiles) {
       if (newFiles.length) {
         requirementFiles = requirementFiles.concat(newFiles);
         fileInput.value = "";
       }
       const saved = store.upsertOrder(collectOrder());
-      document.getElementById("order-id").value = saved.id;
-      submitBtn.textContent = "Save to Google Sheet";
-      editMeta.hidden = false;
-      if (deleteOrderBtn) deleteOrderBtn.hidden = false;
-      editMeta.textContent = "Editing " + saved.id + " · Created " + store.formatDateTime(saved.createdAt) + " · Last updated " + store.formatDateTime(saved.updatedAt);
-      refreshRequirementFiles();
-      updateStatusUI();
-      if (window.history && window.history.replaceState) {
-        window.history.replaceState({}, "", "index.html?order=" + encodeURIComponent(saved.id));
+      applySavedOrder(saved);
+      if (silent) {
+        return { saved: saved, silent: true };
       }
-      const sheet = window.OwlisticSheet;
-      const syncPromise = sheet
-        ? sheet.sync(saved, { forceUploads: !silent })
-        : Promise.resolve({ skipped: true });
-      return syncPromise.then(function (result) {
-        const afterSync = (!silent && sheet && typeof sheet.fetchOrders === "function")
-          ? sheet.fetchOrders().then(function (list) {
-            if (list && list.ok && list.orders) {
-              store.importOrders(list.orders);
-              const updated = store.getOrder(saved.id);
-              if (updated && updated.requirementFiles) {
-                requirementFiles = updated.requirementFiles.slice();
-                refreshRequirementFiles();
-              }
-            }
-            return result;
-          }).catch(function () {
-            return result;
-          })
-          : Promise.resolve(result);
-        return afterSync.then(function (sheetResult) {
-          if (!silent) {
-            if (sheetResult && sheetResult.skipped) {
-              showToast("Order " + saved.id + " saved locally. Connect Google Sheet to sync.");
-            } else if (sheetResult && sheetResult.skippedLarge && sheetResult.skippedLarge.length) {
-              showToast("Saved. Files over 8 MB were kept on this device only.");
-            } else {
-              showToast("Order " + saved.id + " saved");
-            }
-          }
-          return { saved: saved, sheet: sheetResult || { ok: true } };
-        });
-      }).catch(function () {
-        if (!silent) showToast("Order " + saved.id + " saved locally, but Google Sheet sync failed");
-        return { saved: saved, sheetFailed: true };
-      });
+      return writeOrderToSheet(saved);
     });
+  }
+
+  function saveOrder(silent) {
+    if (!silent && activeSheetSave) {
+      return activeSheetSave;
+    }
+    const run = saveQueue.then(function () {
+      return doSaveOrder(silent);
+    }, function () {
+      return doSaveOrder(silent);
+    });
+    saveQueue = run.then(function () {}, function () {});
+    if (!silent) {
+      activeSheetSave = run.then(function (result) {
+        activeSheetSave = null;
+        return result;
+      }, function (err) {
+        activeSheetSave = null;
+        throw err;
+      });
+      return activeSheetSave;
+    }
+    return run;
   }
 
   function loadOrder(order) {
@@ -1498,15 +1568,26 @@
     if (isSubmitting) return;
     isSubmitting = true;
     window.clearTimeout(persistTimer);
+    persistTimer = null;
     submitBtn.disabled = true;
     submitBtn.textContent = "Saving to Google Sheet…";
     saveOrder(false).then(function (outcome) {
-      const saved = outcome && outcome.saved;
-      if (!outcome || outcome.sheetFailed || (outcome.sheet && outcome.sheet.skipped)) {
+      if (!outcome || (outcome.sheet && outcome.sheet.skipped)) {
         return;
       }
-      goToDefaultPage();
-      showToast("Order " + saved.id + " saved to Google Sheet");
+      if (outcome.duplicate && outcome.confirmed) {
+        goToDefaultPage();
+        showToast("This order is already in the Google Sheet.", 5000);
+        return;
+      }
+      if (outcome.confirmed) {
+        goToDefaultPage();
+        showToast("Order is filled in the Google Sheet.", 5000);
+        return;
+      }
+      if (outcome.sheetFailed) {
+        showToast("Could not confirm this order in the Google Sheet. Check the sheet and try Save again.", 5000);
+      }
     }).catch(function () {
       showToast("Could not save this order");
     }).then(function () {

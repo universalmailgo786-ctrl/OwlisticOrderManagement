@@ -572,7 +572,76 @@ function parseBoardStatus_(value) {
   return "";
 }
 
+function cellKey_(value) {
+  return String(value == null ? "" : value).replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function recordFingerprint_(row, tabName) {
+  return [
+    cellKey_(tabName || row[5]),
+    String(row[6] == null ? "" : row[6]).replace(/\D+/g, ""),
+    cellKey_(row[7]),
+    cellKey_(row[8]),
+    cellKey_(row[9]),
+    cellKey_(row[10]),
+    cellKey_(row[11]),
+    cellKey_(row[12]),
+    cellKey_(row[13]),
+    cellKey_(row[15]),
+    cellKey_(row[16]),
+    cellKey_(row[17])
+  ].join("\u0001");
+}
+
+function fingerprintHasFields_(fingerprint) {
+  var parts = String(fingerprint || "").split("\u0001");
+  var meaningful = [1, 2, 3, 5, 7, 8, 9, 10, 11];
+  var i;
+  for (i = 0; i < meaningful.length; i++) {
+    var part = parts[meaningful[i]] || "";
+    if (part && part !== "—" && part !== "-") return true;
+  }
+  return false;
+}
+
+function findDuplicateRecord_(ss, row, tabName, excludeOrderId) {
+  var wanted = recordFingerprint_(row, tabName);
+  if (!fingerprintHasFields_(wanted)) return null;
+  var exclude = String(excludeOrderId || "").trim();
+  var sheets = ss.getSheets();
+  for (var s = 0; s < sheets.length; s++) {
+    var sheet = sheets[s];
+    var name = sheet.getName();
+    if (name === "Users") continue;
+    if (String(sheet.getRange(1, 1).getValue() || "").trim() !== "Order ID") continue;
+    var last = sheet.getLastRow();
+    if (last < 2) continue;
+    var cols = Math.max(sheet.getLastColumn(), HEADERS.length);
+    var values = sheet.getRange(2, 1, last - 1, cols).getValues();
+    for (var r = 0; r < values.length; r++) {
+      var existing = values[r];
+      while (existing.length < HEADERS.length) existing.push("");
+      var id = String(existing[0] || "").trim();
+      if (!id || (exclude && id === exclude)) continue;
+      if (recordFingerprint_(existing, name) === wanted) {
+        return { sheet: sheet, row: r + 2, orderId: id };
+      }
+    }
+  }
+  return null;
+}
+
 function upsertOrder_(ss, data) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    return upsertOrderLocked_(ss, data);
+  } finally {
+    try { lock.releaseLock(); } catch (err) {}
+  }
+}
+
+function upsertOrderLocked_(ss, data) {
   var row = data.row || [];
   var orderId = String(data.orderId || row[0] || "");
   var forced = forcedAccount_(data);
@@ -623,6 +692,18 @@ function upsertOrder_(ss, data) {
     writeOrderRow_(target, target.getLastRow(), row, files);
     found.sheet.deleteRow(found.row);
     return { ok: true, moved: true, orderId: orderId, tab: target.getName() };
+  }
+
+  var duplicate = findDuplicateRecord_(ss, row, target.getName(), orderId);
+  if (duplicate) {
+    return {
+      ok: true,
+      duplicate: true,
+      created: false,
+      orderId: orderId,
+      existingOrderId: duplicate.orderId,
+      tab: duplicate.sheet.getName()
+    };
   }
 
   target.appendRow(row);

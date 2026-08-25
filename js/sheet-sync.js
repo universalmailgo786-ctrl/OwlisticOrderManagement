@@ -326,6 +326,97 @@
     });
   }
 
+  function delay(ms) {
+    return new Promise(function (resolve) {
+      window.setTimeout(resolve, ms);
+    });
+  }
+
+  function normalizeRecordText(value) {
+    return String(value == null ? "" : value).replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  function recordFingerprint(order) {
+    if (!order) return "";
+    const typeLabel = callStore("orderTypeLabel", "orderTypeLabel", order) || "";
+    const message = order.messageText || callStore("formatMessageThread", "formatMessageThread", order.messageThread || []) || "";
+    return [
+      tabNameOf(accountNameOf(order)),
+      String(order.whatsapp || "").replace(/\D+/g, ""),
+      order.name || "",
+      order.orderValue == null ? "" : order.orderValue,
+      paymentLabel(order),
+      order.searchKeyword || "",
+      typeLabel,
+      message,
+      order.directRequirements || "",
+      order.fiverrId || "",
+      order.fiverrGigUrl || "",
+      order.reviewText || ""
+    ].map(normalizeRecordText).join("\u0001");
+  }
+
+  function fingerprintHasFields(fingerprint) {
+    const parts = String(fingerprint || "").split("\u0001");
+    const meaningful = [1, 2, 3, 5, 7, 8, 9, 10, 11];
+    for (let i = 0; i < meaningful.length; i += 1) {
+      const part = parts[meaningful[i]] || "";
+      if (part && part !== "—" && part !== "-") return true;
+    }
+    return false;
+  }
+
+  function findDuplicateOrder(orders, order) {
+    const wanted = recordFingerprint(order);
+    if (!fingerprintHasFields(wanted)) return null;
+    const id = String((order && order.id) || "").trim();
+    const list = orders || [];
+    for (let i = 0; i < list.length; i += 1) {
+      const item = list[i];
+      if (!item) continue;
+      if (id && String(item.id || "").trim() === id) continue;
+      if (recordFingerprint(item) === wanted) return item;
+    }
+    return null;
+  }
+
+  function findOrderOnSheet(orders, order) {
+    const id = String((order && order.id) || "").trim();
+    const list = orders || [];
+    if (id) {
+      for (let i = 0; i < list.length; i += 1) {
+        if (String((list[i] && list[i].id) || "").trim() === id) return list[i];
+      }
+    }
+    return findDuplicateOrder(list, order);
+  }
+
+  function confirmSheetWrite(order, options) {
+    const timeout = (options && options.timeout) || 30000;
+    const firstWait = (options && options.existedBefore) ? 900 : 500;
+    const started = Date.now();
+    function attempt() {
+      return fetchOrders().then(function (result) {
+        const list = (result && result.orders) || [];
+        const found = findOrderOnSheet(list, order);
+        if (found) {
+          return {
+            ok: true,
+            confirmed: true,
+            order: found,
+            duplicate: String(found.id || "") !== String((order && order.id) || ""),
+            orders: list
+          };
+        }
+        if (Date.now() - started >= timeout) {
+          return { ok: false, confirmed: false, timeout: true, orders: list };
+        }
+        return delay(800).then(attempt);
+      });
+    }
+    return delay(firstWait).then(attempt);
+  }
+
   function sync(order, options) {
     if (!order) {
       return Promise.resolve({ skipped: true });
@@ -409,6 +500,9 @@
     SPREADSHEET_ID: SPREADSHEET_ID,
     sync: sync,
     fetchOrders: fetchOrders,
+    findDuplicateOrder: findDuplicateOrder,
+    confirmSheetWrite: confirmSheetWrite,
+    recordFingerprint: recordFingerprint,
     deleteOrder: deleteOrder,
     confirmDelete: confirmDelete,
     confirmDelete: confirmDelete,
