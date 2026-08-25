@@ -175,6 +175,12 @@
     return store.filePreviewUrl ? store.filePreviewUrl(file) : (file && file.url) || "";
   }
 
+  function filePreviewSrcs(file) {
+    if (store.filePreviewUrls) return store.filePreviewUrls(file);
+    const src = filePreviewSrc(file);
+    return src ? [src] : [];
+  }
+
   function fileDownloadHref(file) {
     return store.fileDownloadUrl ? store.fileDownloadUrl(file) : (file && file.url) || "";
   }
@@ -186,12 +192,14 @@
       img.hidden = false;
       return;
     }
-    const remote = filePreviewSrc(file);
-    if (remote) {
-      img.src = remote;
+    const remotes = filePreviewSrcs(file);
+    if (remotes.length) {
+      let index = 0;
+      img.src = remotes[0];
       img.hidden = false;
       img.addEventListener("error", function () {
-        if (file.url && img.src !== file.url) img.src = file.url;
+        index += 1;
+        if (index < remotes.length) img.src = remotes[index];
       });
       return;
     }
@@ -1229,7 +1237,10 @@
             duplicate: Boolean(confirm.duplicate)
           };
           if (typeof sheet.fetchOrder !== "function") return done;
-          return sheet.fetchOrder(saved).then(function (remote) {
+          const wait = typeof sheet.waitForDriveLinks === "function"
+            ? sheet.waitForDriveLinks(saved, syncResult.uploadedNames || [], { localIds: syncResult.uploadedLocalIds || [] })
+            : sheet.fetchOrder(saved);
+          return wait.then(function (remote) {
             if (remote && remote.order) {
               const merged = mergeRemoteFileUrls(saved, remote.order);
               const stored = store.upsertOrder(merged);
@@ -1272,9 +1283,6 @@
   }
 
   function saveOrder(silent) {
-    if (!silent && activeSheetSave) {
-      return activeSheetSave;
-    }
     const run = saveQueue.then(function () {
       return doSaveOrder(silent);
     }, function () {
@@ -1292,6 +1300,39 @@
       return activeSheetSave;
     }
     return run;
+  }
+
+  function saveFilesToDrive() {
+    return saveOrder(false).then(function (result) {
+      const saved = result && result.saved;
+      const hasDriveLink = saved && orderHasDriveLinks(saved);
+      if (result && result.sheetFailed) {
+        showToast("Image saved locally, but Drive upload failed. Click Save to Google Sheet to retry.", 4500);
+      } else if (hasDriveLink) {
+        showToast("Image saved to Drive. Anyone can download it.");
+      }
+      return result;
+    });
+  }
+
+  function orderHasDriveLinks(order) {
+    function anyUrl(list) {
+      return (list || []).some(function (file) { return file && file.url; });
+    }
+    if (!order) return false;
+    if (anyUrl(order.requirementFiles)) return true;
+    const threads = order.messageThread || [];
+    for (let i = 0; i < threads.length; i += 1) {
+      if (anyUrl(threads[i] && threads[i].files)) return true;
+    }
+    const rounds = order.revisions || [];
+    for (let r = 0; r < rounds.length; r += 1) {
+      const messages = (rounds[r] && rounds[r].messages) || [];
+      for (let m = 0; m < messages.length; m += 1) {
+        if (anyUrl(messages[m] && messages[m].files)) return true;
+      }
+    }
+    return false;
   }
 
   function loadOrder(order) {
@@ -1407,7 +1448,25 @@
     else if (!priceModal.hidden) closePriceModal();
   });
 
-  fileInput.addEventListener("change", refreshRequirementFiles);
+  function ingestRequirementFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) {
+      refreshRequirementFiles();
+      return;
+    }
+    store.saveFileBlobs(files).then(function (saved) {
+      requirementFiles = requirementFiles.concat(saved);
+      fileInput.value = "";
+      refreshRequirementFiles();
+      return saveFilesToDrive();
+    }).catch(function () {
+      refreshRequirementFiles();
+    });
+  }
+
+  fileInput.addEventListener("change", function () {
+    ingestRequirementFiles(fileInput.files);
+  });
   ["dragenter", "dragover"].forEach(function (type) {
     drop.addEventListener(type, function (event) {
       event.preventDefault();
@@ -1428,7 +1487,7 @@
       transfer.items.add(file);
     });
     fileInput.files = transfer.files;
-    refreshRequirementFiles();
+    ingestRequirementFiles(fileInput.files);
   });
 
   if (messageThreadEl) {
@@ -1488,7 +1547,7 @@
         message.files = (message.files || []).concat(saved);
         filesInput.value = "";
         renderMessageThread();
-        maybePersist();
+        return saveFilesToDrive();
       });
     });
 
@@ -1592,7 +1651,7 @@
       message.files = (message.files || []).concat(saved);
       filesInput.value = "";
       renderRevisions();
-      maybePersist();
+      return saveFilesToDrive();
     });
   });
 

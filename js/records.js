@@ -103,6 +103,12 @@
     return store.filePreviewUrl ? store.filePreviewUrl(file) : (file && file.url) || "";
   }
 
+  function filePreviewSrcs(file) {
+    if (store.filePreviewUrls) return store.filePreviewUrls(file);
+    const src = filePreviewSrc(file);
+    return src ? [src] : [];
+  }
+
   function fileDownloadHref(file) {
     return store.fileDownloadUrl ? store.fileDownloadUrl(file) : (file && file.url) || "";
   }
@@ -112,13 +118,15 @@
     if (!list.length) return "";
     return '<div class="records-files">' + list.map(function (file) {
       const name = escapeHtml(file.name);
-      const preview = filePreviewSrc(file);
+      const previews = filePreviewSrcs(file);
+      const preview = previews[0] || "";
+      const previewAttr = previews.length ? ' data-preview-urls="' + escapeHtml(previews.join("|")) + '"' : "";
       const download = fileDownloadHref(file);
       const idAttr = file.id ? ' data-file-id="' + escapeHtml(file.id) + '"' : "";
       const thumb = isImageFile(file)
         ? '<img class="records-file-thumb" alt="' + name + '" referrerpolicy="no-referrer"' +
           (preview ? ' src="' + escapeHtml(preview) + '"' : "") +
-          idAttr + ' data-file-name="' + name + '">'
+          previewAttr + idAttr + ' data-file-name="' + name + '">'
         : '<div class="records-file-icon"' + idAttr + ' data-file-name="' + name + '">File</div>';
       const link = download
         ? '<a class="records-file-link" href="' + escapeHtml(download) + '" target="_blank" rel="noopener noreferrer" download="' + name + '">Download</a>'
@@ -499,10 +507,17 @@
     document.querySelectorAll(".records-file-thumb").forEach(function (img) {
       if (img.getAttribute("src")) {
         img.addEventListener("error", function () {
+          const urls = String(img.getAttribute("data-preview-urls") || "").split("|").filter(Boolean);
+          const next = Number(img.getAttribute("data-preview-i") || "0") + 1;
+          if (next < urls.length) {
+            img.setAttribute("data-preview-i", String(next));
+            img.src = urls[next];
+            return;
+          }
           const card = img.closest(".records-file-card");
           const link = card && card.querySelector("a.records-file-link");
           if (link && link.href && img.src !== link.href) img.src = link.href;
-        }, { once: true });
+        });
         return;
       }
       const id = img.getAttribute("data-file-id");

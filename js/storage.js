@@ -331,10 +331,21 @@
   }
 
   function filePreviewUrl(file) {
-    if (!file || !file.url) return "";
+    const urls = filePreviewUrls(file);
+    return urls[0] || "";
+  }
+
+  function filePreviewUrls(file) {
+    if (!file) return [];
     const id = driveFileId(file.url);
-    if (id) return "https://drive.google.com/thumbnail?id=" + encodeURIComponent(id) + "&sz=w240";
-    return file.url;
+    const urls = [];
+    if (id) {
+      urls.push("https://lh3.googleusercontent.com/d/" + encodeURIComponent(id) + "=w400");
+      urls.push("https://drive.google.com/thumbnail?id=" + encodeURIComponent(id) + "&sz=w400");
+      urls.push("https://drive.google.com/uc?export=view&id=" + encodeURIComponent(id));
+    }
+    if (file.url && urls.indexOf(file.url) === -1) urls.push(file.url);
+    return urls;
   }
 
   function fileDownloadUrl(file) {
@@ -928,6 +939,7 @@
     formatFileRef: formatFileRef,
     isImageFile: isImageFile,
     filePreviewUrl: filePreviewUrl,
+    filePreviewUrls: filePreviewUrls,
     fileDownloadUrl: fileDownloadUrl,
     mergeRequirementFiles: mergeRequirementFiles,
     overlayFileUrls: overlayFileUrls,

@@ -466,6 +466,51 @@
     });
   }
 
+  function orderFileUrlMap(order) {
+    const urls = {};
+    function add(list) {
+      (list || []).forEach(function (file) {
+        if (file && file.name && file.url) urls[file.name] = file.url;
+      });
+    }
+    add(order && order.requirementFiles);
+    ((order && order.messageThread) || []).forEach(function (message) {
+      add(message && message.files);
+    });
+    ((order && order.revisions) || []).forEach(function (round) {
+      ((round && round.messages) || []).forEach(function (message) {
+        add(message && message.files);
+      });
+    });
+    return urls;
+  }
+
+  function waitForDriveLinks(order, uploadedNames, options) {
+    const names = (uploadedNames || []).filter(Boolean);
+    if (!order || !order.id) {
+      return Promise.resolve({ ok: false, found: false });
+    }
+    if (!names.length) return fetchOrder(order);
+    const timeout = (options && options.timeout) || 12000;
+    const localIds = (options && options.localIds) || [];
+    const started = Date.now();
+    function ready(remoteOrder) {
+      const urls = orderFileUrlMap(remoteOrder);
+      return names.every(function (name) { return Boolean(urls[name]); });
+    }
+    function attempt() {
+      return fetchOrder(order).then(function (remote) {
+        if (remote && remote.order && ready(remote.order)) return remote;
+        if (Date.now() - started >= timeout) {
+          localIds.forEach(function (id) { delete sentFileIds[id]; });
+          return remote || { ok: false, found: false, timeout: true };
+        }
+        return delay(500).then(attempt);
+      });
+    }
+    return delay(700).then(attempt);
+  }
+
   function fetchOrder(order) {
     if (!isConfigured() || !order || !order.id) {
       return Promise.resolve({ skipped: true, found: false });
@@ -519,6 +564,8 @@
       }).then(function (result) {
         result = result || { ok: true };
         result.skippedLarge = collected.skippedLarge || [];
+        result.uploadedNames = (collected.uploads || []).map(function (item) { return item.name; }).filter(Boolean);
+        result.uploadedLocalIds = (collected.uploads || []).map(function (item) { return item.localId; }).filter(Boolean);
         return result;
       });
     });
@@ -618,6 +665,7 @@
     sync: sync,
     hasOrder: hasOrder,
     fetchOrder: fetchOrder,
+    waitForDriveLinks: waitForDriveLinks,
     fetchOrders: fetchOrders,
     findDuplicateOrder: findDuplicateOrder,
     confirmSheetWrite: confirmSheetWrite,

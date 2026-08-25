@@ -338,36 +338,38 @@ function filesFolder_() {
   return DriveApp.getFolderById(FILES_FOLDER_ID);
 }
 
-function orderFolder_(orderId) {
-  var root = filesFolder_();
-  var name = String(orderId || "order").replace(/[\\/:*?"<>|]+/g, "-").trim() || "order";
-  var folders = root.getFoldersByName(name);
-  if (folders.hasNext()) return folders.next();
-  return root.createFolder(name);
-}
-
 function driveUrl_(fileId) {
   return "https://drive.google.com/uc?export=download&id=" + fileId;
+}
+
+function sharePublic_(file) {
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return;
+  } catch (err1) {}
+  try {
+    file.setSharing(DriveApp.Access.ANYONE, DriveApp.Permission.VIEW);
+  } catch (err2) {}
 }
 
 function saveUploads_(orderId, uploads) {
   var list = uploads || [];
   var saved = [];
   if (!list.length) return saved;
-  var folder = orderFolder_(orderId);
+  var folder = filesFolder_();
+  var prefix = String(orderId || "order").replace(/[\\/:*?"<>|]+/g, "-").trim() || "order";
   for (var i = 0; i < list.length; i++) {
     var item = list[i] || {};
     var data = String(item.data || "").replace(/\s+/g, "");
     if (!data) continue;
+    var originalName = String(item.name || "file").replace(/[\\/:*?"<>|]+/g, "-") || "file";
+    var driveName = originalName.indexOf(prefix + "_") === 0 ? originalName : prefix + "_" + originalName;
     var bytes = Utilities.base64Decode(data);
-    var name = String(item.name || "file").replace(/[\\/:*?"<>|]+/g, "-") || "file";
-    var blob = Utilities.newBlob(bytes, item.mimeType || "application/octet-stream", name);
+    var blob = Utilities.newBlob(bytes, item.mimeType || "application/octet-stream", driveName);
     var file = folder.createFile(blob);
-    try {
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    } catch (err) {}
+    sharePublic_(file);
     saved.push({
-      name: file.getName(),
+      name: originalName,
       id: file.getId(),
       url: driveUrl_(file.getId())
     });
@@ -780,12 +782,7 @@ function upsertOrderLocked_(ss, data) {
     existingRich = found.sheet.getRange(found.row, 15).getRichTextValue();
     existingText = found.sheet.getRange(found.row, 15).getDisplayValue();
   }
-  var savedUploads = [];
-  try {
-    savedUploads = saveUploads_(orderId, data.uploads || data.files || []);
-  } catch (err) {
-    savedUploads = [];
-  }
+  var savedUploads = saveUploads_(orderId, data.uploads || data.files || []);
   var files = mergeRequirementFiles_(existingRich, existingText, row[14], savedUploads.slice());
   row[12] = applySavedUrlsToText_(row[12], savedUploads);
   row[19] = applySavedUrlsToText_(row[19], savedUploads);
