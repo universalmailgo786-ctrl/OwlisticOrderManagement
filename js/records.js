@@ -87,6 +87,11 @@
         name = name.replace(found[0], "").replace(/\s*\|\s*$/, "").trim() || name;
       }
     }
+    if (/^https?:\/\//i.test(name) && url) {
+      const id = (store.driveFileId && store.driveFileId(url)) || "";
+      name = id ? "File-" + id.slice(0, 8) : "Download";
+    }
+    if (!name && url) name = "Download";
     if (!name) return null;
     return {
       name: name,
@@ -174,6 +179,9 @@
 
   function messageCellHtml(message) {
     if (!message) return '<span class="muted">—</span>';
+    if (store.repairRevisionMessages) {
+      message = store.repairRevisionMessages([message])[0] || message;
+    }
     const text = String(message.text || "").trim();
     const filesHtml = fileCardsHtml(message.files);
     if (!text && !filesHtml) return '<span class="muted">—</span>';

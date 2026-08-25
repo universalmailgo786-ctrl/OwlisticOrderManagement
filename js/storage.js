@@ -227,6 +227,7 @@
     });
     rounds.forEach(function (round, index) {
       round.number = index + 1;
+      round.messages = repairRevisionMessages(round.messages);
     });
     return rounds;
   }
@@ -316,6 +317,139 @@
       text: String(match[1] || "").replace(/^\(no text\)\s*$/i, "").trim(),
       files: parseFileRefs(match[2])
     };
+  }
+
+  function splitRevisionMessageParts(text) {
+    return String(text || "")
+      .split(/\s*\|\|?\s*(?=(?:Buyer|Seller)\b)/i)
+      .map(function (part) { return String(part || "").trim(); })
+      .filter(Boolean);
+  }
+
+  function isBareUrl(text) {
+    return /^https?:\/\/\S+$/i.test(String(text || "").trim());
+  }
+
+  function uniqueFiles(files) {
+    const seen = {};
+    return (files || []).filter(function (file) {
+      if (!file || !(file.name || file.url)) return false;
+      const key = String(file.url || "") + "\n" + String(file.name || "");
+      if (seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+  }
+
+  function attachUrlToFiles(files, url) {
+    const list = (files || []).map(function (file) {
+      return {
+        id: file.id || "",
+        name: file.name || "",
+        url: file.url || "",
+        type: file.type || "",
+        size: file.size || 0,
+        driveId: file.driveId || ""
+      };
+    });
+    const href = String(url || "").trim();
+    if (!href) return list;
+    const id = driveFileId(href);
+    const empty = list.find(function (file) { return file && !file.url; });
+    if (empty) {
+      empty.url = href;
+      if (id) empty.driveId = empty.driveId || id;
+      return list;
+    }
+    const already = list.some(function (file) {
+      return file.url === href || (id && driveFileId(file.url) === id);
+    });
+    if (already) return list;
+    list.push({
+      id: "",
+      name: id ? "File-" + id.slice(0, 8) : "Download",
+      url: href,
+      type: "",
+      size: 0,
+      driveId: id || ""
+    });
+    return list;
+  }
+
+  function peelDriveUrls(text) {
+    const urls = [];
+    const cleaned = String(text || "").replace(/https?:\/\/(?:drive\.google\.com|lh3\.googleusercontent\.com)[^\s]+/ig, function (url) {
+      urls.push(url.replace(/[),.;]+$/, ""));
+      return " ";
+    }).replace(/\s+/g, " ").trim();
+    return { text: cleaned, urls: urls };
+  }
+
+  function repairRevisionMessages(messages) {
+    const prepared = [];
+    (messages || []).forEach(function (message) {
+      if (!message) return;
+      const split = splitMessageBody(message.text || "");
+      let text = String(message.text || "").trim();
+      let files = (message.files || []).slice();
+      if (split.files && split.files.length) {
+        text = split.text;
+        files = files.concat(split.files);
+      }
+      const peeled = peelDriveUrls(text);
+      peeled.urls.forEach(function (url) {
+        files = attachUrlToFiles(files, url);
+      });
+      text = peeled.text;
+      if (isBareUrl(text)) {
+        files = attachUrlToFiles(files, text);
+        text = "";
+      }
+      prepared.push(Object.assign({}, message, { text: text, files: uniqueFiles(files) }));
+    });
+
+    function isUrlOnlyFile(file) {
+      if (!file || !file.url) return false;
+      const name = String(file.name || "");
+      return !name || name === "Download" || /^File-/.test(name) || isBareUrl(name);
+    }
+
+    const needUrl = [];
+    prepared.forEach(function (message) {
+      (message.files || []).forEach(function (file) {
+        if (file && file.name && !file.url && !isBareUrl(file.name) && !isUrlOnlyFile(file)) {
+          needUrl.push(file);
+        }
+      });
+    });
+
+    const kept = [];
+    prepared.forEach(function (message) {
+      const files = message.files || [];
+      const urlOnly = !String(message.text || "").trim() && files.length && files.every(isUrlOnlyFile);
+      if (urlOnly) {
+        files.forEach(function (file) {
+          const target = needUrl[0];
+          if (target && !target.url) {
+            needUrl.shift();
+            target.url = file.url;
+            target.driveId = file.driveId || driveFileId(file.url) || target.driveId || "";
+            return;
+          }
+          if (kept.length) {
+            kept[kept.length - 1].files = uniqueFiles(attachUrlToFiles(kept[kept.length - 1].files || [], file.url));
+            return;
+          }
+          kept.push(Object.assign({}, message, { files: [file] }));
+        });
+        return;
+      }
+      kept.push(message);
+    });
+    kept.forEach(function (message) {
+      message.files = uniqueFiles(message.files);
+    });
+    return kept;
   }
 
   function driveFileId(url) {
@@ -457,7 +591,7 @@
       const rest = String(match[3] || "").trim();
       const messages = [];
       if (rest && rest !== "(empty)") {
-        rest.split(" | ").forEach(function (part, index) {
+        splitRevisionMessageParts(rest).forEach(function (part, index) {
           const chunk = String(part || "").trim();
           if (!chunk) return;
           const body = splitMessageBody(chunk.replace(/^(Buyer|Seller)(?:\s*\([^)]*\))?\s*—\s*/i, ""));
@@ -937,6 +1071,7 @@
     messageThreadOf: messageThreadOf,
     parseFileRefs: parseFileRefs,
     formatFileRef: formatFileRef,
+    repairRevisionMessages: repairRevisionMessages,
     isImageFile: isImageFile,
     filePreviewUrl: filePreviewUrl,
     filePreviewUrls: filePreviewUrls,

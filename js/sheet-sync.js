@@ -268,7 +268,7 @@
         if (files) parts.push("Files: " + files.replace(/\n/g, " ; "));
         return parts.join(" — ");
       });
-      return "Revision " + (round.number || "") + (round.completed ? " [Completed]" : " [Open]") + (messages.length ? ": " + messages.join(" | ") : ": (empty)");
+      return "Revision " + (round.number || "") + (round.completed ? " [Completed]" : " [Open]") + (messages.length ? ": " + messages.join(" || ") : ": (empty)");
     }).join("\n");
   }
 

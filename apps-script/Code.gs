@@ -675,7 +675,7 @@ function parseRevisionMessages_(rest, createdAt, number) {
   var messages = [];
   var text = String(rest || "").trim();
   if (!text || text === "(empty)") return messages;
-  var parts = text.split(" | ");
+  var parts = text.split(/\s*\|\|?\s*(?=(?:Buyer|Seller)\b)/i);
   var i;
   for (i = 0; i < parts.length; i++) {
     var part = String(parts[i] || "").trim();
