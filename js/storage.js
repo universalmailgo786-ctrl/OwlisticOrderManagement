@@ -281,10 +281,8 @@
     if (!raw) return [];
     const chunks = [];
     String(raw).split(/\n|;/).forEach(function (part) {
-      String(part || "").split(/\s*,\s*/).forEach(function (item) {
-        const chunk = String(item || "").trim();
-        if (chunk) chunks.push(chunk);
-      });
+      const chunk = String(part || "").trim();
+      if (chunk) chunks.push(chunk);
     });
     return chunks.map(function (chunk) {
       const pipe = chunk.indexOf("|");
@@ -301,7 +299,7 @@
 
   function formatFileRef(file) {
     if (!file || !file.name) return "";
-    return file.url ? file.name + " " + file.url : file.name;
+    return file.url ? file.name + " | " + file.url : file.name;
   }
 
   function splitMessageBody(raw) {
@@ -358,7 +356,18 @@
   function overlayFileUrls(previous, incoming) {
     const prev = previous || [];
     const next = incoming || [];
-    if (!prev.length) return mergeRequirementFiles([], next);
+    if (!prev.length) {
+      return (next || []).filter(function (file) { return file && file.name; }).map(function (file) {
+        return {
+          id: file.id || "",
+          name: file.name || "",
+          url: file.url || "",
+          type: file.type || "",
+          size: file.size || 0,
+          uploadedAt: file.uploadedAt || ""
+        };
+      });
+    }
     const used = {};
     const merged = prev.map(function (file, index) {
       const match = next.find(function (item, itemIndex) {
@@ -638,24 +647,7 @@
   }
 
   function mergeRequirementFiles(previous, incoming) {
-    const prev = previous || [];
-    const next = incoming || [];
-    if (!next.length) return prev.slice();
-    return next.map(function (file) {
-      const match = prev.find(function (item) {
-        return file.id && item.id && item.id === file.id;
-      }) || prev.find(function (item) {
-        return item.name === file.name;
-      });
-      return {
-        id: file.id || (match && match.id) || "",
-        name: file.name || (match && match.name) || "",
-        url: file.url || (match && match.url) || "",
-        type: file.type || (match && match.type) || "",
-        size: file.size || (match && match.size) || 0,
-        uploadedAt: file.uploadedAt || (match && match.uploadedAt) || ""
-      };
-    });
+    return overlayFileUrls(previous || [], incoming || []);
   }
 
   function threadRole(message) {
@@ -713,7 +705,7 @@
       function line(label, message) {
         if (!message) return;
         const text = String(message.text || "").trim();
-        const files = (message.files || []).map(formatFileRef).filter(Boolean).join(", ");
+        const files = (message.files || []).map(formatFileRef).filter(Boolean).join(" ; ");
         if (!text && !files) return;
         lines.push(label + " " + number + ": " + (text || "(no text)") + (files ? " | Files: " + files : ""));
       }

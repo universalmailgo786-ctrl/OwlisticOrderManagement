@@ -265,10 +265,8 @@ function parseFiles_(text) {
   if (!raw) return [];
   var chunks = [];
   String(raw).split(/\n|;/).forEach(function (part) {
-    String(part || "").split(/\s*,\s*/).forEach(function (item) {
-      var chunk = String(item || "").trim();
-      if (chunk) chunks.push(chunk);
-    });
+    var chunk = String(part || "").trim();
+    if (chunk) chunks.push(chunk);
   });
   var files = [];
   for (var i = 0; i < chunks.length; i++) {
@@ -356,23 +354,30 @@ function saveUploads_(orderId, uploads) {
   var list = uploads || [];
   var saved = [];
   if (!list.length) return saved;
-  var folder = filesFolder_();
+  var folder;
+  try {
+    folder = filesFolder_();
+  } catch (err) {
+    return saved;
+  }
   var prefix = String(orderId || "order").replace(/[\\/:*?"<>|]+/g, "-").trim() || "order";
   for (var i = 0; i < list.length; i++) {
-    var item = list[i] || {};
-    var data = String(item.data || "").replace(/\s+/g, "");
-    if (!data) continue;
-    var originalName = String(item.name || "file").replace(/[\\/:*?"<>|]+/g, "-") || "file";
-    var driveName = originalName.indexOf(prefix + "_") === 0 ? originalName : prefix + "_" + originalName;
-    var bytes = Utilities.base64Decode(data);
-    var blob = Utilities.newBlob(bytes, item.mimeType || "application/octet-stream", driveName);
-    var file = folder.createFile(blob);
-    sharePublic_(file);
-    saved.push({
-      name: originalName,
-      id: file.getId(),
-      url: driveUrl_(file.getId())
-    });
+    try {
+      var item = list[i] || {};
+      var data = String(item.data || "").replace(/\s+/g, "");
+      if (!data) continue;
+      var originalName = String(item.name || "file").replace(/[\\/:*?"<>|]+/g, "-") || "file";
+      var driveName = originalName.indexOf(prefix + "_") === 0 ? originalName : prefix + "_" + originalName;
+      var bytes = Utilities.base64Decode(data);
+      var blob = Utilities.newBlob(bytes, item.mimeType || "application/octet-stream", driveName);
+      var file = folder.createFile(blob);
+      sharePublic_(file);
+      saved.push({
+        name: originalName,
+        id: file.getId(),
+        url: driveUrl_(file.getId())
+      });
+    } catch (err2) {}
   }
   return saved;
 }
@@ -787,7 +792,7 @@ function upsertOrderLocked_(ss, data) {
   row[12] = applySavedUrlsToText_(row[12], savedUploads);
   row[19] = applySavedUrlsToText_(row[19], savedUploads);
   row[14] = (files || []).map(function (file) {
-    return file.url ? file.name + " " + file.url : file.name;
+    return file.url ? file.name + " | " + file.url : file.name;
   }).join("\n");
 
   if (found) {

@@ -97,7 +97,7 @@
   function fileRefs(files) {
     return (files || []).map(function (file) {
       if (!file || !file.name) return "";
-      if (file.url) return file.name + " " + file.url;
+      if (file.url) return file.name + " | " + file.url;
       return file.name;
     }).filter(Boolean).join("\n");
   }
@@ -121,7 +121,7 @@
     return files;
   }
 
-  const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+  const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
   const sentFileIds = {};
 
   function blobToBase64(blob) {
@@ -217,7 +217,7 @@
         const stamp = formatDateTime(message.createdAt || message.createdAt);
         const parts = [role + (stamp ? " (" + stamp + ")" : ""), (message.text || "").trim() || "(no text)"];
         const files = fileRefs(message.files);
-        if (files) parts.push("Files: " + files.replace(/\n/g, ", "));
+        if (files) parts.push("Files: " + files.replace(/\n/g, " ; "));
         return parts.join(" — ");
       });
       return "Revision " + (round.number || "") + (round.completed ? " [Completed]" : " [Open]") + (messages.length ? ": " + messages.join(" | ") : ": (empty)");
@@ -261,6 +261,23 @@
     ];
   }
 
+  function fetchWithTimeout(url, options, ms) {
+    const timeout = ms || 8000;
+    const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+    const timer = setTimeout(function () {
+      if (ctrl) ctrl.abort();
+    }, timeout);
+    const opts = Object.assign({}, options || {});
+    if (ctrl) opts.signal = ctrl.signal;
+    return fetch(url, opts).then(function (response) {
+      clearTimeout(timer);
+      return response;
+    }, function (err) {
+      clearTimeout(timer);
+      throw err;
+    });
+  }
+
   function postPayload(payload) {
     if (!isConfigured()) {
       return Promise.resolve({ skipped: true });
@@ -268,13 +285,15 @@
     if (global.OwlisticAuth && typeof global.OwlisticAuth.sheetAuth === "function") {
       payload = global.OwlisticAuth.sheetAuth(payload);
     }
-    return fetch(getWebAppUrl(), {
+    return fetchWithTimeout(getWebAppUrl(), {
       method: "POST",
       mode: "no-cors",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(payload)
-    }).then(function () {
+    }, 60000).then(function () {
       return { ok: true };
+    }).catch(function () {
+      return { ok: false, error: "Could not reach Google Sheet." };
     });
   }
 
@@ -453,7 +472,7 @@
       "&role=" + encodeURIComponent((session && session.role) || "") +
       "&userAccount=" + encodeURIComponent((session && session.account) || "") +
       "&_=" + Date.now();
-    return fetch(url, { method: "GET", credentials: "omit", cache: "no-store" }).then(function (response) {
+    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 8000).then(function (response) {
       return response.text();
     }).then(function (text) {
       const data = parseJson(text);
@@ -491,7 +510,7 @@
       return Promise.resolve({ ok: false, found: false });
     }
     if (!names.length) return fetchOrder(order);
-    const timeout = (options && options.timeout) || 12000;
+    const timeout = (options && options.timeout) || 8000;
     const localIds = (options && options.localIds) || [];
     const started = Date.now();
     function ready(remoteOrder) {
@@ -504,6 +523,12 @@
         if (Date.now() - started >= timeout) {
           localIds.forEach(function (id) { delete sentFileIds[id]; });
           return remote || { ok: false, found: false, timeout: true };
+        }
+        return delay(500).then(attempt);
+      }).catch(function () {
+        if (Date.now() - started >= timeout) {
+          localIds.forEach(function (id) { delete sentFileIds[id]; });
+          return { ok: false, found: false, timeout: true };
         }
         return delay(500).then(attempt);
       });
@@ -524,7 +549,7 @@
       "&role=" + encodeURIComponent((session && session.role) || "") +
       "&userAccount=" + encodeURIComponent((session && session.account) || "") +
       "&_=" + Date.now();
-    return fetch(url, { method: "GET", credentials: "omit", cache: "no-store" }).then(function (response) {
+    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 8000).then(function (response) {
       return response.text();
     }).then(function (text) {
       const data = parseJson(text);
@@ -637,7 +662,7 @@
       "&username=" + encodeURIComponent((session && session.username) || "") +
       "&tabs=" + encodeURIComponent(tabs.join(",")) +
       "&_=" + Date.now();
-    return fetch(url, { method: "GET", credentials: "omit", cache: "no-store" }).then(function (response) {
+    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 8000).then(function (response) {
       return response.text();
     }).then(function (text) {
       const data = parseJson(text);

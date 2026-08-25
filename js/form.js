@@ -1203,7 +1203,7 @@
       showToast("Order " + saved.id + " saved locally. Connect Google Sheet to sync.");
       return Promise.resolve({ saved: saved, sheet: { skipped: true } });
     }
-    if (submitBtn) submitBtn.textContent = "Saving to Google Sheet…";
+    if (isSubmitting && submitBtn) submitBtn.textContent = "Saving to Google Sheet…";
     const existingList = (store.getOrders && store.getOrders()) || [];
     const alreadyById = existingList.some(function (item) {
       return String((item && item.id) || "") === String(saved.id);
@@ -1242,7 +1242,9 @@
             : sheet.fetchOrder(saved);
           return wait.then(function (remote) {
             if (remote && remote.order) {
-              const merged = mergeRemoteFileUrls(saved, remote.order);
+              const current = collectOrder();
+              current.id = saved.id || current.id;
+              const merged = mergeRemoteFileUrls(current, remote.order);
               const stored = store.upsertOrder(merged);
               applySavedOrder(stored);
               if (stored.messageThread) threadMessages = stored.messageThread.slice();
@@ -1302,16 +1304,31 @@
     return run;
   }
 
+  function restoreSaveButton() {
+    if (isSubmitting) return;
+    if (!submitBtn) return;
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Save to Google Sheet";
+  }
+
   function saveFilesToDrive() {
     return saveOrder(false).then(function (result) {
+      restoreSaveButton();
       const saved = result && result.saved;
+      const skipped = result && result.sheet && result.sheet.skippedLarge;
+      if (skipped && skipped.length) {
+        showToast("Some images were too large to upload to Drive (max 20 MB).", 5000);
+      }
       const hasDriveLink = saved && orderHasDriveLinks(saved);
       if (result && result.sheetFailed) {
-        showToast("Image saved locally, but Drive upload failed. Click Save to Google Sheet to retry.", 4500);
+        showToast("Image saved on the form. Click Save to Google Sheet to store it in Drive.", 4500);
       } else if (hasDriveLink) {
         showToast("Image saved to Drive. Anyone can download it.");
       }
       return result;
+    }).catch(function (err) {
+      restoreSaveButton();
+      throw err;
     });
   }
 
