@@ -2673,6 +2673,15 @@ body.modal-open {
   max-width: 320px;
 }
 
+.records-table.is-completed-board {
+  min-width: 920px;
+}
+
+.records-table.is-completed-board tbody tr.records-row td {
+  height: 88px;
+  max-height: 88px;
+}
+
 .records-rev-progress-cell {
   min-width: 280px;
   max-width: 420px;
