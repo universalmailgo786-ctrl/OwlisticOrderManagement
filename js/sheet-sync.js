@@ -1,6 +1,7 @@
 (function (global) {
   const URL_KEY = "owlistic.sheetWebAppUrl";
   const SPREADSHEET_ID = "1nZuMePQFJA9lCQ6C48d9MUC3Fwn00ao6Kilap5rbFfQ";
+  const ACCOUNTS_SHEET_ID = "19hiEAgjNTcfDwEU1NsKJ2as90thmaIMzAXpHBWXKRrc";
   const DEFAULT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbytKcOqCtxVNXpPWmD6hQ7inpefem-MIf2ThOQEmCqKKgDLQVk1IlHIfIXstFznpwwM/exec";
   const STALE_WEB_APP_URLS = [
     "https://script.google.com/macros/s/AKfycbxc9UyzIdr73zkuzHH-8R2tWxOmr3Rc88ApfrVA2RnKObATD3J8PSCJuwtF9FahSmIq/exec",
@@ -410,6 +411,185 @@
       }).catch(function () {
         return { ok: true, removedLocal: true, sheetUnknown: true };
       });
+    });
+  }
+
+  function parseCsv(text) {
+    const rows = [];
+    let row = [];
+    let cell = "";
+    let quoted = false;
+    const raw = String(text || "").replace(/^\uFEFF/, "");
+    for (let i = 0; i < raw.length; i += 1) {
+      const ch = raw.charAt(i);
+      const next = raw.charAt(i + 1);
+      if (quoted) {
+        if (ch === '"' && next === '"') {
+          cell += '"';
+          i += 1;
+        } else if (ch === '"') {
+          quoted = false;
+        } else {
+          cell += ch;
+        }
+      } else if (ch === '"') {
+        quoted = true;
+      } else if (ch === ",") {
+        row.push(cell);
+        cell = "";
+      } else if (ch === "\n") {
+        row.push(cell);
+        if (row.some(function (part) { return String(part || "").trim(); })) rows.push(row);
+        row = [];
+        cell = "";
+      } else if (ch !== "\r") {
+        cell += ch;
+      }
+    }
+    row.push(cell);
+    if (row.some(function (part) { return String(part || "").trim(); })) rows.push(row);
+    return rows;
+  }
+
+  function profileFromMap(map) {
+    const payment = String(map.paymentstatus || map.payment || "").trim();
+    return {
+      username: String(map.username || map.user || "").trim(),
+      name: String(map.account || map.accountname || map.name || "").trim(),
+      personName: String(map.yourname || map.personname || map.displayname || "").trim(),
+      whatsapp: String(map.whatsappnumber || map.whatsapp || "").trim(),
+      fiverrId: String(map.fiverridname || map.fiverrid || "").trim(),
+      fiverrGigUrl: String(map.fiverrgigurl || map.gigurl || "").trim(),
+      paymentStatus: /unpaid/i.test(payment) ? "unpaid" : /paid/i.test(payment) ? "paid" : ""
+    };
+  }
+
+  function profilesFromCsv(text) {
+    const rows = parseCsv(text);
+    if (!rows.length) return [];
+    const headers = rows[0].map(function (item) {
+      return String(item || "").replace(/\s+/g, "").toLowerCase();
+    });
+    const list = [];
+    for (let r = 1; r < rows.length; r += 1) {
+      const map = {};
+      headers.forEach(function (key, index) {
+        map[key] = rows[r][index] || "";
+      });
+      const profile = profileFromMap(map);
+      if (!profile.username && !profile.name) continue;
+      if (!profile.name) profile.name = profile.username;
+      if (!profile.username) profile.username = profile.name;
+      list.push(profile);
+    }
+    return list;
+  }
+
+  function fetchPublishedAccounts(sheetName) {
+    const url = "https://docs.google.com/spreadsheets/d/" + ACCOUNTS_SHEET_ID +
+      "/gviz/tq?tqx=out:csv&sheet=" + encodeURIComponent(sheetName || "Users") +
+      "&_=" + Date.now();
+    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 8000).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      if (!text || /google authorization|sign in|<!doctype html/i.test(text.slice(0, 80))) {
+        return { ok: false, accounts: [] };
+      }
+      return { ok: true, accounts: profilesFromCsv(text) };
+    }).catch(function () {
+      return { ok: false, accounts: [] };
+    });
+  }
+
+  function applyAccountProfiles(list) {
+    const accounts = list || [];
+    accounts.forEach(function (item) {
+      if (!item || (!item.username && !item.name)) return;
+      if (store && typeof store.upsertAccount === "function") {
+        store.upsertAccount({
+          username: item.username || "",
+          name: item.name || item.account || item.username,
+          personName: item.personName || "",
+          whatsapp: item.whatsapp || "",
+          fiverrId: item.fiverrId || "",
+          fiverrGigUrl: item.fiverrGigUrl || "",
+          paymentStatus: item.paymentStatus || ""
+        });
+      }
+    });
+    return accounts;
+  }
+
+  function fetchAccounts() {
+    if (!isConfigured()) {
+      return fetchPublishedAccounts("Users").then(function (result) {
+        if (result.ok) applyAccountProfiles(result.accounts);
+        return result;
+      });
+    }
+    const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+    const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+    const url = getWebAppUrl() + join +
+      "action=listAccounts" +
+      "&role=" + encodeURIComponent((session && session.role) || "") +
+      "&userAccount=" + encodeURIComponent((session && session.account) || "") +
+      "&username=" + encodeURIComponent((session && session.username) || "") +
+      "&_=" + Date.now();
+    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 8000).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      const data = parseJson(text);
+      if (data && data.ok && data.action === "listAccounts") {
+        applyAccountProfiles(data.accounts || []);
+        return { ok: true, accounts: data.accounts || [] };
+      }
+      return fetchPublishedAccounts("Users").then(function (fallback) {
+        if ((!fallback.accounts || !fallback.accounts.length)) {
+          return fetchPublishedAccounts("Sheet1");
+        }
+        return fallback;
+      }).then(function (fallback) {
+        if (fallback && fallback.ok) applyAccountProfiles(fallback.accounts);
+        return fallback || { ok: false, accounts: [] };
+      });
+    }).catch(function () {
+      return fetchPublishedAccounts("Users").then(function (fallback) {
+        if (fallback && fallback.ok) applyAccountProfiles(fallback.accounts);
+        return fallback;
+      });
+    });
+  }
+
+  function fetchAccountProfile(name) {
+    const wanted = String(name || "").trim();
+    if (!wanted) return Promise.resolve({ ok: false });
+    const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+    const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+    const url = getWebAppUrl() + join +
+      "action=getAccountProfile" +
+      "&account=" + encodeURIComponent(wanted) +
+      "&username=" + encodeURIComponent(wanted) +
+      "&role=" + encodeURIComponent((session && session.role) || "") +
+      "&userAccount=" + encodeURIComponent((session && session.account) || "") +
+      "&_=" + Date.now();
+    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 8000).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      const data = parseJson(text);
+      if (data && data.ok && (data.action === "getAccountProfile" || data.whatsapp || data.fiverrId || data.personName)) {
+        applyAccountProfiles([data]);
+        return data;
+      }
+      return fetchAccounts().then(function (result) {
+        const list = (result && result.accounts) || [];
+        const match = list.find(function (item) {
+          return String(item.name || "").toLowerCase() === wanted.toLowerCase() ||
+            String(item.username || "").toLowerCase() === wanted.toLowerCase();
+        });
+        return match || { ok: false };
+      });
+    }).catch(function () {
+      return { ok: false };
     });
   }
 
@@ -973,6 +1153,9 @@
     removeOrder: removeOrder,
     ensureTabs: ensureTabs,
     upsertUser: upsertUser,
+    fetchAccounts: fetchAccounts,
+    fetchAccountProfile: fetchAccountProfile,
+    ACCOUNTS_SHEET_ID: ACCOUNTS_SHEET_ID,
     toRow: toRow,
     isConfigured: isConfigured,
     getWebAppUrl: getWebAppUrl,

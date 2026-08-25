@@ -993,6 +993,23 @@
     applyAccount(lockedAccount());
   }
 
+  function refreshAccountFromSheet(name) {
+    const sheet = window.OwlisticSheet;
+    if (!sheet || typeof sheet.fetchAccountProfile !== "function") {
+      return Promise.resolve(null);
+    }
+    const wanted = name || (lockedAccount() && (lockedAccount().name || lockedAccount().username)) || "";
+    if (!wanted) return Promise.resolve(null);
+    return sheet.fetchAccountProfile(wanted).then(function (profile) {
+      if (!profile || profile.ok === false) return null;
+      populateAccounts(accountSelect && accountSelect.value);
+      applyAccountIfNewOrder();
+      return profile;
+    }).catch(function () {
+      return null;
+    });
+  }
+
   function applyAccount(account) {
     if (!account) return;
     document.getElementById("whatsapp").value = account.whatsapp || "";
@@ -1526,23 +1543,17 @@
     retryMissingDriveUploads();
   }
 
-  function syncSavedAccountProfiles() {
-    if (!isAdmin()) return;
+  function loadAccountsFromSheet() {
     const sheet = window.OwlisticSheet;
-    if (!sheet || typeof sheet.upsertUser !== "function") return;
-    store.getAccounts().forEach(function (account) {
-      if (!account || !account.username) return;
-      sheet.upsertUser({
-        username: account.username,
-        password: "",
-        account: account.name,
-        displayName: account.personName || account.name,
-        personName: account.personName || "",
-        whatsapp: account.whatsapp || "",
-        fiverrId: account.fiverrId || "",
-        fiverrGigUrl: account.fiverrGigUrl || "",
-        paymentStatus: account.paymentStatus || ""
-      }).catch(function () {});
+    if (!sheet || typeof sheet.fetchAccounts !== "function") {
+      return Promise.resolve(null);
+    }
+    return sheet.fetchAccounts().then(function (result) {
+      populateAccounts(accountSelect && accountSelect.value);
+      applyAccountIfNewOrder();
+      return result;
+    }).catch(function () {
+      return null;
     });
   }
 
@@ -1553,7 +1564,6 @@
     renderMessageThread();
     renderRevisions();
     updateStatusUI();
-    syncSavedAccountProfiles();
 
     const existingId = new URLSearchParams(window.location.search).get("order");
     if (existingId) {
@@ -1580,7 +1590,10 @@
     const profilePromise = auth.fetchUserProfile
       ? auth.fetchUserProfile()
       : Promise.resolve(null);
-    Promise.all([ordersPromise, profilePromise]).then(function (parts) {
+    const accountsPromise = sheet && typeof sheet.fetchAccounts === "function"
+      ? sheet.fetchAccounts()
+      : Promise.resolve(null);
+    Promise.all([ordersPromise, profilePromise, accountsPromise]).then(function (parts) {
       const result = parts[0];
       if (result && result.ok && typeof store.replaceOrders === "function") {
         store.replaceOrders(result.orders || []);
@@ -1592,7 +1605,9 @@
   })();
 
   accountSelect.addEventListener("change", function () {
-    applyAccount(store.getAccount(accountSelect.value));
+    const selected = store.getAccount(accountSelect.value);
+    applyAccount(selected);
+    if (selected) refreshAccountFromSheet(selected.name || selected.username);
   });
 
   document.getElementById("manage-accounts").addEventListener("click", openAccountModal);
@@ -1646,9 +1661,12 @@
         if (result && result.ok === false) {
           showToast(result.error || "Account saved. Login user was not stored.");
         }
+        return loadAccountsFromSheet();
       }).catch(function () {
         showToast("Account saved. Login user was not stored.");
       });
+    } else {
+      loadAccountsFromSheet();
     }
   });
 

@@ -187,11 +187,24 @@
       return response.text();
     }).then(function (text) {
       const data = parseBody(text);
-      if (!data || !data.ok) return data || { ok: false };
-      applyUserProfile(data);
-      return data;
+      if (data && data.ok) applyUserProfile(data);
+      const sheet = global.OwlisticSheet;
+      if (!sheet || typeof sheet.fetchAccountProfile !== "function") {
+        return data || { ok: false };
+      }
+      return sheet.fetchAccountProfile(current.account || current.username).then(function (profile) {
+        if (profile && profile.ok !== false) applyUserProfile(profile);
+        return profile || data || { ok: false };
+      });
     }).catch(function () {
-      return { ok: false };
+      const sheet = global.OwlisticSheet;
+      if (!sheet || typeof sheet.fetchAccountProfile !== "function") {
+        return { ok: false };
+      }
+      return sheet.fetchAccountProfile(current.account || current.username).then(function (profile) {
+        if (profile && profile.ok !== false) applyUserProfile(profile);
+        return profile || { ok: false };
+      });
     });
   }
 

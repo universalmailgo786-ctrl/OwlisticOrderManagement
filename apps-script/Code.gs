@@ -1,5 +1,6 @@
 var SPREADSHEET_ID = "1nZuMePQFJA9lCQ6C48d9MUC3Fwn00ao6Kilap5rbFfQ";
 var USERS_SPREADSHEET_ID = "1WMIorEpqZk20VuzJ3NaB2x66xHlLh_6dh84h-yTW0Zc";
+var ACCOUNTS_SPREADSHEET_ID = "19hiEAgjNTcfDwEU1NsKJ2as90thmaIMzAXpHBWXKRrc";
 var USER_HEADERS = [
   "Username",
   "Password",
@@ -8,6 +9,15 @@ var USER_HEADERS = [
   "Display Name",
   "Active",
   "WhatsApp Number",
+  "Fiverr ID Name",
+  "Fiverr GIG URL",
+  "Payment Status"
+];
+var PROFILE_HEADERS = [
+  "Username",
+  "Account",
+  "WhatsApp Number",
+  "Your Name",
   "Fiverr ID Name",
   "Fiverr GIG URL",
   "Payment Status"
@@ -69,6 +79,15 @@ function doGet(e) {
   if (action === "getUserProfile") {
     return json_(getUserProfile_(params));
   }
+  if (action === "listAccounts") {
+    return json_(listAccountProfiles_(params));
+  }
+  if (action === "getAccountProfile") {
+    return json_(getAccountProfile_(params));
+  }
+  if (action === "setupAccounts") {
+    return json_(setupAccountProfiles_());
+  }
   if (action === "setupUsers") {
     return json_(setupUsersSheet_());
   }
@@ -113,6 +132,18 @@ function doPost(e) {
         return json_({ ok: false, error: "Only Super Admin can add login users." });
       }
       return json_(upsertUser_(data));
+    }
+    if (data.action === "upsertAccountProfile") {
+      if (isRestrictedUser_(data)) {
+        return json_({ ok: false, error: "Only Super Admin can edit account profiles." });
+      }
+      return json_(upsertAccountProfile_(data));
+    }
+    if (data.action === "setupAccounts") {
+      if (isRestrictedUser_(data)) {
+        return json_({ ok: false, error: "Only Super Admin can set up account tabs." });
+      }
+      return json_(setupAccountProfiles_());
     }
 
     var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -1605,6 +1636,17 @@ function login_(username, password) {
       return { ok: false, error: "This user has no Account assigned in the login sheet." };
     }
     var profile = userProfileFromRow_(row);
+    var fromAccounts = findAccountProfile_({
+      username: String(row[0] || "").trim(),
+      account: account
+    });
+    if (fromAccounts) {
+      if (fromAccounts.whatsapp) profile.whatsapp = fromAccounts.whatsapp;
+      if (fromAccounts.personName) profile.personName = fromAccounts.personName;
+      if (fromAccounts.fiverrId) profile.fiverrId = fromAccounts.fiverrId;
+      if (fromAccounts.fiverrGigUrl) profile.fiverrGigUrl = fromAccounts.fiverrGigUrl;
+      if (fromAccounts.paymentStatus) profile.paymentStatus = fromAccounts.paymentStatus;
+    }
     return {
       ok: true,
       username: String(row[0] || "").trim(),
@@ -1689,6 +1731,17 @@ function getUserProfile_(params) {
       }
     }
     var profile = userProfileFromRow_(row);
+    var fromAccounts = findAccountProfile_({
+      username: String(row[0] || "").trim(),
+      account: tabName_(row[3] || "")
+    });
+    if (fromAccounts) {
+      if (fromAccounts.whatsapp) profile.whatsapp = fromAccounts.whatsapp;
+      if (fromAccounts.personName) profile.personName = fromAccounts.personName;
+      if (fromAccounts.fiverrId) profile.fiverrId = fromAccounts.fiverrId;
+      if (fromAccounts.fiverrGigUrl) profile.fiverrGigUrl = fromAccounts.fiverrGigUrl;
+      if (fromAccounts.paymentStatus) profile.paymentStatus = fromAccounts.paymentStatus;
+    }
     return {
       ok: true,
       action: "getUserProfile",
@@ -1757,6 +1810,8 @@ function upsertUser_(data) {
       fiverrGigUrl || existing[8] || "",
       paymentStatus || existing[9] || ""
     ]]);
+    upsertAccountProfile_(data);
+    ensureOrderTabForAccount_(account);
     return { ok: true, action: "upsertUser", username: username, account: account, updated: true };
   }
   sheet.getRange(last + 1, 1, 1, USER_HEADERS.length).setValues([[
@@ -1771,5 +1826,310 @@ function upsertUser_(data) {
     fiverrGigUrl,
     paymentStatus
   ]]);
+  upsertAccountProfile_(data);
+  ensureOrderTabForAccount_(account);
   return { ok: true, action: "upsertUser", username: username, account: account, created: true };
+}
+
+function accountsSpreadsheet_() {
+  return SpreadsheetApp.openById(ACCOUNTS_SPREADSHEET_ID);
+}
+
+function paymentStatusLabel_(value) {
+  var raw = String(value || "").trim();
+  if (/unpaid/i.test(raw)) return "Unpaid";
+  if (/paid/i.test(raw)) return "Paid";
+  return "";
+}
+
+function paymentStatusValue_(value) {
+  var raw = String(value || "").trim().toLowerCase();
+  if (raw.indexOf("unpaid") >= 0) return "unpaid";
+  if (raw.indexOf("paid") >= 0) return "paid";
+  return "";
+}
+
+function profileObject_(username, account, whatsapp, personName, fiverrId, fiverrGigUrl, paymentStatus) {
+  return {
+    username: String(username || "").trim(),
+    name: tabName_(account || username || ""),
+    account: tabName_(account || username || ""),
+    personName: String(personName || "").trim(),
+    whatsapp: String(whatsapp || "").trim(),
+    fiverrId: String(fiverrId || "").trim(),
+    fiverrGigUrl: String(fiverrGigUrl || "").trim(),
+    paymentStatus: paymentStatusValue_(paymentStatus)
+  };
+}
+
+function profileFromProfileRow_(row) {
+  var next = row || [];
+  while (next.length < PROFILE_HEADERS.length) next.push("");
+  return profileObject_(next[0], next[1], next[2], next[3], next[4], next[5], next[6]);
+}
+
+function profileRow_(profile) {
+  var item = profile || {};
+  return [
+    String(item.username || "").trim(),
+    tabName_(item.account || item.name || item.username || ""),
+    String(item.whatsapp || "").trim(),
+    String(item.personName || item.displayName || "").trim(),
+    String(item.fiverrId || "").trim(),
+    String(item.fiverrGigUrl || "").trim(),
+    paymentStatusLabel_(item.paymentStatus)
+  ];
+}
+
+function styleProfileSheet_(sheet) {
+  if (!sheet) return;
+  var cols = PROFILE_HEADERS.length;
+  var lastRow = Math.max(sheet.getLastRow(), 12);
+  sheet.getRange(1, 1, 1, cols).setValues([PROFILE_HEADERS]);
+  sheet.setFrozenRows(1);
+  try { sheet.setHiddenGridlines(true); } catch (err) {}
+  var header = sheet.getRange(1, 1, 1, cols);
+  header.setFontFamily("Google Sans");
+  header.setFontWeight("bold");
+  header.setFontSize(10);
+  header.setFontColor("#ffffff");
+  header.setBackground(FOREST);
+  header.setHorizontalAlignment("center");
+  header.setVerticalAlignment("middle");
+  sheet.setRowHeight(1, 42);
+  var body = sheet.getRange(2, 1, lastRow, cols);
+  body.setFontFamily("Google Sans");
+  body.setFontSize(10);
+  body.setFontColor(INK);
+  body.setVerticalAlignment("middle");
+  body.setWrap(true);
+  var widths = [140, 150, 170, 160, 160, 280, 130];
+  var i;
+  for (i = 0; i < widths.length; i++) sheet.setColumnWidth(i + 1, widths[i]);
+  var filter = sheet.getFilter();
+  if (filter) filter.remove();
+  sheet.getRange(1, 1, lastRow, cols).createFilter();
+}
+
+function usersDirectorySheet_(ss) {
+  var sheets = ss.getSheets();
+  var i;
+  for (i = 0; i < sheets.length; i++) {
+    var name = String(sheets[i].getName() || "").trim().toLowerCase();
+    if (name === "users" || name === "directory") return sheets[i];
+  }
+  var first = sheets[0];
+  if (first && /^(sheet1|untitled)$/i.test(String(first.getName() || "").trim())) {
+    first.setName("Users");
+    return first;
+  }
+  return ss.insertSheet("Users", 0);
+}
+
+function writeProfileTab_(ss, profile) {
+  var account = tabName_((profile && (profile.account || profile.name)) || "");
+  if (!account) return;
+  var sheet = getOrCreateSheet_(ss, account);
+  styleProfileSheet_(sheet);
+  sheet.getRange(2, 1, 1, PROFILE_HEADERS.length).setValues([profileRow_(profile)]);
+}
+
+function seedAccountProfiles_() {
+  return [
+    profileObject_("block", "Block", "", "", "", "", ""),
+    profileObject_("artistic", "Artistic", "+9233333323248", "Ashar", "Artistic_maha", "https://www.fiverr.com/artistic_maha", "Paid")
+  ];
+}
+
+function setupAccountProfiles_() {
+  var ss = accountsSpreadsheet_();
+  var directory = usersDirectorySheet_(ss);
+  styleProfileSheet_(directory);
+  var existing = listAccountProfilesFromSheet_(directory);
+  var byKey = {};
+  var i;
+  for (i = 0; i < existing.length; i++) {
+    var item = existing[i];
+    byKey[String(item.username || "").toLowerCase()] = item;
+    byKey[String(item.account || "").toLowerCase()] = item;
+  }
+  var seeds = seedAccountProfiles_();
+  for (i = 0; i < seeds.length; i++) {
+    var seed = seeds[i];
+    var prev = byKey[String(seed.username || "").toLowerCase()] || byKey[String(seed.account || "").toLowerCase()];
+    var next = prev ? {
+      username: prev.username || seed.username,
+      account: prev.account || seed.account,
+      name: prev.account || seed.account,
+      personName: prev.personName || seed.personName,
+      whatsapp: prev.whatsapp || seed.whatsapp,
+      fiverrId: prev.fiverrId || seed.fiverrId,
+      fiverrGigUrl: prev.fiverrGigUrl || seed.fiverrGigUrl,
+      paymentStatus: prev.paymentStatus || seed.paymentStatus
+    } : seed;
+    upsertAccountProfileRow_(directory, next);
+    writeProfileTab_(ss, next);
+    ensureOrderTabForAccount_(next.account);
+  }
+  return { ok: true, action: "setupAccounts", sheet: directory.getName(), count: listAccountProfilesFromSheet_(directory).length };
+}
+
+function listAccountProfilesFromSheet_(sheet) {
+  var out = [];
+  if (!sheet) return out;
+  var last = sheet.getLastRow();
+  if (last < 2) return out;
+  var cols = Math.max(sheet.getLastColumn(), PROFILE_HEADERS.length);
+  var values = sheet.getRange(2, 1, last - 1, cols).getValues();
+  var r;
+  for (r = 0; r < values.length; r++) {
+    var profile = profileFromProfileRow_(values[r]);
+    if (!profile.username && !profile.account) continue;
+    out.push(profile);
+  }
+  return out;
+}
+
+function listAccountProfiles_(params) {
+  var ss = accountsSpreadsheet_();
+  var directory = usersDirectorySheet_(ss);
+  if (listAccountProfilesFromSheet_(directory).length < 1) {
+    setupAccountProfiles_();
+    directory = usersDirectorySheet_(ss);
+  }
+  var accounts = listAccountProfilesFromSheet_(directory);
+  var forced = "";
+  var role = String((params && params.role) || "").toLowerCase().replace(/\s+/g, "");
+  if (role === "user" || role === "account") {
+    forced = tabName_((params && (params.userAccount || params.account)) || "");
+    var username = String((params && params.username) || "").trim().toLowerCase();
+    accounts = accounts.filter(function (item) {
+      if (forced && String(item.account || "").toLowerCase() === forced.toLowerCase()) return true;
+      if (username && String(item.username || "").toLowerCase() === username) return true;
+      return false;
+    });
+  }
+  return { ok: true, action: "listAccounts", count: accounts.length, accounts: accounts };
+}
+
+function findAccountProfile_(query) {
+  var wantedUser = String((query && query.username) || "").trim().toLowerCase();
+  var wantedAccount = tabName_((query && (query.account || query.name || query.tab)) || "").toLowerCase();
+  try {
+    var ss = accountsSpreadsheet_();
+    var directory = usersDirectorySheet_(ss);
+    var accounts = listAccountProfilesFromSheet_(directory);
+    var i;
+    for (i = 0; i < accounts.length; i++) {
+      var item = accounts[i];
+      if (wantedUser && String(item.username || "").toLowerCase() === wantedUser) return item;
+      if (wantedAccount && String(item.account || "").toLowerCase() === wantedAccount) return item;
+    }
+    if (wantedAccount) {
+      var tab = sheetForAccount_(ss, wantedAccount);
+      if (tab && String(tab.getName() || "").toLowerCase() !== "users") {
+        var last = tab.getLastRow();
+        if (last >= 2) {
+          var row = tab.getRange(2, 1, 1, PROFILE_HEADERS.length).getValues()[0];
+          var fromTab = profileFromProfileRow_(row);
+          if (fromTab.username || fromTab.account || fromTab.whatsapp || fromTab.fiverrId) return fromTab;
+        }
+      }
+    }
+  } catch (err) {
+    return null;
+  }
+  return null;
+}
+
+function getAccountProfile_(params) {
+  var profile = findAccountProfile_(params);
+  if (!profile) {
+    setupAccountProfiles_();
+    profile = findAccountProfile_(params);
+  }
+  if (!profile) {
+    return { ok: false, action: "getAccountProfile", error: "Account profile was not found." };
+  }
+  var forced = "";
+  var role = String((params && params.role) || "").toLowerCase().replace(/\s+/g, "");
+  if (role === "user" || role === "account") {
+    forced = tabName_((params && (params.userAccount || params.account)) || "");
+    if (forced && String(profile.account || "").toLowerCase() !== forced.toLowerCase()) {
+      return { ok: false, action: "getAccountProfile", error: "You can only load your own account profile." };
+    }
+  }
+  profile.ok = true;
+  profile.action = "getAccountProfile";
+  return profile;
+}
+
+function upsertAccountProfileRow_(sheet, profile) {
+  var row = profileRow_(profile);
+  var username = String(row[0] || "").toLowerCase();
+  var account = String(row[1] || "").toLowerCase();
+  var last = Math.max(sheet.getLastRow(), 1);
+  var found = 0;
+  if (last >= 2) {
+    var values = sheet.getRange(2, 1, last - 1, 2).getValues();
+    var i;
+    for (i = 0; i < values.length; i++) {
+      var existingUser = String(values[i][0] || "").trim().toLowerCase();
+      var existingAccount = String(values[i][1] || "").trim().toLowerCase();
+      if ((username && existingUser === username) || (account && existingAccount === account)) {
+        found = i + 2;
+        break;
+      }
+    }
+  }
+  if (found) {
+    var existing = sheet.getRange(found, 1, 1, PROFILE_HEADERS.length).getValues()[0];
+    var merged = [
+      row[0] || existing[0],
+      row[1] || existing[1],
+      row[2] || existing[2],
+      row[3] || existing[3],
+      row[4] || existing[4],
+      row[5] || existing[5],
+      row[6] || existing[6]
+    ];
+    sheet.getRange(found, 1, 1, PROFILE_HEADERS.length).setValues([merged]);
+    return profileFromProfileRow_(merged);
+  }
+  sheet.getRange(last + 1, 1, 1, PROFILE_HEADERS.length).setValues([row]);
+  return profileFromProfileRow_(row);
+}
+
+function upsertAccountProfile_(data) {
+  setupAccountProfiles_();
+  var ss = accountsSpreadsheet_();
+  var directory = usersDirectorySheet_(ss);
+  var profile = profileObject_(
+    data && (data.username || data.user),
+    data && (data.account || data.name || data.tabName),
+    data && data.whatsapp,
+    data && (data.personName || data.displayName),
+    data && data.fiverrId,
+    data && data.fiverrGigUrl,
+    data && data.paymentStatus
+  );
+  if (!profile.username && !profile.account) {
+    return { ok: false, action: "upsertAccountProfile", error: "Account name is required." };
+  }
+  if (!profile.username) profile.username = profile.account;
+  if (!profile.account) profile.account = tabName_(profile.username);
+  var saved = upsertAccountProfileRow_(directory, profile);
+  writeProfileTab_(ss, saved);
+  ensureOrderTabForAccount_(saved.account);
+  saved.ok = true;
+  saved.action = "upsertAccountProfile";
+  return saved;
+}
+
+function ensureOrderTabForAccount_(account) {
+  var name = tabName_(account);
+  if (!name) return;
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = getOrCreateSheet_(ss, name);
+  styleSheet_(ss, sheet);
 }
