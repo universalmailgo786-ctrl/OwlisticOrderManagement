@@ -585,6 +585,7 @@
 
   function columnCount(revisionCount) {
     if (activeTab === "on-revision") return 10;
+    if (activeTab === "ready-to-approve") return 8;
     if (activeTab === "in-progress") return 17;
     return 17 + (revisionCount * 2);
   }
@@ -604,11 +605,32 @@
         "<th>Actions</th>";
       if (table) {
         table.classList.add("is-revision-board");
+        table.classList.remove("is-ready-board");
         table.style.minWidth = "1240px";
       }
       return;
     }
-    if (table) table.classList.remove("is-revision-board");
+    if (activeTab === "ready-to-approve") {
+      headRow.innerHTML =
+        "<th>Order</th>" +
+        "<th>Fiverr ID Name</th>" +
+        "<th>Client Name</th>" +
+        "<th>Business Name</th>" +
+        "<th>Value</th>" +
+        "<th>Review Text (Feedback)</th>" +
+        "<th>Status</th>" +
+        "<th>Actions</th>";
+      if (table) {
+        table.classList.remove("is-revision-board");
+        table.classList.add("is-ready-board");
+        table.style.minWidth = "1080px";
+      }
+      return;
+    }
+    if (table) {
+      table.classList.remove("is-revision-board");
+      table.classList.remove("is-ready-board");
+    }
     const hideRevisionColumns = activeTab === "in-progress";
     const revisionHeads = [];
     if (!hideRevisionColumns) {
@@ -759,6 +781,18 @@
           '<a class="open-link" href="index.html?order=' + encodeURIComponent(order.id) + '">Edit</a>' +
           '<button type="button" class="ghost-btn is-danger" data-delete-order="' + escapeHtml(order.id) + '">Delete</button>' +
         "</td>";
+      if (activeTab === "ready-to-approve") {
+        return '<tr class="records-row is-' + status + '">' +
+          "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
+          "<td>" + withCopy(escapeHtml(order.fiverrId || "—"), order.fiverrId || "", "Fiverr ID name") + "</td>" +
+          "<td>" + editableNameCell(order, "clientName", "Add client name", "client name") + "</td>" +
+          "<td>" + editableNameCell(order, "businessName", "Add business name", "business name") + "</td>" +
+          '<td class="records-value">' + withCopy(formatValue(order.orderValue), order.orderValue == null ? "" : String(order.orderValue), "value") + "</td>" +
+          '<td class="records-clip-cell">' + withCopy(clipText(order.reviewText), order.reviewText || "", "review text") + "</td>" +
+          "<td>" + withCopy(statusSelect(order), statusLabel, "status") + "</td>" +
+          actions +
+        "</tr>";
+      }
       if (activeTab === "on-revision") {
         return '<tr class="records-row is-' + status + ' is-revision-board">' +
           "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +

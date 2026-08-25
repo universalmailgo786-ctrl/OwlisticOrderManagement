@@ -2659,6 +2659,20 @@ body.modal-open {
   vertical-align: middle;
 }
 
+.records-table.is-ready-board {
+  min-width: 1080px;
+}
+
+.records-table.is-ready-board tbody tr.records-row td {
+  height: 96px;
+  max-height: 96px;
+}
+
+.records-table.is-ready-board td.records-clip-cell {
+  min-width: 220px;
+  max-width: 320px;
+}
+
 .records-rev-progress-cell {
   min-width: 280px;
   max-width: 420px;
