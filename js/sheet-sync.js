@@ -422,7 +422,12 @@
       username: String(user.username || "").trim(),
       password: String(user.password || ""),
       account: tabNameOf(user.account || user.accountName || ""),
-      displayName: String(user.displayName || user.name || user.username || "").trim(),
+      displayName: String(user.displayName || user.personName || user.name || user.username || "").trim(),
+      personName: String(user.personName || user.displayName || "").trim(),
+      whatsapp: String(user.whatsapp || "").trim(),
+      fiverrId: String(user.fiverrId || "").trim(),
+      fiverrGigUrl: String(user.fiverrGigUrl || "").trim(),
+      paymentStatus: String(user.paymentStatus || "").trim(),
       active: user.active === false ? "No" : "Yes"
     });
   }

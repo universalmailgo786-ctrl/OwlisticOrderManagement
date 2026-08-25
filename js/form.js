@@ -943,7 +943,18 @@
 
   function lockedAccount() {
     if (isAdmin()) return store.getAccount(accountSelect.value);
-    return auth.visibleAccounts()[0] || store.getAccount(accountSelect.value);
+    const list = auth.visibleAccounts();
+    if (!list.length) return store.getAccount(accountSelect.value);
+    const richest = list.slice().sort(function (a, b) {
+      function score(acc) {
+        return ["whatsapp", "personName", "fiverrId", "fiverrGigUrl"].reduce(function (n, key) {
+          return n + (String((acc && acc[key]) || "").trim() ? 1 : 0);
+        }, 0);
+      }
+      return score(b) - score(a);
+    })[0];
+    if (richest && accountSelect) accountSelect.value = richest.id;
+    return richest;
   }
 
   function lockAccountUi() {
@@ -951,8 +962,6 @@
       accountSelect.disabled = false;
       return;
     }
-    const match = auth.visibleAccounts()[0];
-    if (match) accountSelect.value = match.id;
     accountSelect.disabled = true;
     const title = document.getElementById("select-account-title");
     if (title) title.textContent = "Your Account";
@@ -976,6 +985,12 @@
       accountSelect.value = current;
     }
     lockAccountUi();
+    applyAccountIfNewOrder();
+  }
+
+  function applyAccountIfNewOrder() {
+    if (document.getElementById("order-id") && document.getElementById("order-id").value) return;
+    applyAccount(lockedAccount());
   }
 
   function applyAccount(account) {
@@ -1511,6 +1526,26 @@
     retryMissingDriveUploads();
   }
 
+  function syncSavedAccountProfiles() {
+    if (!isAdmin()) return;
+    const sheet = window.OwlisticSheet;
+    if (!sheet || typeof sheet.upsertUser !== "function") return;
+    store.getAccounts().forEach(function (account) {
+      if (!account || !account.username) return;
+      sheet.upsertUser({
+        username: account.username,
+        password: "",
+        account: account.name,
+        displayName: account.personName || account.name,
+        personName: account.personName || "",
+        whatsapp: account.whatsapp || "",
+        fiverrId: account.fiverrId || "",
+        fiverrGigUrl: account.fiverrGigUrl || "",
+        paymentStatus: account.paymentStatus || ""
+      }).catch(function () {});
+    });
+  }
+
   function bootForm() {
     populateAccounts();
     refreshRequirementFiles();
@@ -1518,6 +1553,7 @@
     renderMessageThread();
     renderRevisions();
     updateStatusUI();
+    syncSavedAccountProfiles();
 
     const existingId = new URLSearchParams(window.location.search).get("order");
     if (existingId) {
@@ -1530,11 +1566,22 @@
       }
     } else {
       applyAccount(lockedAccount());
+      [200, 800].forEach(function (ms) {
+        window.setTimeout(applyAccountIfNewOrder, ms);
+      });
     }
   }
 
-  if (window.OwlisticSheet && typeof window.OwlisticSheet.fetchOrders === "function") {
-    window.OwlisticSheet.fetchOrders().then(function (result) {
+  (function startForm() {
+    const sheet = window.OwlisticSheet;
+    const ordersPromise = sheet && typeof sheet.fetchOrders === "function"
+      ? sheet.fetchOrders()
+      : Promise.resolve(null);
+    const profilePromise = auth.fetchUserProfile
+      ? auth.fetchUserProfile()
+      : Promise.resolve(null);
+    Promise.all([ordersPromise, profilePromise]).then(function (parts) {
+      const result = parts[0];
       if (result && result.ok && typeof store.replaceOrders === "function") {
         store.replaceOrders(result.orders || []);
       } else if (result && result.orders && result.orders.length) {
@@ -1542,9 +1589,7 @@
       }
       bootForm();
     }).catch(bootForm);
-  } else {
-    bootForm();
-  }
+  })();
 
   accountSelect.addEventListener("change", function () {
     applyAccount(store.getAccount(accountSelect.value));
@@ -1586,12 +1631,17 @@
     fillAccountEditor(saved);
     renderAccountList();
     syncAccountTabs("Account saved. Sheet tab created.");
-    if (username && window.OwlisticSheet && typeof window.OwlisticSheet.upsertUser === "function") {
+    if ((username || saved.username) && window.OwlisticSheet && typeof window.OwlisticSheet.upsertUser === "function") {
       window.OwlisticSheet.upsertUser({
-        username: username,
+        username: username || saved.username,
         password: password,
         account: saved.name,
-        displayName: saved.personName || saved.name
+        displayName: saved.personName || saved.name,
+        personName: saved.personName || "",
+        whatsapp: saved.whatsapp || "",
+        fiverrId: saved.fiverrId || "",
+        fiverrGigUrl: saved.fiverrGigUrl || "",
+        paymentStatus: saved.paymentStatus || ""
       }).then(function (result) {
         if (result && result.ok === false) {
           showToast(result.error || "Account saved. Login user was not stored.");

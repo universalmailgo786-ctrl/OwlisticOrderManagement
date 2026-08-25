@@ -81,10 +81,16 @@
         username: data.username,
         role: data.role === "superadmin" ? "superadmin" : "user",
         account: data.account || "",
-        name: data.name || data.username,
+        name: data.personName || data.name || data.username,
+        personName: data.personName || data.name || "",
+        whatsapp: data.whatsapp || "",
+        fiverrId: data.fiverrId || "",
+        fiverrGigUrl: data.fiverrGigUrl || "",
+        paymentStatus: data.paymentStatus || "",
         loggedInAt: new Date().toISOString()
       };
       setSession(session);
+      ensureLocalAccount(session);
       return { ok: true, session: session };
     }).catch(function () {
       return { ok: false, error: "Could not reach the login sheet. Check the web app URL." };
@@ -110,6 +116,18 @@
     return null;
   }
 
+  function profileFromSession(current) {
+    return {
+      name: accountName(current) || (current && current.username) || "",
+      username: current && current.username ? current.username : "",
+      personName: (current && (current.personName || current.name)) || "",
+      whatsapp: (current && current.whatsapp) || "",
+      fiverrId: (current && current.fiverrId) || "",
+      fiverrGigUrl: (current && current.fiverrGigUrl) || "",
+      paymentStatus: (current && current.paymentStatus) || ""
+    };
+  }
+
   function ensureLocalAccount(session) {
     const current = session || getSession();
     if (!current || isSuperAdmin(current) || !store) return null;
@@ -117,12 +135,63 @@
     if (!wanted) return null;
     const accounts = store.getAccounts();
     let match = accounts.find(function (account) {
-      return sameAccount(account.name, wanted) || sameAccount(store.accountLabel(account), wanted);
+      return sameAccount(account.name, wanted) ||
+        sameAccount(store.accountLabel(account), wanted) ||
+        sameAccount(account.username, current.username);
     });
-    if (match) return match;
-    return store.upsertAccount({
-      name: wanted,
-      personName: current.name || wanted
+    const profile = profileFromSession(current);
+    profile.name = wanted;
+    if (match) {
+      profile.id = match.id;
+      if (match.personName && sameAccount(profile.personName, wanted)) {
+        profile.personName = match.personName;
+      }
+    }
+    return store.upsertAccount(profile);
+  }
+
+  function applyUserProfile(profile) {
+    const current = getSession();
+    if (!current || !profile) return current;
+    if (profile.account) current.account = profile.account;
+    if (profile.personName || profile.name) {
+      current.personName = profile.personName || profile.name;
+      current.name = profile.personName || profile.name;
+    }
+    if (profile.whatsapp) current.whatsapp = profile.whatsapp;
+    if (profile.fiverrId) current.fiverrId = profile.fiverrId;
+    if (profile.fiverrGigUrl) current.fiverrGigUrl = profile.fiverrGigUrl;
+    if (profile.paymentStatus) current.paymentStatus = profile.paymentStatus;
+    setSession(current);
+    ensureLocalAccount(current);
+    return current;
+  }
+
+  function fetchUserProfile() {
+    const current = getSession();
+    if (!current || !current.username) {
+      return Promise.resolve({ skipped: true });
+    }
+    const base = (global.OwlisticSheet && global.OwlisticSheet.getWebAppUrl()) || "";
+    if (!base || base.indexOf("http") !== 0) {
+      return Promise.resolve({ skipped: true });
+    }
+    const join = base.indexOf("?") >= 0 ? "&" : "?";
+    const url = base + join +
+      "action=getUserProfile" +
+      "&username=" + encodeURIComponent(current.username || "") +
+      "&role=" + encodeURIComponent(current.role || "") +
+      "&userAccount=" + encodeURIComponent(current.account || "") +
+      "&_=" + Date.now();
+    return fetch(url, { method: "GET", credentials: "omit", cache: "no-store" }).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      const data = parseBody(text);
+      if (!data || !data.ok) return data || { ok: false };
+      applyUserProfile(data);
+      return data;
+    }).catch(function () {
+      return { ok: false };
     });
   }
 
@@ -153,7 +222,9 @@
     if (isSuperAdmin(current)) return accounts;
     const wanted = accountName(current);
     return accounts.filter(function (account) {
-      return sameAccount(account.name, wanted) || sameAccount(store.accountLabel(account), wanted);
+      return sameAccount(account.name, wanted) ||
+        sameAccount(store.accountLabel(account), wanted) ||
+        sameAccount(account.username, current.username);
     });
   }
 
@@ -196,6 +267,8 @@
     nextPath: nextPath,
     requirePage: requirePage,
     ensureLocalAccount: ensureLocalAccount,
+    applyUserProfile: applyUserProfile,
+    fetchUserProfile: fetchUserProfile,
     canSeeOrder: canSeeOrder,
     visibleOrders: visibleOrders,
     visibleAccounts: visibleAccounts,

@@ -1,6 +1,17 @@
 var SPREADSHEET_ID = "1nZuMePQFJA9lCQ6C48d9MUC3Fwn00ao6Kilap5rbFfQ";
 var USERS_SPREADSHEET_ID = "1WMIorEpqZk20VuzJ3NaB2x66xHlLh_6dh84h-yTW0Zc";
-var USER_HEADERS = ["Username", "Password", "Role", "Account", "Display Name", "Active"];
+var USER_HEADERS = [
+  "Username",
+  "Password",
+  "Role",
+  "Account",
+  "Display Name",
+  "Active",
+  "WhatsApp Number",
+  "Fiverr ID Name",
+  "Fiverr GIG URL",
+  "Payment Status"
+];
 var HEADERS = [
   "Order ID",
   "Created Date",
@@ -54,6 +65,9 @@ function doGet(e) {
   var action = String(params.action || "");
   if (action === "login") {
     return json_(login_(params.username, params.password));
+  }
+  if (action === "getUserProfile") {
+    return json_(getUserProfile_(params));
   }
   if (action === "setupUsers") {
     return json_(setupUsersSheet_());
@@ -1514,8 +1528,8 @@ function setupUsersSheet_() {
   }
   if (sheet.getLastRow() < 2) {
     sheet.getRange(2, 1, 2, cols).setValues([
-      ["superadmin", "ChangeMeAdmin", "superadmin", "", "Super Admin", "Yes"],
-      ["block", "ChangeMeBlock", "user", "Block", "Block", "Yes"]
+      ["superadmin", "ChangeMeAdmin", "superadmin", "", "Super Admin", "Yes", "", "", "", ""],
+      ["block", "ChangeMeBlock", "user", "Block", "Block", "Yes", "", "", "", ""]
     ]);
   }
   var header = sheet.getRange(1, 1, 1, cols);
@@ -1534,7 +1548,7 @@ function setupUsersSheet_() {
   body.setFontFamily("Google Sans");
   body.setFontSize(10);
   body.setVerticalAlignment("middle");
-  var widths = [140, 140, 120, 160, 180, 90];
+  var widths = [140, 140, 120, 160, 180, 90, 160, 150, 220, 130];
   for (var i = 0; i < widths.length; i++) sheet.setColumnWidth(i + 1, widths[i]);
   var filter = sheet.getFilter();
   if (filter) filter.remove();
@@ -1571,9 +1585,10 @@ function login_(username, password) {
   if (last < 2) {
     return { ok: false, error: "No users in the login sheet yet." };
   }
-  var values = sheet.getRange(2, 1, last - 1, USER_HEADERS.length).getValues();
+  var cols = Math.max(sheet.getLastColumn(), USER_HEADERS.length);
+  var values = sheet.getRange(2, 1, last - 1, cols).getValues();
   for (var i = 0; i < values.length; i++) {
-    var row = values[i];
+    var row = padUserRow_(values[i]);
     var name = String(row[0] || "").trim().toLowerCase();
     if (!name || name !== wantedUser) continue;
     var active = String(row[5] || "Yes").trim().toLowerCase();
@@ -1589,12 +1604,18 @@ function login_(username, password) {
     if (role !== "superadmin" && !account) {
       return { ok: false, error: "This user has no Account assigned in the login sheet." };
     }
+    var profile = userProfileFromRow_(row);
     return {
       ok: true,
       username: String(row[0] || "").trim(),
       role: role === "superadmin" ? "superadmin" : "user",
       account: account,
-      name: String(row[4] || row[0] || "").trim()
+      name: profile.personName || String(row[0] || "").trim(),
+      whatsapp: profile.whatsapp,
+      personName: profile.personName,
+      fiverrId: profile.fiverrId,
+      fiverrGigUrl: profile.fiverrGigUrl,
+      paymentStatus: profile.paymentStatus
     };
   }
   return { ok: false, error: "Wrong username or password." };
@@ -1605,6 +1626,84 @@ function setupUsersSheetIfNeeded_() {
   var sheet = ss.getSheets()[0];
   var first = String(sheet.getRange(1, 1).getValue() || "").trim().toLowerCase();
   if (first !== "username") setupUsersSheet_();
+  ensureUserProfileColumns_(sheet);
+}
+
+function ensureUserProfileColumns_(sheet) {
+  if (!sheet) {
+    sheet = SpreadsheetApp.openById(USERS_SPREADSHEET_ID).getSheets()[0];
+  }
+  sheet.getRange(1, 1, 1, USER_HEADERS.length).setValues([USER_HEADERS]);
+  var widths = [140, 140, 120, 160, 180, 90, 160, 150, 220, 130];
+  var i;
+  for (i = 0; i < widths.length; i++) sheet.setColumnWidth(i + 1, widths[i]);
+}
+
+function userProfileFromRow_(row) {
+  var payment = String(row[9] || "").trim();
+  if (/unpaid/i.test(payment)) payment = "unpaid";
+  else if (/paid/i.test(payment)) payment = "paid";
+  else payment = "";
+  return {
+    whatsapp: String(row[6] || "").trim(),
+    personName: String(row[4] || "").trim(),
+    fiverrId: String(row[7] || "").trim(),
+    fiverrGigUrl: String(row[8] || "").trim(),
+    paymentStatus: payment
+  };
+}
+
+function padUserRow_(row) {
+  var next = (row || []).slice();
+  while (next.length < USER_HEADERS.length) next.push("");
+  return next.slice(0, USER_HEADERS.length);
+}
+
+function getUserProfile_(params) {
+  setupUsersSheetIfNeeded_();
+  var wantedUser = String((params && params.username) || "").trim().toLowerCase();
+  if (!wantedUser) {
+    return { ok: false, action: "getUserProfile", error: "Username is required." };
+  }
+  var ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
+  var sheet = ss.getSheets()[0];
+  var last = Math.max(sheet.getLastRow(), 1);
+  if (last < 2) {
+    return { ok: false, action: "getUserProfile", error: "No users in the login sheet yet." };
+  }
+  var cols = Math.max(sheet.getLastColumn(), USER_HEADERS.length);
+  var values = sheet.getRange(2, 1, last - 1, cols).getValues();
+  var i;
+  for (i = 0; i < values.length; i++) {
+    var row = padUserRow_(values[i]);
+    if (String(row[0] || "").trim().toLowerCase() !== wantedUser) continue;
+    var role = String(row[2] || "user").trim().toLowerCase().replace(/\s+/g, "");
+    if (role === "super admin" || role === "admin") role = "superadmin";
+    var forced = "";
+    var reqRole = String((params && params.role) || "").toLowerCase().replace(/\s+/g, "");
+    if (reqRole === "user" || reqRole === "account") {
+      forced = tabName_((params && (params.userAccount || params.account)) || "");
+      var account = tabName_(row[3] || "");
+      if (forced && account && account.toLowerCase() !== forced.toLowerCase()) {
+        return { ok: false, action: "getUserProfile", error: "You can only load your own account profile." };
+      }
+    }
+    var profile = userProfileFromRow_(row);
+    return {
+      ok: true,
+      action: "getUserProfile",
+      username: String(row[0] || "").trim(),
+      role: role === "superadmin" ? "superadmin" : "user",
+      account: tabName_(row[3] || ""),
+      name: profile.personName || String(row[0] || "").trim(),
+      whatsapp: profile.whatsapp,
+      personName: profile.personName,
+      fiverrId: profile.fiverrId,
+      fiverrGigUrl: profile.fiverrGigUrl,
+      paymentStatus: profile.paymentStatus
+    };
+  }
+  return { ok: false, action: "getUserProfile", error: "User was not found." };
 }
 
 function upsertUser_(data) {
@@ -1612,7 +1711,14 @@ function upsertUser_(data) {
   var username = String((data && data.username) || "").trim();
   var password = String((data && data.password) || "");
   var account = tabName_((data && (data.account || data.userAccount)) || "");
-  var displayName = String((data && (data.displayName || data.name)) || username).trim();
+  var displayName = String((data && (data.displayName || data.personName || data.name)) || username).trim();
+  var whatsapp = String((data && data.whatsapp) || "").trim();
+  var fiverrId = String((data && (data.fiverrId || data.fiverrid)) || "").trim();
+  var fiverrGigUrl = String((data && (data.fiverrGigUrl || data.fiverrgigurl)) || "").trim();
+  var paymentStatus = String((data && (data.paymentStatus || data.paymentstatus)) || "").trim();
+  if (/unpaid/i.test(paymentStatus)) paymentStatus = "Unpaid";
+  else if (/paid/i.test(paymentStatus)) paymentStatus = "Paid";
+  else paymentStatus = "";
   var active = (data && (data.active === false || data.active === "No" || data.active === "no")) ? "No" : "Yes";
   if (!username) {
     return { ok: false, error: "Username is required." };
@@ -1638,14 +1744,18 @@ function upsertUser_(data) {
     return { ok: false, error: "Password is required for a new user." };
   }
   if (found) {
-    var existing = sheet.getRange(found, 1, 1, USER_HEADERS.length).getValues()[0];
+    var existing = padUserRow_(sheet.getRange(found, 1, 1, Math.max(sheet.getLastColumn(), USER_HEADERS.length)).getValues()[0]);
     sheet.getRange(found, 1, 1, USER_HEADERS.length).setValues([[
       username,
       password ? password : existing[1],
       "user",
       account,
       displayName || existing[4] || username,
-      active
+      active,
+      whatsapp || existing[6] || "",
+      fiverrId || existing[7] || "",
+      fiverrGigUrl || existing[8] || "",
+      paymentStatus || existing[9] || ""
     ]]);
     return { ok: true, action: "upsertUser", username: username, account: account, updated: true };
   }
@@ -1655,7 +1765,11 @@ function upsertUser_(data) {
     "user",
     account,
     displayName || username,
-    active
+    active,
+    whatsapp,
+    fiverrId,
+    fiverrGigUrl,
+    paymentStatus
   ]]);
   return { ok: true, action: "upsertUser", username: username, account: account, created: true };
 }

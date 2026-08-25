@@ -158,6 +158,11 @@
       createdAt: previous.createdAt || stamp,
       updatedAt: stamp
     });
+    ["whatsapp", "personName", "fiverrId", "fiverrGigUrl", "paymentStatus", "username"].forEach(function (key) {
+      if (!String(incoming[key] || "").trim() && String(previous[key] || "").trim()) {
+        merged[key] = previous[key];
+      }
+    });
     accounts[index] = merged;
     saveAccounts(accounts);
     return merged;
