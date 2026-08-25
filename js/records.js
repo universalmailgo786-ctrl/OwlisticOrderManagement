@@ -234,59 +234,40 @@
     return (file && file.url) || "";
   }
 
-  function latestPreview(pairs) {
-    if (!pairs.length) return "";
-    const pair = pairs[pairs.length - 1];
-    const client = messagePlainText(pair.buyer);
-    const reply = messagePlainText(pair.client);
-    if (client && reply) return client + " → " + reply;
-    return client || reply || "Attachment added";
+  function snippetText(message) {
+    const text = clampText(messagePlainText(message), 72);
+    if (text) return text;
+    if (hasFiles(message && message.files)) return "Sent an attachment";
+    return "";
   }
 
   function chatSummaryHtml(order) {
     const pairs = filledPairs(order);
     if (!pairs.length) {
-      return '<div class="chat-summary"><p class="chat-summary-empty">No chats yet</p></div>';
+      return '<div class="records-chat-card is-empty"><p>No conversation yet</p></div>';
     }
-    const latest = pairs.length - 1;
-    const steps = pairs.map(function (pair, index) {
-      const done = messageFilled(pair.buyer) && messageFilled(pair.client);
-      const current = index === latest;
-      const cls = current ? " is-current" : (done ? " is-done" : "");
-      const mark = current ? " Current" : (done ? " ✓" : "");
-      return '<span class="chat-step' + cls + '">C' + (index + 1) + " / R" + (index + 1) + mark + "</span>";
-    }).join('<span class="chat-step-arrow" aria-hidden="true">→</span>');
-    return '<div class="chat-summary">' +
-      '<div class="chat-steps">' + steps + "</div>" +
-      '<p class="chat-summary-preview" title="' + escapeHtml(latestPreview(pairs)) + '">' + escapeHtml(clampText(latestPreview(pairs), 78)) + "</p>" +
-      '<button type="button" class="chat-open-btn" data-open-chat="' + escapeHtml(order.id) + '">View full chat →</button>' +
-    "</div>";
+    const last = pairs[pairs.length - 1];
+    const client = snippetText(last.buyer);
+    const seller = snippetText(last.client);
+    const round = pairs.length;
+    return '<button type="button" class="records-chat-card" data-open-chat="' + escapeHtml(order.id) + '" title="Open full chat" aria-label="Open chat, round ' + round + '">' +
+      '<div class="records-chat-mini" aria-hidden="true">' +
+        (client
+          ? '<div class="records-chat-line is-client"><span class="records-chat-ava">C</span><span class="records-chat-bubble">' + escapeHtml(client) + "</span></div>"
+          : "") +
+        (seller
+          ? '<div class="records-chat-line is-seller"><span class="records-chat-bubble">' + escapeHtml(seller) + '</span><span class="records-chat-ava">S</span></div>'
+          : (client ? '<div class="records-chat-line is-wait"><span class="records-chat-bubble">Waiting for seller…</span></div>' : "")) +
+      "</div>" +
+      '<span class="records-chat-open">Open chat · Round ' + round + "</span>" +
+    "</button>";
   }
 
   function totalChatsHtml(order) {
     const count = filledPairs(order).length;
-    const label = count === 1 ? "1 pair" : count + " pairs";
+    if (!count) return '<span class="chat-pairs-pill is-empty">0 chats</span>';
+    const label = count === 1 ? "1 chat" : count + " chats";
     return '<span class="chat-pairs-pill">' + escapeHtml(label) + "</span>";
-  }
-
-  function latestMessageHtml(order) {
-    const pairs = filledPairs(order);
-    if (!pairs.length) return '<span class="muted">—</span>';
-    const number = pairs.length;
-    const pair = pairs[number - 1];
-    const client = clampText(messagePlainText(pair.buyer), 52) || "—";
-    const reply = clampText(messagePlainText(pair.client), 52) || "—";
-    const stamp = (pair.client && pair.client.createdAt) || (pair.buyer && pair.buyer.createdAt) || order.updatedAt || "";
-    const copy = [messagePlainText(pair.buyer), messagePlainText(pair.client)].filter(Boolean).join("\n");
-    return '<div class="chat-latest">' +
-      '<div class="chat-latest-head">' +
-        "<span>Latest: C" + number + " / R" + number + "</span>" +
-        copyButton(copy, "latest message") +
-      "</div>" +
-      '<p class="chat-latest-line"><span>Client:</span> ' + escapeHtml(client) + "</p>" +
-      '<p class="chat-latest-line"><span>Reply:</span> ' + escapeHtml(reply) + "</p>" +
-      (stamp ? '<p class="chat-latest-time">' + escapeHtml(store.formatDateTime(stamp)) + "</p>" : "") +
-    "</div>";
   }
 
   function attachmentAttrs(file) {
@@ -296,57 +277,74 @@
       ' data-preview-url="' + escapeHtml(previewSrc(file) || fileDownloadHref(file) || "") + '"';
   }
 
+  function shortStamp(iso) {
+    if (!iso) return "";
+    if (store.formatDateTime) return store.formatDateTime(iso);
+    return "";
+  }
+
   function attachmentsHtml(files) {
     const list = requirementFileList(files);
     if (!list.length) return "";
-    return '<div class="chat-attach-list">' + list.map(function (file) {
+    return '<div class="live-chat-files">' + list.map(function (file) {
       const download = fileDownloadHref(file);
       const missing = !download && !file.id;
+      const size = formatBytes(file.size);
       if (isImageAttachment(file)) {
         const src = previewSrc(file) || download;
-        return '<div class="chat-attach chat-attach-image">' +
-          '<button type="button" class="chat-thumb-btn"' + attachmentAttrs(file) + ' data-open-preview>' +
+        return '<div class="live-chat-file is-image">' +
+          '<button type="button" class="live-chat-thumb"' + attachmentAttrs(file) + ' data-open-preview title="View image">' +
             (src
               ? '<img class="chat-thumb" alt="' + escapeHtml(file.name) + '" src="' + escapeHtml(src) + '"' + (file.id ? ' data-local-file-id="' + escapeHtml(file.id) + '"' : "") + ">"
-              : '<span class="chat-thumb-fallback">Image</span>') +
+              : '<span class="live-chat-file-fallback">IMG</span>') +
           "</button>" +
-          '<div class="chat-attach-meta">' +
-            '<p class="chat-attach-name">' + escapeHtml(file.name) + "</p>" +
+          '<div class="live-chat-file-copy">' +
+            '<p>' + escapeHtml(file.name) + "</p>" +
             (missing
-              ? '<p class="records-file-missing">Not on Drive</p>'
-              : '<button type="button" class="chat-file-btn" data-save-file' + attachmentAttrs(file) + ">Save / Download image</button>") +
+              ? '<span class="records-file-missing">Not on Drive</span>'
+              : '<span class="live-chat-file-actions">' +
+                  '<button type="button" class="live-chat-file-btn" data-save-file' + attachmentAttrs(file) + ">Download</button>" +
+                "</span>") +
           "</div>" +
         "</div>";
       }
-      const size = formatBytes(file.size);
-      return '<div class="chat-attach chat-attach-file">' +
-        '<div class="chat-file-icon" aria-hidden="true">' + escapeHtml(fileExtLabel(file)) + "</div>" +
-        '<div class="chat-attach-meta">' +
-          '<p class="chat-attach-name">' + escapeHtml(file.name) + "</p>" +
-          '<p class="chat-attach-sub">' + escapeHtml(fileExtLabel(file) + (size ? " · " + size : "")) + "</p>" +
+      return '<div class="live-chat-file">' +
+        '<span class="live-chat-file-fallback" aria-hidden="true">' + escapeHtml(fileExtLabel(file)) + "</span>" +
+        '<div class="live-chat-file-copy">' +
+          '<p>' + escapeHtml(file.name) + "</p>" +
+          '<span>' + escapeHtml(fileExtLabel(file) + (size ? " · " + size : "")) + "</span>" +
           (missing
-            ? '<p class="records-file-missing">Not on Drive</p>'
-            : '<div class="chat-attach-actions">' +
-                '<button type="button" class="chat-file-btn" data-open-file' + attachmentAttrs(file) + ">Open / View</button>" +
-                '<button type="button" class="chat-file-btn" data-save-file' + attachmentAttrs(file) + ">Download / Save file</button>" +
-              "</div>") +
+            ? '<span class="records-file-missing">Not on Drive</span>'
+            : '<span class="live-chat-file-actions">' +
+                '<button type="button" class="live-chat-file-btn" data-open-file' + attachmentAttrs(file) + ">Open</button>" +
+                '<button type="button" class="live-chat-file-btn" data-save-file' + attachmentAttrs(file) + ">Download</button>" +
+              "</span>") +
         "</div>" +
       "</div>";
     }).join("") + "</div>";
   }
 
-  function chatMessageBlock(message, title, roleClass) {
+  function chatMessageBlock(message, roleClass, who) {
     const item = repairedMessage(message);
-    const text = messagePlainText(item);
+    const text = item ? String(item.text || "").trim() : "";
     const files = item && item.files;
-    if (!text && !hasFiles(files)) {
-      return '<article class="chat-full-msg ' + roleClass + ' is-empty"><h3>' + escapeHtml(title) + '</h3><p class="muted">No message yet.</p></article>';
+    const empty = !text && !hasFiles(files);
+    const stamp = shortStamp(item && item.createdAt);
+    const initial = roleClass === "is-seller" ? "S" : "C";
+    if (empty) {
+      return '<div class="live-chat-row ' + roleClass + ' is-empty">' +
+        '<span class="live-chat-avatar" aria-hidden="true">' + initial + "</span>" +
+        '<div class="live-chat-bubble"><p class="live-chat-pending">' + (roleClass === "is-seller" ? "No seller reply yet" : "No client message yet") + "</p></div>" +
+      "</div>";
     }
-    return '<article class="chat-full-msg ' + roleClass + '">' +
-      "<h3>" + escapeHtml(title) + "</h3>" +
-      (text ? '<p class="chat-full-text">' + escapeHtml(text) + "</p>" : "") +
-      attachmentsHtml(files) +
-    "</article>";
+    return '<div class="live-chat-row ' + roleClass + '">' +
+      '<span class="live-chat-avatar" aria-hidden="true">' + initial + "</span>" +
+      '<div class="live-chat-bubble">' +
+        '<div class="live-chat-meta"><span>' + escapeHtml(who) + "</span>" + (stamp ? "<time>" + escapeHtml(stamp) + "</time>" : "") + "</div>" +
+        (text ? '<p class="live-chat-text">' + escapeHtml(text) + "</p>" : "") +
+        attachmentsHtml(files) +
+      "</div>" +
+    "</div>";
   }
 
   function messageCopy(message) {
@@ -491,7 +489,7 @@
   }
 
   function columnCount(revisionCount) {
-    return 18 + (revisionCount * 2);
+    return 17 + (revisionCount * 2);
   }
 
   function renderHead(revisionCount) {
@@ -512,7 +510,6 @@
       "<th>Type</th>" +
       "<th>Chat Summary</th>" +
       "<th>Total Chats</th>" +
-      "<th>Latest Message</th>" +
       "<th>Direct Order Requirements</th>" +
       "<th>Requirement Files</th>" +
       "<th>Review Text (Feedback)</th>" +
@@ -520,7 +517,7 @@
       "<th>Payment</th>" +
       "<th>Status</th>" +
       "<th>Actions</th>";
-    if (table) table.style.minWidth = String(1980 + revisionCount * 360) + "px";
+    if (table) table.style.minWidth = String(1760 + revisionCount * 360) + "px";
   }
 
   function renderAccountFilter() {
@@ -659,7 +656,6 @@
         "<td>" + withCopy(escapeHtml(typeLabel || "—"), typeLabel || "", "type") + "</td>" +
         '<td class="records-chat-cell">' + chatSummaryHtml(order) + "</td>" +
         '<td class="records-chat-cell records-chat-total">' + totalChatsHtml(order) + "</td>" +
-        '<td class="records-chat-cell">' + latestMessageHtml(order) + "</td>" +
         '<td class="records-clip-cell">' + withCopy(clipText(order.directRequirements), order.directRequirements || "", "direct order requirements") + "</td>" +
         mediaCell(filesCell(order.requirementFiles), filesCopyText(order.requirementFiles), "requirement files", hasFiles(order.requirementFiles)) +
         '<td class="records-clip-cell">' + withCopy(clipText(order.reviewText), order.reviewText || "", "review text") + "</td>" +
@@ -699,6 +695,7 @@
   const chatDrawer = document.getElementById("chat-drawer");
   const chatDrawerBody = document.getElementById("chat-drawer-body");
   const chatDrawerTitle = document.getElementById("chat-drawer-title");
+  const chatDrawerSub = document.getElementById("chat-drawer-sub");
   const chatLightbox = document.getElementById("chat-lightbox");
   const chatLightboxImage = document.getElementById("chat-lightbox-image");
   const chatLightboxName = document.getElementById("chat-lightbox-name");
@@ -840,28 +837,35 @@
     const order = store.getOrder(orderId);
     if (!order || !chatDrawer || !chatDrawerBody) return;
     const pairs = filledPairs(order);
-    if (chatDrawerTitle) chatDrawerTitle.textContent = order.id + " · " + (pairs.length === 1 ? "1 chat pair" : pairs.length + " chat pairs");
+    const who = order.clientName || order.name || "Client";
+    if (chatDrawerTitle) chatDrawerTitle.textContent = order.id;
+    if (chatDrawerSub) {
+      chatDrawerSub.textContent = who + (pairs.length
+        ? " · " + pairs.length + (pairs.length === 1 ? " round" : " rounds")
+        : " · No messages yet");
+    }
     if (!pairs.length) {
-      chatDrawerBody.innerHTML = '<p class="chat-full-empty">No client / seller messages on this order yet.</p>';
+      chatDrawerBody.innerHTML = '<div class="live-chat"><p class="live-chat-empty">No messages on this order yet.</p></div>';
     } else {
-      chatDrawerBody.innerHTML = pairs.map(function (pair, index) {
+      chatDrawerBody.innerHTML = '<div class="live-chat">' + pairs.map(function (pair, index) {
         const number = index + 1;
-        const current = index === pairs.length - 1 ? ' <span class="chat-current-tag">Current</span>' : "";
-        return '<section class="chat-full-pair">' +
-          '<p class="chat-full-pair-label">C' + number + " / R" + number + current + "</p>" +
-          chatMessageBlock(pair.buyer, "Client Message " + number, "is-client") +
-          chatMessageBlock(pair.client, "Seller Reply " + number, "is-seller") +
+        const current = index === pairs.length - 1;
+        return '<section class="live-chat-round">' +
+          '<p class="live-chat-divider"><span>Round ' + number + (current ? " · Now" : "") + "</span></p>" +
+          chatMessageBlock(pair.buyer, "is-client", "Client") +
+          chatMessageBlock(pair.client, "is-seller", "Seller") +
         "</section>";
-      }).join("");
+      }).join("") + "</div>";
     }
     chatDrawer.hidden = false;
     document.body.classList.add("modal-open");
     hydrateLocalThumbs(chatDrawerBody);
+    if (chatDrawerBody.scrollHeight) chatDrawerBody.scrollTop = chatDrawerBody.scrollHeight;
     chatDrawerBody.querySelectorAll("img.chat-thumb").forEach(function (img) {
       img.addEventListener("error", function () {
         const fallback = document.createElement("span");
-        fallback.className = "chat-thumb-fallback";
-        fallback.textContent = "Image";
+        fallback.className = "live-chat-file-fallback";
+        fallback.textContent = "IMG";
         img.replaceWith(fallback);
       });
     });
@@ -886,14 +890,14 @@
     }
     countEl.textContent = "Loading…";
     body.innerHTML =
-      '<tr><td colspan="21"><div class="empty-state"><strong>Loading orders from Google Sheet</strong></div></td></tr>';
+      '<tr><td colspan="' + columnCount(0) + '"><div class="empty-state"><strong>Loading orders from Google Sheet</strong></div></td></tr>';
     window.OwlisticSheet.fetchOrders().then(function (result) {
       applySheetOrders(result);
       renderAccountFilter();
       render();
       if (result && result.error && !auth.visibleOrders().length) {
         body.innerHTML =
-          '<tr><td colspan="21"><div class="empty-state">' +
+          '<tr><td colspan="' + columnCount(0) + '"><div class="empty-state">' +
             "<strong>Could not load sheet orders</strong>" +
             "<p>" + escapeHtml(result.error) + "</p>" +
           "</div></td></tr>";
