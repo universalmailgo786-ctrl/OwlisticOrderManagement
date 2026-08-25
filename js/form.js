@@ -1543,7 +1543,26 @@
     retryMissingDriveUploads();
   }
 
-  function loadAccountsFromSheet() {
+  function syncSavedAccountProfiles() {
+    if (!isAdmin()) return;
+    const sheet = window.OwlisticSheet;
+    if (!sheet || typeof sheet.upsertUser !== "function") return;
+    store.getAccounts().forEach(function (account) {
+      if (!account || !account.username) return;
+      if (!(account.whatsapp || account.personName || account.fiverrId || account.fiverrGigUrl || account.paymentStatus)) return;
+      sheet.upsertUser({
+        username: account.username,
+        password: "",
+        account: account.name,
+        displayName: account.personName || account.name,
+        personName: account.personName || "",
+        whatsapp: account.whatsapp || "",
+        fiverrId: account.fiverrId || "",
+        fiverrGigUrl: account.fiverrGigUrl || "",
+        paymentStatus: account.paymentStatus || ""
+      }).catch(function () {});
+    });
+  }
     const sheet = window.OwlisticSheet;
     if (!sheet || typeof sheet.fetchAccounts !== "function") {
       return Promise.resolve(null);
@@ -1601,7 +1620,11 @@
         store.importOrders(result.orders);
       }
       bootForm();
-    }).catch(bootForm);
+      syncSavedAccountProfiles();
+    }).catch(function () {
+      bootForm();
+      syncSavedAccountProfiles();
+    });
   })();
 
   accountSelect.addEventListener("change", function () {

@@ -1936,7 +1936,7 @@ function writeProfileTab_(ss, profile) {
 
 function seedAccountProfiles_() {
   return [
-    profileObject_("block", "Block", "", "", "", "", ""),
+    profileObject_("block", "Block", "+923001110000", "Block User", "blockfiverr", "https://www.fiverr.com/block", "Paid"),
     profileObject_("artistic", "Artistic", "+9233333323248", "Ashar", "Artistic_maha", "https://www.fiverr.com/artistic_maha", "Paid")
   ];
 }
