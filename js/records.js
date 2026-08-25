@@ -66,47 +66,39 @@
     return '<div class="records-clip" title="' + escapeHtml(text) + '">' + escapeHtml(text) + "</div>";
   }
 
+  function normalizeRecordFile(file) {
+    if (!file) return null;
+    if (typeof file === "string") {
+      const parsed = store.parseFileRefs ? store.parseFileRefs(file)[0] : null;
+      if (parsed) return normalizeRecordFile(parsed);
+      file = { name: file, url: "", id: "" };
+    }
+    let name = String(file.name || file.fileName || "").trim();
+    let url = String(file.url || file.link || "").trim();
+    if (!url) {
+      const found = name.match(/https?:\/\/\S+/i);
+      if (found) {
+        url = found[0].replace(/[),.;]+$/, "");
+        name = name.replace(found[0], "").replace(/\s*\|\s*$/, "").trim() || name;
+      }
+    }
+    if (!name) return null;
+    return {
+      name: name,
+      url: url,
+      id: file.id || "",
+      type: file.type || ""
+    };
+  }
+
   function requirementFileList(files) {
     if (!files) return [];
     if (typeof files === "string") {
-      if (store.parseFileRefs) return store.parseFileRefs(files);
-      return files.split(/\n|;|,/).map(function (part) {
-        const chunk = String(part || "").trim();
-        if (!chunk) return null;
-        const pipe = chunk.indexOf("|");
-        if (pipe >= 0) {
-          return { name: chunk.slice(0, pipe).trim(), url: chunk.slice(pipe + 1).trim(), id: "" };
-        }
-        const match = chunk.match(/^(.*)\s+(https?:\/\/\S+)\s*$/i);
-        if (match) return { name: String(match[1] || "").trim(), url: String(match[2] || "").trim(), id: "" };
-        return { name: chunk, url: "", id: "" };
-      }).filter(function (file) { return file && file.name; });
+      const parsed = store.parseFileRefs ? store.parseFileRefs(files) : [];
+      return parsed.map(normalizeRecordFile).filter(Boolean);
     }
     if (!Array.isArray(files)) return [];
-    return files.map(function (file) {
-      if (!file) return null;
-      if (typeof file === "string") return { name: file, url: "", id: "" };
-      return {
-        name: file.name || file.fileName || "",
-        url: file.url || file.link || "",
-        id: file.id || "",
-        type: file.type || ""
-      };
-    }).filter(function (file) { return file && file.name; });
-  }
-
-  function isImageFile(file) {
-    return store.isImageFile ? store.isImageFile(file) : /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/i.test(String((file && file.name) || ""));
-  }
-
-  function filePreviewSrc(file) {
-    return store.filePreviewUrl ? store.filePreviewUrl(file) : (file && file.url) || "";
-  }
-
-  function filePreviewSrcs(file) {
-    if (store.filePreviewUrls) return store.filePreviewUrls(file);
-    const src = filePreviewSrc(file);
-    return src ? [src] : [];
+    return files.map(normalizeRecordFile).filter(Boolean);
   }
 
   function fileDownloadHref(file) {
@@ -118,22 +110,18 @@
     if (!list.length) return "";
     return '<div class="records-files">' + list.map(function (file) {
       const name = escapeHtml(file.name);
-      const previews = filePreviewSrcs(file);
-      const preview = previews[0] || "";
-      const previewAttr = previews.length ? ' data-preview-urls="' + escapeHtml(previews.join("|")) + '"' : "";
       const download = fileDownloadHref(file);
-      const idAttr = file.id ? ' data-file-id="' + escapeHtml(file.id) + '"' : "";
-      const thumb = isImageFile(file)
-        ? '<img class="records-file-thumb" alt="' + name + '" referrerpolicy="no-referrer"' +
-          (preview ? ' src="' + escapeHtml(preview) + '"' : "") +
-          previewAttr + idAttr + ' data-file-name="' + name + '">'
-        : '<div class="records-file-icon"' + idAttr + ' data-file-name="' + name + '">File</div>';
-      const link = download
-        ? '<a class="records-file-link" href="' + escapeHtml(download) + '" target="_blank" rel="noopener noreferrer" download="' + name + '">Download</a>'
-        : (file.id
-          ? '<button type="button" class="records-file-link" data-download-file-id="' + escapeHtml(file.id) + '" data-file-name="' + name + '">Download</button>'
-          : "");
-      return '<div class="records-file-card">' + thumb + '<span class="records-file-name">' + name + "</span>" + link + "</div>";
+      if (download) {
+        return '<div class="records-file-card">' +
+          '<a class="records-file-link" href="' + escapeHtml(download) + '" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" download="' + name + '">' + name + "</a>" +
+          "</div>";
+      }
+      if (file.id) {
+        return '<div class="records-file-card">' +
+          '<button type="button" class="records-file-link" data-download-file-id="' + escapeHtml(file.id) + '" data-file-name="' + name + '">' + name + "</button>" +
+          "</div>";
+      }
+      return '<div class="records-file-card"><span class="records-file-name">' + name + "</span></div>";
     }).join("") + "</div>";
   }
 
@@ -500,47 +488,10 @@
         "</td>" +
       "</tr>";
     }).join("");
-    hydrateLocalFilePreviews();
+    bindLocalFileDownloads();
   }
 
-  function hydrateLocalFilePreviews() {
-    document.querySelectorAll(".records-file-thumb").forEach(function (img) {
-      if (img.getAttribute("src")) {
-        img.addEventListener("error", function () {
-          const urls = String(img.getAttribute("data-preview-urls") || "").split("|").filter(Boolean);
-          const next = Number(img.getAttribute("data-preview-i") || "0") + 1;
-          if (next < urls.length) {
-            img.setAttribute("data-preview-i", String(next));
-            img.src = urls[next];
-            return;
-          }
-          const card = img.closest(".records-file-card");
-          const link = card && card.querySelector("a.records-file-link");
-          if (link && link.href && img.src !== link.href) img.src = link.href;
-        });
-        return;
-      }
-      const id = img.getAttribute("data-file-id");
-      if (!id || typeof store.getFile !== "function") return;
-      store.getFile(id).then(function (record) {
-        const blob = record && record.blob;
-        if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        img.src = url;
-        const card = img.closest(".records-file-card");
-        const button = card && card.querySelector("[data-download-file-id]");
-        if (button && button.tagName === "BUTTON") {
-          button.addEventListener("click", function () {
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = img.getAttribute("data-file-name") || "file";
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-          });
-        }
-      });
-    });
+  function bindLocalFileDownloads() {
     document.querySelectorAll("[data-download-file-id]").forEach(function (button) {
       if (button.tagName !== "BUTTON" || button.getAttribute("data-bound") === "1") return;
       button.setAttribute("data-bound", "1");

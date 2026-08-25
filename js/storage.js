@@ -352,10 +352,10 @@
   }
 
   function fileDownloadUrl(file) {
-    if (!file || !file.url) return "";
-    const id = driveFileId(file.url);
-    if (id) return "https://drive.google.com/uc?export=download&id=" + encodeURIComponent(id);
-    return file.url;
+    if (!file) return "";
+    const id = driveFileId(file.url) || driveFileId(file.name);
+    if (id) return "https://drive.google.com/uc?export=download&confirm=t&id=" + encodeURIComponent(id);
+    return (file && file.url) || "";
   }
 
   function overlayFileUrls(previous, incoming) {

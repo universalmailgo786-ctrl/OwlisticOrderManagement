@@ -2220,49 +2220,24 @@ body.modal-open {
 
 .records-files {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-width: 220px;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 240px;
   overflow: visible;
 }
 
 .records-file-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 76px;
-  min-width: 76px;
-}
-
-.records-file-thumb,
-.records-file-icon {
   display: block;
-  width: 76px;
-  height: 56px;
-  object-fit: cover;
-  border-radius: 8px;
-  border: 1px solid #eadfd4;
-  background: #fff;
-}
-
-.records-file-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #8a3d22;
-  font-size: 11px;
-  font-weight: 600;
-  background: #fffdf8;
+  min-width: 0;
 }
 
 .records-file-name {
   display: block;
-  max-width: 76px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #8a3d22;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .records-file-link,
@@ -2276,10 +2251,19 @@ body.modal-open {
 }
 
 .records-file-card .records-file-link {
-  font-size: 11px;
+  display: block;
+  font-size: 12px;
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   background: none;
   border: 0;
   padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
   cursor: pointer;
   font-family: inherit;
   text-align: left;
