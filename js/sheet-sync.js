@@ -125,6 +125,7 @@
   const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
   const sentFileIds = {};
   const inFlightUploads = {};
+  const postedUploadIds = {};
 
   function blobToBase64(blob) {
     return new Promise(function (resolve, reject) {
@@ -747,7 +748,7 @@
     if (!order || !order.id) {
       return Promise.resolve({ ok: false, found: false });
     }
-    if (!names.length) return fetchOrder(order);
+    if (!names.length) return Promise.resolve({ ok: true, found: true, order: order });
     const timeout = (options && options.timeout) || 8000;
     const localIds = (options && options.localIds) || [];
     const started = Date.now();
@@ -759,13 +760,11 @@
       return fetchOrder(order).then(function (remote) {
         if (remote && remote.order && ready(remote.order)) return remote;
         if (Date.now() - started >= timeout) {
-          localIds.forEach(function (id) { delete sentFileIds[id]; });
           return remote || { ok: false, found: false, timeout: true };
         }
         return delay(500).then(attempt);
       }).catch(function () {
         if (Date.now() - started >= timeout) {
-          localIds.forEach(function (id) { delete sentFileIds[id]; });
           return { ok: false, found: false, timeout: true };
         }
         return delay(500).then(attempt);
@@ -849,6 +848,7 @@
       if (posted && posted.ok === false) {
         throw new Error(posted.error || "Could not reach Drive.");
       }
+      postedUploadIds[file.id || uploadId] = true;
       return waitForUpload(uploadId);
     }).then(function (result) {
       if (!result || result.status !== "ok" || !result.url) {
@@ -874,11 +874,20 @@
     let attempt = 0;
     function run() {
       attempt += 1;
-      return uploadFileAttempt(file, orderId).catch(function (err) {
-        if (attempt >= 3) {
+      const start = postedUploadIds[key]
+        ? waitForUpload(file.id || key).then(function (result) {
+          if (!result || result.status !== "ok" || !result.url) {
+            throw new Error((result && (result.error || result.driveLastError)) || "Drive upload timed out.");
+          }
+          stampUploadedFile(file, result);
+          return result;
+        })
+        : uploadFileAttempt(file, orderId);
+      return start.catch(function (err) {
+        if (attempt >= 2) {
           return { status: "error", error: (err && err.message) || "Drive upload failed." };
         }
-        return delay(900 * attempt).then(run);
+        return delay(600 * attempt).then(run);
       });
     }
     const task = run().then(function (result) {

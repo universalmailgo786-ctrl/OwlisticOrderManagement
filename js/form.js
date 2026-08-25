@@ -46,6 +46,7 @@
   let persistTimer = null;
   let isSubmitting = false;
   let saveQueue = Promise.resolve();
+  let ingestQueue = Promise.resolve();
   let activeSheetSave = null;
 
   function showToast(message, duration) {
@@ -1236,7 +1237,10 @@
       showToast("Order " + saved.id + " saved locally. Connect Google Sheet to sync.");
       return Promise.resolve({ saved: saved, sheet: { skipped: true } });
     }
-    if (isSubmitting && submitBtn) submitBtn.textContent = "Uploading images to Drive…";
+    const pendingFiles = sheet.filesNeedingDrive ? sheet.filesNeedingDrive(saved) : [];
+    if (isSubmitting && submitBtn) {
+      submitBtn.textContent = pendingFiles.length ? "Uploading images to Drive…" : "Saving to Google Sheet…";
+    }
     const existingList = (store.getOrders && store.getOrders()) || [];
     const alreadyById = existingList.some(function (item) {
       return String((item && item.id) || "") === String(saved.id);
@@ -1253,7 +1257,7 @@
         sheet: { ok: true, duplicate: true }
       });
     }
-    return sheet.sync(saved).then(function (syncResult) {
+    return sheet.sync(saved, { skipUploads: !pendingFiles.length }).then(function (syncResult) {
       if (syncResult && syncResult.skipped) {
         showToast("Order " + saved.id + " saved locally. Connect Google Sheet to sync.");
         return { saved: saved, sheet: syncResult };
@@ -1273,8 +1277,13 @@
             warnMissingDriveFiles(syncResult, saved);
             return done;
           }
+          const uploaded = (syncResult && syncResult.uploadedNames) || [];
+          if (!uploaded.length) {
+            warnMissingDriveFiles(syncResult, saved);
+            return done;
+          }
           const wait = typeof sheet.waitForDriveLinks === "function"
-            ? sheet.waitForDriveLinks(saved, syncResult.uploadedNames || [], { localIds: syncResult.uploadedLocalIds || [] })
+            ? sheet.waitForDriveLinks(saved, uploaded, { localIds: syncResult.uploadedLocalIds || [] })
             : sheet.fetchOrder(saved);
           return wait.then(function (remote) {
             if (remote && remote.order) {
@@ -1305,20 +1314,27 @@
   }
 
   function doSaveOrder(silent) {
-    if (!formHasFilledOrderData()) {
+    if (!formHasFilledOrderData() && !(fileInput && fileInput.files && fileInput.files.length)) {
       return Promise.resolve({ empty: true });
     }
-    return store.saveFileBlobs(fileInput.files).then(function (newFiles) {
-      if (newFiles.length) {
-        requirementFiles = requirementFiles.concat(newFiles);
-        fileInput.value = "";
+    const leftover = fileInput && fileInput.files && fileInput.files.length
+      ? Array.from(fileInput.files)
+      : [];
+    const ready = leftover.length ? ingestRequirementFiles(leftover) : ingestQueue;
+    return ready.then(function () {
+      if (!formHasFilledOrderData()) {
+        return { empty: true };
       }
       const saved = store.upsertOrder(collectOrder());
       applySavedOrder(saved);
       if (silent) {
         return { saved: saved, silent: true };
       }
-      if (submitBtn) submitBtn.textContent = "Uploading images to Drive…";
+      if (submitBtn) {
+        const sheet = window.OwlisticSheet;
+        const pending = sheet && sheet.filesNeedingDrive ? sheet.filesNeedingDrive(saved) : [];
+        submitBtn.textContent = pending.length ? "Uploading images to Drive…" : "Saving to Google Sheet…";
+      }
       return writeOrderToSheet(saved);
     });
   }
@@ -1360,7 +1376,7 @@
     if (!sheet || typeof sheet.sync !== "function") return;
     const saved = persistLocalOrder();
     if (!saved) return;
-    sheet.sync(saved).catch(function () {});
+    sheet.sync(saved, { skipUploads: true }).catch(function () {});
   }
 
   function missingDriveMessage(names) {
@@ -1700,20 +1716,35 @@
     else if (!priceModal.hidden) closePriceModal();
   });
 
+  function fileAlreadyAttached(file) {
+    const name = file && file.name;
+    const size = file && Number(file.size || 0);
+    if (!name) return false;
+    return requirementFiles.some(function (item) {
+      return item && item.name === name && Number(item.size || 0) === size;
+    });
+  }
+
   function ingestRequirementFiles(fileList) {
-    const files = Array.from(fileList || []);
+    const files = Array.from(fileList || []).filter(function (file) {
+      return file && !fileAlreadyAttached(file);
+    });
+    if (fileInput) fileInput.value = "";
     if (!files.length) {
       refreshRequirementFiles();
-      return;
+      return ingestQueue;
     }
-    store.saveFileBlobs(files).then(function (saved) {
-      requirementFiles = requirementFiles.concat(saved);
-      fileInput.value = "";
-      refreshRequirementFiles();
-      return uploadAttachedFiles(saved);
+    const task = ingestQueue.then(function () {
+      return store.saveFileBlobs(files).then(function (saved) {
+        requirementFiles = requirementFiles.concat(saved);
+        refreshRequirementFiles();
+        return uploadAttachedFiles(saved);
+      });
     }).catch(function () {
       refreshRequirementFiles();
     });
+    ingestQueue = task.then(function () {}, function () {});
+    return task;
   }
 
   fileInput.addEventListener("change", function () {
@@ -1734,12 +1765,7 @@
   drop.addEventListener("drop", function (event) {
     const files = event.dataTransfer && event.dataTransfer.files;
     if (!files || !files.length) return;
-    const transfer = new DataTransfer();
-    Array.from(fileInput.files || []).concat(Array.from(files)).forEach(function (file) {
-      transfer.items.add(file);
-    });
-    fileInput.files = transfer.files;
-    ingestRequirementFiles(fileInput.files);
+    ingestRequirementFiles(files);
   });
 
   if (messageThreadEl) {

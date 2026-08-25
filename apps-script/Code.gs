@@ -414,6 +414,17 @@ function uploadKey_(id) {
   return "up_" + String(id || "").replace(/[^A-Za-z0-9_\-]/g, "").slice(0, 80);
 }
 
+function readUpload_(id) {
+  if (!id) return null;
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(uploadKey_(id)) || "";
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (err) {
+    return null;
+  }
+}
+
 function setUpload_(id, obj) {
   PropertiesService.getScriptProperties().setProperty(uploadKey_(id), JSON.stringify(obj || {}));
 }
@@ -462,6 +473,13 @@ function driveStatus_() {
 
 function uploadFile_(data) {
   var uploadId = String((data && (data.uploadId || data.localId)) || "");
+  var existing = readUpload_(uploadId);
+  if (existing && existing.status === "ok" && existing.url) {
+    existing.ok = true;
+    existing.action = "uploadFile";
+    existing.uploadId = uploadId;
+    return existing;
+  }
   if (uploadId) setUpload_(uploadId, { status: "pending" });
   try {
     var saved = saveOneUpload_((data && data.orderId) || "", {
@@ -501,6 +519,15 @@ function filesFolder_() {
     rememberDriveError_("Cannot open Images folder " + FILES_FOLDER_ID + ": " + err);
     throw err;
   }
+}
+
+function findDriveFileByName_(folder, driveName) {
+  if (!folder || !driveName) return null;
+  try {
+    var files = folder.getFilesByName(driveName);
+    if (files.hasNext()) return files.next();
+  } catch (err) {}
+  return null;
 }
 
 function driveUrl_(fileId) {
@@ -567,6 +594,13 @@ function saveUploads_(orderId, uploads) {
       }
       var originalName = String(item.name || "file").replace(/[\\/:*?"<>|]+/g, "-") || "file";
       var driveName = originalName.indexOf(prefix + "_") === 0 ? originalName : prefix + "_" + originalName;
+      var existingFile = findDriveFileByName_(folder, driveName);
+      if (existingFile) {
+        sharePublic_(existingFile);
+        clearDriveError_();
+        saved.push(savedFileInfo_(originalName, existingFile));
+        continue;
+      }
       var bytes = Utilities.base64Decode(data);
       var blob = Utilities.newBlob(bytes, item.mimeType || "application/octet-stream", driveName);
       var file = createDriveFile_(folder, blob);
