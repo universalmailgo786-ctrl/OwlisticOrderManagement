@@ -61,6 +61,9 @@ function doGet(e) {
   if (action === "listOrders") {
     return json_(listOrders_(params));
   }
+  if (action === "hasOrder") {
+    return json_(hasOrder_(params));
+  }
   return json_({ ok: true, service: "Ashar Orders Management System", sheetColumns: HEADERS.length });
 }
 
@@ -683,20 +686,21 @@ function upsertOrderLocked_(ss, data) {
   var row = data.row || [];
   var orderId = String(data.orderId || row[0] || "");
   var forced = forcedAccount_(data);
-  var found = findOrder_(ss, orderId);
-  if (found && forced && !canAccessFound_(found, forced)) {
-    return { ok: false, error: "You can only edit orders for " + forced + "." };
-  }
-
   var wantedName = tabName_(data.tabName || data.accountName || "");
   var target = null;
   if (forced) {
-    target = (found && canAccessFound_(found, forced)) ? found.sheet : sheetForAccount_(ss, forced);
+    target = sheetForAccount_(ss, forced);
     if (!target) target = getOrCreateSheet_(ss, forced);
   } else {
-    target = wantedName ? getOrCreateSheet_(ss, wantedName) : (found ? found.sheet : ss.getSheets()[0]);
+    target = wantedName ? getOrCreateSheet_(ss, wantedName) : ss.getSheets()[0];
   }
-  styleSheet_(ss, target);
+  ensureOrderSheet_(ss, target);
+
+  var found = findOrderOnSheet_(target, orderId);
+  if (!found) found = findOrder_(ss, orderId);
+  if (found && forced && !canAccessFound_(found, forced)) {
+    return { ok: false, error: "You can only edit orders for " + forced + "." };
+  }
 
   while (row.length < HEADERS.length) {
     row.push("");
@@ -781,6 +785,50 @@ function findOrder_(ss, orderId) {
     }
   }
   return null;
+}
+
+function findOrderOnSheet_(sheet, orderId) {
+  if (!sheet || !orderId) return null;
+  var last = sheet.getLastRow();
+  if (last < 2) return null;
+  var ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+  var i;
+  for (i = 0; i < ids.length; i++) {
+    if (String(ids[i][0] || "").trim() === orderId) {
+      return { sheet: sheet, row: i + 2 };
+    }
+  }
+  return null;
+}
+
+function hasOrder_(params) {
+  var orderId = String((params && params.orderId) || "").trim();
+  if (!orderId) {
+    return { ok: false, action: "hasOrder", found: false, error: "Order ID is required." };
+  }
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var tab = tabName_((params && (params.tab || params.userAccount || params.account)) || "");
+  var found = null;
+  if (tab) {
+    var sheet = sheetForAccount_(ss, tab);
+    if (sheet) found = findOrderOnSheet_(sheet, orderId);
+  } else {
+    found = findOrder_(ss, orderId);
+  }
+  return {
+    ok: true,
+    action: "hasOrder",
+    found: Boolean(found),
+    orderId: orderId,
+    tab: found ? found.sheet.getName() : tab
+  };
+}
+
+function ensureOrderSheet_(ss, sheet) {
+  if (!sheet) return;
+  var first = String(sheet.getRange(1, 1).getValue() || "").trim();
+  if (first === "Order ID") return;
+  styleSheet_(ss, sheet);
 }
 
 function accountKey_(raw) {

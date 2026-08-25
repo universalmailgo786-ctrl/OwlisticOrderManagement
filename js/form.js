@@ -1071,56 +1071,40 @@
       return Promise.resolve({ saved: saved, sheet: { skipped: true } });
     }
     if (submitBtn) submitBtn.textContent = "Saving to Google Sheet…";
-    const existingListPromise = typeof sheet.fetchOrders === "function"
-      ? sheet.fetchOrders().catch(function () { return { orders: [] }; })
-      : Promise.resolve({ orders: [] });
-    return existingListPromise.then(function (listResult) {
-      const existingList = (listResult && listResult.orders) || [];
-      const alreadyById = existingList.some(function (item) {
-        return String((item && item.id) || "") === String(saved.id);
+    const existingList = (store.getOrders && store.getOrders()) || [];
+    const alreadyById = existingList.some(function (item) {
+      return String((item && item.id) || "") === String(saved.id);
+    });
+    const duplicate = typeof sheet.findDuplicateOrder === "function"
+      ? sheet.findDuplicateOrder(existingList, saved)
+      : null;
+    if (duplicate && !alreadyById) {
+      return Promise.resolve({
+        saved: saved,
+        duplicate: true,
+        confirmed: true,
+        existing: duplicate,
+        sheet: { ok: true, duplicate: true }
       });
-      const duplicate = typeof sheet.findDuplicateOrder === "function"
-        ? sheet.findDuplicateOrder(existingList, saved)
-        : null;
-      if (duplicate && !alreadyById) {
-        refreshFromSheetOrders(existingList, duplicate.id || saved.id);
-        return {
-          saved: saved,
-          duplicate: true,
-          confirmed: true,
-          existing: duplicate,
-          sheet: { ok: true, duplicate: true }
-        };
+    }
+    return sheet.sync(saved).then(function (syncResult) {
+      if (syncResult && syncResult.skipped) {
+        showToast("Order " + saved.id + " saved locally. Connect Google Sheet to sync.");
+        return { saved: saved, sheet: syncResult };
       }
-      return sheet.sync(saved, { forceUploads: true }).then(function (syncResult) {
-        if (syncResult && syncResult.skipped) {
-          showToast("Order " + saved.id + " saved locally. Connect Google Sheet to sync.");
-          return { saved: saved, sheet: syncResult };
+      const confirmPromise = typeof sheet.confirmSheetWrite === "function"
+        ? sheet.confirmSheetWrite(saved, { existedBefore: alreadyById })
+        : Promise.resolve({ ok: true, confirmed: true });
+      return confirmPromise.then(function (confirm) {
+        if (confirm && confirm.confirmed) {
+          return {
+            saved: saved,
+            sheet: syncResult,
+            confirmed: true,
+            duplicate: Boolean(confirm.duplicate)
+          };
         }
-        if (submitBtn) submitBtn.textContent = "Confirming Google Sheet…";
-        const confirmPromise = typeof sheet.confirmSheetWrite === "function"
-          ? sheet.confirmSheetWrite(saved, { existedBefore: alreadyById })
-          : sheet.fetchOrders().then(function (result) {
-            const list = (result && result.orders) || [];
-            const found = list.some(function (item) {
-              return String((item && item.id) || "") === String(saved.id);
-            });
-            return { ok: found, confirmed: found, orders: list };
-          });
-        return confirmPromise.then(function (confirm) {
-          if (confirm && confirm.orders) {
-            refreshFromSheetOrders(confirm.orders, saved.id);
-          }
-          if (confirm && confirm.confirmed) {
-            return {
-              saved: saved,
-              sheet: syncResult,
-              confirmed: true,
-              duplicate: Boolean(confirm.duplicate)
-            };
-          }
-          return { saved: saved, sheet: syncResult, confirmed: false, sheetFailed: true };
-        });
+        return { saved: saved, sheet: syncResult, confirmed: false, sheetFailed: true };
       });
     }).catch(function () {
       showToast("Order " + saved.id + " saved locally, but Google Sheet sync failed");

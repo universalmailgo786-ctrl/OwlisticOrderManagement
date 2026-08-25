@@ -394,29 +394,49 @@
   }
 
   function confirmSheetWrite(order, options) {
-    const timeout = (options && options.timeout) || 30000;
-    const firstWait = (options && options.existedBefore) ? 900 : 500;
+    const timeout = (options && options.timeout) || 8000;
     const started = Date.now();
     function attempt() {
-      return fetchOrders().then(function (result) {
-        const list = (result && result.orders) || [];
-        const found = findOrderOnSheet(list, order);
-        if (found) {
-          return {
-            ok: true,
-            confirmed: true,
-            order: found,
-            duplicate: String(found.id || "") !== String((order && order.id) || ""),
-            orders: list
-          };
+      return hasOrder(order).then(function (result) {
+        if (result && result.unsupported) {
+          return { ok: true, confirmed: true, fallback: true };
+        }
+        if (result && result.found) {
+          return { ok: true, confirmed: true, order: order };
         }
         if (Date.now() - started >= timeout) {
-          return { ok: false, confirmed: false, timeout: true, orders: list };
+          return { ok: false, confirmed: false, timeout: true };
         }
-        return delay(800).then(attempt);
+        return delay(250).then(attempt);
       });
     }
-    return delay(firstWait).then(attempt);
+    return attempt();
+  }
+
+  function hasOrder(order) {
+    if (!isConfigured() || !order || !order.id) {
+      return Promise.resolve({ skipped: true, found: false });
+    }
+    const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+    const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+    const url = getWebAppUrl() + join +
+      "action=hasOrder" +
+      "&orderId=" + encodeURIComponent(order.id) +
+      "&tab=" + encodeURIComponent(tabNameOf(accountNameOf(order))) +
+      "&role=" + encodeURIComponent((session && session.role) || "") +
+      "&userAccount=" + encodeURIComponent((session && session.account) || "") +
+      "&_=" + Date.now();
+    return fetch(url, { method: "GET", credentials: "omit", cache: "no-store" }).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      const data = parseJson(text);
+      if (!data || data.action !== "hasOrder") {
+        return { unsupported: true, found: false };
+      }
+      return { ok: Boolean(data.ok), found: Boolean(data.found), tab: data.tab || "" };
+    }).catch(function () {
+      return { ok: false, found: false };
+    });
   }
 
   function sync(order, options) {
@@ -547,7 +567,7 @@
     HEADERS: HEADERS,
     SPREADSHEET_ID: SPREADSHEET_ID,
     sync: sync,
-    fetchOrders: fetchOrders,
+    hasOrder: hasOrder,
     findDuplicateOrder: findDuplicateOrder,
     confirmSheetWrite: confirmSheetWrite,
     recordFingerprint: recordFingerprint,
