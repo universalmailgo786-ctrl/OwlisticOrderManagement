@@ -401,14 +401,25 @@
   }
 
   function tabOf(order) {
+    const board = String((order && order.boardStatus) || "").trim().toLowerCase();
+    if (
+      board === "on-revision" ||
+      board === "on revision" ||
+      board === "revision" ||
+      board === "revision-pending" ||
+      board === "revision pending" ||
+      board === "revision needed"
+    ) {
+      return "on-revision";
+    }
     if (typeof store.recordTab === "function") {
       const tab = store.recordTab(order);
-      if (tab === "on-revision") return "in-progress";
-      return tab;
+      return tab === "on-revision" ? "on-revision" : tab;
     }
     const status = store.computeStatus(order);
     if (status === "completed") return "completed";
     if (status === "ready-to-approve") return "ready-to-approve";
+    if (status === "revision-pending") return "on-revision";
     return "in-progress";
   }
 
@@ -479,6 +490,90 @@
     });
   }
 
+  function revisionPairs(round) {
+    const messages = (round && round.messages) || [];
+    if (store.pairMessageThread) return store.pairMessageThread(messages);
+    return [];
+  }
+
+  function latestRoleSnippet(round, role) {
+    const messages = revisionRoleMessages(round, role);
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const text = messagePlainText(messages[i]);
+      if (text) return text;
+      if (hasFiles(messages[i] && messages[i].files)) return "Sent an attachment";
+    }
+    return "";
+  }
+
+  function revisionStepStates(rounds) {
+    let currentSeen = false;
+    return (rounds || []).map(function (round, index) {
+      const number = round.number || index + 1;
+      if (round.completed) return { round: round, number: number, state: "completed" };
+      if (!currentSeen) {
+        currentSeen = true;
+        return { round: round, number: number, state: "current" };
+      }
+      return { round: round, number: number, state: "pending" };
+    });
+  }
+
+  function currentRevisionStep(rounds) {
+    const steps = revisionStepStates(rounds);
+    return steps.filter(function (step) { return step.state === "current"; })[0] || null;
+  }
+
+  function revisionProgressHtml(order) {
+    const rounds = revisionRounds(order);
+    if (!rounds.length) {
+      return '<div class="rev-progress is-empty"><span class="rev-step is-wait">No revisions</span></div>';
+    }
+    const steps = revisionStepStates(rounds);
+    return '<div class="rev-progress" aria-label="Revision progress">' + steps.map(function (step, index) {
+      const connector = index ? '<span class="rev-progress-line" aria-hidden="true"></span>' : "";
+      if (step.state === "completed") {
+        return connector +
+          '<span class="rev-step is-done" title="Revision ' + step.number + ' completed">' +
+            '<span class="rev-step-mark" aria-hidden="true">✓</span>' +
+            "R" + step.number + " Completed" +
+          "</span>";
+      }
+      if (step.state === "current") {
+        return connector +
+          '<button type="button" class="rev-step is-now" data-mark-revision="' + escapeHtml(order.id) + '" data-revision-id="' + escapeHtml(step.round.id) + '" data-revision-number="' + step.number + '" title="Mark Revision ' + step.number + ' as completed">' +
+            '<span class="rev-step-mark" aria-hidden="true"></span>' +
+            "R" + step.number + " Current" +
+          "</button>";
+      }
+      return connector +
+        '<span class="rev-step is-wait" data-pending-revision="' + step.number + '" data-blocked-by="' + (step.number - 1) + '" title="Complete Revision ' + (step.number - 1) + " before Revision " + step.number + '">' +
+          "R" + step.number + " Pending" +
+        "</span>";
+    }).join("") + "</div>";
+  }
+
+  function latestRevisionDetailsHtml(order) {
+    const rounds = revisionRounds(order);
+    if (!rounds.length) {
+      return '<div class="rev-latest is-empty"><p>No revision details yet</p></div>';
+    }
+    const current = currentRevisionStep(rounds);
+    const allDone = !current;
+    const focus = current ? current.round : rounds[rounds.length - 1];
+    const number = current ? current.number : (focus.number || rounds.length);
+    const buyer = latestRoleSnippet(focus, "buyer");
+    const seller = latestRoleSnippet(focus, "seller");
+    return '<div class="rev-latest">' +
+      '<span class="rev-latest-badge' + (allDone ? " is-done" : "") + '">' +
+        (allDone ? "All revisions completed" : "Current: Revision " + number) +
+      "</span>" +
+      '<p class="rev-latest-line"><span>Buyer revision</span> ' + escapeHtml(buyer || "—") + "</p>" +
+      '<p class="rev-latest-line"><span>Seller reply</span> ' + escapeHtml(seller || "—") + "</p>" +
+      '<button type="button" class="rev-history-link" data-open-rev-history="' + escapeHtml(order.id) + '">View revision history</button>' +
+    "</div>";
+  }
+
   function maxRevisionCount(orders) {
     let max = 0;
     (orders || []).forEach(function (order) {
@@ -489,10 +584,30 @@
   }
 
   function columnCount(revisionCount) {
+    if (activeTab === "on-revision") return 10;
     return 17 + (revisionCount * 2);
   }
 
   function renderHead(revisionCount) {
+    if (activeTab === "on-revision") {
+      headRow.innerHTML =
+        "<th>Order</th>" +
+        "<th>Fiverr ID Name</th>" +
+        "<th>Client Name</th>" +
+        "<th>Business Name</th>" +
+        "<th>Value</th>" +
+        "<th>Total Revisions</th>" +
+        "<th>Revision Progress</th>" +
+        "<th>Latest Revision Details</th>" +
+        "<th>Status</th>" +
+        "<th>Actions</th>";
+      if (table) {
+        table.classList.add("is-revision-board");
+        table.style.minWidth = "1240px";
+      }
+      return;
+    }
+    if (table) table.classList.remove("is-revision-board");
     const revisionHeads = [];
     for (let i = 1; i <= revisionCount; i += 1) {
       revisionHeads.push("<th>Revision " + i + " Buyer</th>");
@@ -604,6 +719,7 @@
   function render() {
     const all = auth.visibleOrders();
     updateTabCounts(all);
+    closeCompletePop();
     const revisionCount = maxRevisionCount(all);
     renderHead(revisionCount);
     const orders = all.slice().sort(function (a, b) {
@@ -634,6 +750,25 @@
       const paymentLabel = paymentCopyLabel(order);
       const typeLabel = store.orderTypeLabel(order);
       const statusLabel = statusCopyLabel(order);
+      const actions =
+        '<td class="records-actions">' +
+          '<a class="open-link" href="index.html?order=' + encodeURIComponent(order.id) + '">Edit</a>' +
+          '<button type="button" class="ghost-btn is-danger" data-delete-order="' + escapeHtml(order.id) + '">Delete</button>' +
+        "</td>";
+      if (activeTab === "on-revision") {
+        return '<tr class="records-row is-' + status + ' is-revision-board">' +
+          "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
+          "<td>" + withCopy(escapeHtml(order.fiverrId || "—"), order.fiverrId || "", "Fiverr ID name") + "</td>" +
+          "<td>" + editableNameCell(order, "clientName", "Add client name", "client name") + "</td>" +
+          "<td>" + editableNameCell(order, "businessName", "Add business name", "business name") + "</td>" +
+          '<td class="records-value">' + withCopy(formatValue(order.orderValue), order.orderValue == null ? "" : String(order.orderValue), "value") + "</td>" +
+          '<td class="records-rev-total">' + withCopy(String(rounds.length), String(rounds.length), "total revisions") + "</td>" +
+          '<td class="records-rev-progress-cell">' + revisionProgressHtml(order) + "</td>" +
+          '<td class="records-rev-latest-cell">' + latestRevisionDetailsHtml(order) + "</td>" +
+          "<td>" + withCopy(statusSelect(order), statusLabel, "status") + "</td>" +
+          actions +
+        "</tr>";
+      }
       let revisionCells = "";
       for (let r = 0; r < revisionCount; r += 1) {
         const round = rounds[r];
@@ -662,10 +797,7 @@
         revisionCells +
         "<td>" + withCopy(badge(order.paymentStatus || "in-progress", paymentLabel || "—"), paymentLabel, "payment") + "</td>" +
         "<td>" + withCopy(statusSelect(order), statusLabel, "status") + "</td>" +
-        '<td class="records-actions">' +
-          '<a class="open-link" href="index.html?order=' + encodeURIComponent(order.id) + '">Edit</a>' +
-          '<button type="button" class="ghost-btn is-danger" data-delete-order="' + escapeHtml(order.id) + '">Delete</button>' +
-        "</td>" +
+        actions +
       "</tr>";
     }).join("");
     bindLocalFileDownloads();
@@ -696,10 +828,17 @@
   const chatDrawerBody = document.getElementById("chat-drawer-body");
   const chatDrawerTitle = document.getElementById("chat-drawer-title");
   const chatDrawerSub = document.getElementById("chat-drawer-sub");
+  const revHistoryDrawer = document.getElementById("rev-history-drawer");
+  const revHistoryBody = document.getElementById("rev-history-body");
+  const revHistoryTitle = document.getElementById("rev-history-title");
+  const revHistorySub = document.getElementById("rev-history-sub");
+  const revCompletePop = document.getElementById("rev-complete-pop");
+  const revCompleteCopy = document.getElementById("rev-complete-copy");
   const chatLightbox = document.getElementById("chat-lightbox");
   const chatLightboxImage = document.getElementById("chat-lightbox-image");
   const chatLightboxName = document.getElementById("chat-lightbox-name");
   let lightboxFile = null;
+  let pendingComplete = null;
 
   function fileFromButton(el) {
     if (!el) return null;
@@ -829,13 +968,146 @@
 
   function closeChat() {
     if (chatDrawer) chatDrawer.hidden = true;
-    document.body.classList.remove("modal-open");
+    if (!revHistoryDrawer || revHistoryDrawer.hidden) document.body.classList.remove("modal-open");
     closeLightbox();
+  }
+
+  function closeRevHistory() {
+    if (revHistoryDrawer) revHistoryDrawer.hidden = true;
+    if (!chatDrawer || chatDrawer.hidden) document.body.classList.remove("modal-open");
+    closeLightbox();
+  }
+
+  function closeCompletePop() {
+    pendingComplete = null;
+    if (revCompletePop) revCompletePop.hidden = true;
+  }
+
+  function historyMessageHtml(message, role, label) {
+    const item = repairedMessage(message);
+    const text = item ? String(item.text || "").trim() : "";
+    const files = item && item.files;
+    const empty = !text && !hasFiles(files);
+    return '<div class="rev-history-msg is-' + role + '">' +
+      "<h4>" + escapeHtml(label) + "</h4>" +
+      (empty
+        ? '<p class="rev-history-empty">No message yet</p>'
+        : (text ? "<p>" + escapeHtml(text) + "</p>" : "")) +
+      attachmentsHtml(files) +
+    "</div>";
+  }
+
+  function openRevHistory(orderId) {
+    const order = store.getOrder(orderId);
+    if (!order || !revHistoryDrawer || !revHistoryBody) return;
+    closeChat();
+    closeCompletePop();
+    const rounds = revisionRounds(order);
+    const steps = revisionStepStates(rounds);
+    const who = order.clientName || order.name || "Client";
+    if (revHistoryTitle) revHistoryTitle.textContent = order.id;
+    if (revHistorySub) {
+      revHistorySub.textContent = who + " · " + (rounds.length === 1 ? "1 revision" : rounds.length + " revisions");
+    }
+    if (!rounds.length) {
+      revHistoryBody.innerHTML = '<p class="live-chat-empty">No revisions on this order yet.</p>';
+    } else {
+      revHistoryBody.innerHTML = steps.map(function (step) {
+        const pairs = revisionPairs(step.round);
+        const statusLabel = step.state === "completed" ? "Completed" : step.state === "current" ? "Current" : "Pending";
+        const body = pairs.length
+          ? pairs.map(function (pair, index) {
+              return '<div class="rev-history-pair">' +
+                (pairs.length > 1 ? '<p class="rev-history-pair-label">Message ' + (index + 1) + "</p>" : "") +
+                historyMessageHtml(pair.buyer, "buyer", "Buyer revision") +
+                historyMessageHtml(pair.client, "seller", "Seller reply") +
+              "</div>";
+            }).join("")
+          : historyMessageHtml(null, "buyer", "Buyer revision") + historyMessageHtml(null, "seller", "Seller reply");
+        return '<section class="rev-history-round is-' + step.state + '">' +
+          '<header class="rev-history-round-head">' +
+            "<h3>Revision " + step.number + "</h3>" +
+            '<span class="rev-history-status is-' + step.state + '">' + statusLabel + "</span>" +
+          "</header>" +
+          body +
+        "</section>";
+      }).join("");
+    }
+    revHistoryDrawer.hidden = false;
+    document.body.classList.add("modal-open");
+    hydrateLocalThumbs(revHistoryBody);
+    revHistoryBody.querySelectorAll("img.chat-thumb").forEach(function (img) {
+      img.addEventListener("error", function () {
+        const fallback = document.createElement("span");
+        fallback.className = "live-chat-file-fallback";
+        fallback.textContent = "IMG";
+        img.replaceWith(fallback);
+      });
+    });
+  }
+
+  function openCompletePop(button) {
+    const orderId = button.getAttribute("data-mark-revision");
+    const revisionId = button.getAttribute("data-revision-id");
+    const number = button.getAttribute("data-revision-number") || "1";
+    pendingComplete = { orderId: orderId, revisionId: revisionId, number: number };
+    if (revCompleteCopy) revCompleteCopy.textContent = "Mark Revision " + number + " as Completed";
+    if (!revCompletePop) return;
+    const rect = button.getBoundingClientRect();
+    revCompletePop.hidden = false;
+    const left = Math.min(Math.max(12, rect.left), window.innerWidth - 280);
+    const top = Math.min(rect.bottom + 8, window.innerHeight - 140);
+    revCompletePop.style.left = left + "px";
+    revCompletePop.style.top = top + "px";
+  }
+
+  function applyRevisionCompleted(order, revisionId, completed) {
+    const canSee = auth.canSeeOrder;
+    if (!order || (typeof canSee === "function" && !canSee.call(auth, order))) return;
+    if (completed) {
+      const rounds = revisionRounds(order);
+      const index = rounds.findIndex(function (round) { return String(round.id) === String(revisionId); });
+      if (index < 0) return;
+      const previousOpen = rounds.slice(0, index).some(function (round) { return !round.completed; });
+      if (previousOpen) {
+        showToast("Complete Revision " + index + " first.");
+        return;
+      }
+    }
+    if (typeof store.setRevisionCompleted === "function") {
+      store.setRevisionCompleted(order, revisionId, completed);
+    } else {
+      (order.revisions || []).forEach(function (round) {
+        if (String(round.id) === String(revisionId)) round.completed = completed;
+      });
+    }
+    store.upsertOrder(order);
+    const remaining = revisionRounds(order).filter(function (item) { return !item.completed; }).length;
+    closeCompletePop();
+    render();
+    const finish = function () {
+      render();
+      if (!completed) {
+        showToast("Revision marked open");
+      } else if (remaining) {
+        showToast("Revision completed. The next revision is now current.");
+      } else {
+        showToast("All revisions complete. Set status to Ready to Approve when it is ready.");
+      }
+    };
+    const sheet = window.OwlisticSheet;
+    if (sheet && typeof sheet.sync === "function") {
+      sheet.sync(order).then(finish).catch(finish);
+      return;
+    }
+    finish();
   }
 
   function openChat(orderId) {
     const order = store.getOrder(orderId);
     if (!order || !chatDrawer || !chatDrawerBody) return;
+    closeRevHistory();
+    closeCompletePop();
     const pairs = filledPairs(order);
     const who = order.clientName || order.name || "Client";
     if (chatDrawerTitle) chatDrawerTitle.textContent = order.id;
@@ -1022,6 +1294,30 @@
       return;
     }
 
+    const historyBtn = event.target.closest("[data-open-rev-history]");
+    if (historyBtn) {
+      event.preventDefault();
+      openRevHistory(historyBtn.getAttribute("data-open-rev-history"));
+      return;
+    }
+
+    const markBtn = event.target.closest("[data-mark-revision]");
+    if (markBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      openCompletePop(markBtn);
+      return;
+    }
+
+    const pendingStep = event.target.closest("[data-pending-revision]");
+    if (pendingStep) {
+      event.preventDefault();
+      const number = pendingStep.getAttribute("data-pending-revision");
+      const blocked = pendingStep.getAttribute("data-blocked-by");
+      showToast("Complete Revision " + blocked + " before Revision " + number + ".");
+      return;
+    }
+
     const copyBtn = event.target.closest("[data-copy]");
     if (copyBtn) {
       event.preventDefault();
@@ -1132,35 +1428,7 @@
       const revisionId = box.getAttribute("data-revision-id");
       const order = store.getOrder(id);
       if (!order) return;
-      const canSee = auth.canSeeOrder || auth.canSeeOrder;
-      if (typeof canSee === "function" && !canSee.call(auth, order)) return;
-      if (typeof store.setRevisionCompleted === "function") {
-        store.setRevisionCompleted(order, revisionId, box.checked);
-      } else {
-        (order.revisions || []).forEach(function (round) {
-          if (String(round.id) === String(revisionId)) round.completed = box.checked;
-        });
-      }
-      store.upsertOrder(order);
-      const sheet = window.OwlisticSheet;
-      const rounds = store.normalizeRevisions(order.revisions || []);
-      const remaining = rounds.filter(function (item) { return !item.completed; }).length;
-      render();
-      const finish = function () {
-        render();
-        if (!box.checked) {
-          showToast("Revision marked open");
-        } else if (remaining) {
-          showToast("Revision completed. The next revision is now showing.");
-        } else {
-          showToast("All revisions complete. Set status to Ready to Approve when it is ready.");
-        }
-      };
-      if (sheet && typeof sheet.sync === "function") {
-        sheet.sync(order).then(finish).catch(finish);
-        return;
-      }
-      finish();
+      applyRevisionCompleted(order, revisionId, box.checked);
       return;
     }
     const select = event.target.closest("[data-status-order]");
@@ -1197,6 +1465,28 @@
       closeChat();
       return;
     }
+    if (event.target.closest("[data-close-rev-history]")) {
+      closeRevHistory();
+      return;
+    }
+    if (event.target.closest("[data-close-complete-pop]")) {
+      closeCompletePop();
+      return;
+    }
+    if (event.target.closest("#rev-complete-yes")) {
+      event.preventDefault();
+      if (!pendingComplete) return;
+      const order = store.getOrder(pendingComplete.orderId);
+      if (!order) {
+        closeCompletePop();
+        return;
+      }
+      applyRevisionCompleted(order, pendingComplete.revisionId, true);
+      return;
+    }
+    if (revCompletePop && !revCompletePop.hidden && !event.target.closest("#rev-complete-pop") && !event.target.closest("[data-mark-revision]")) {
+      closeCompletePop();
+    }
     if (event.target.closest("[data-close-lightbox]")) {
       closeLightbox();
       return;
@@ -1230,6 +1520,14 @@
     if (event.key !== "Escape") return;
     if (chatLightbox && !chatLightbox.hidden) {
       closeLightbox();
+      return;
+    }
+    if (revCompletePop && !revCompletePop.hidden) {
+      closeCompletePop();
+      return;
+    }
+    if (revHistoryDrawer && !revHistoryDrawer.hidden) {
+      closeRevHistory();
       return;
     }
     if (chatDrawer && !chatDrawer.hidden) closeChat();
