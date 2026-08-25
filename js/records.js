@@ -401,20 +401,11 @@
   }
 
   function tabOf(order) {
-    const board = String((order && order.boardStatus) || "").trim().toLowerCase();
-    if (
-      board === "on-revision" ||
-      board === "on revision" ||
-      board === "revision" ||
-      board === "revision-pending" ||
-      board === "revision pending" ||
-      board === "revision needed"
-    ) {
-      return "on-revision";
+    if (typeof store.boardStatusOf === "function") {
+      return store.boardStatusOf(order) || "in-progress";
     }
     if (typeof store.recordTab === "function") {
-      const tab = store.recordTab(order);
-      return tab === "on-revision" ? "on-revision" : tab;
+      return store.recordTab(order) || "in-progress";
     }
     const status = store.computeStatus(order);
     if (status === "completed") return "completed";
@@ -1169,7 +1160,7 @@
     };
     const sheet = window.OwlisticSheet;
     if (sheet && typeof sheet.sync === "function") {
-      sheet.sync(order).then(finish).catch(finish);
+      sheet.sync(order, { skipUploads: true }).then(finish).catch(finish);
       return;
     }
     finish();

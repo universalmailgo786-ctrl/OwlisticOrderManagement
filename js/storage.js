@@ -257,11 +257,18 @@
     ) {
       return "on-revision";
     }
-    if (raw === "in-progress" || raw === "in progress" || raw === "waiting") return "in-progress";
-    if (/ready to approve/.test(raw)) return "ready-to-approve";
-    if (/complete/.test(raw)) return "completed";
-    if (/revision/.test(raw)) return "on-revision";
-    if (/progress/.test(raw)) return "in-progress";
+    if (
+      raw === "in-progress" ||
+      raw === "in progress" ||
+      raw === "waiting" ||
+      raw === "new order has to be placed"
+    ) {
+      return "in-progress";
+    }
+    if (/ready\s*to\s*approve/.test(raw)) return "ready-to-approve";
+    if (/^completed$|^complete$/.test(raw)) return "completed";
+    if (/on\s*revision|revision\s*pending|revision\s*needed/.test(raw)) return "on-revision";
+    if (/in\s*progress|new order/.test(raw)) return "in-progress";
     return "";
   }
 
@@ -929,6 +936,9 @@
       order.boardStatus = parseBoardStatus(order.boardStatus) ||
         parseBoardStatus(order.overallStatus) ||
         "";
+      order.overallStatus = order.overallStatus ||
+        (order.boardStatus && boardStatusLabel(order.boardStatus)) ||
+        "";
       order.status = computeStatus(order);
       return order;
     }
@@ -967,10 +977,20 @@
     if (!String(order.clientName || "").trim() && previous.clientName) {
       order.clientName = previous.clientName;
     }
-    order.boardStatus = parseBoardStatus(order.boardStatus) ||
-      parseBoardStatus(order.overallStatus) ||
-      previous.boardStatus ||
-      "";
+    const incomingStatus = parseBoardStatus(order.boardStatus) || parseBoardStatus(order.overallStatus);
+    const previousStatus = parseBoardStatus(previous.boardStatus) || parseBoardStatus(previous.overallStatus);
+    const incomingUpdated = Date.parse(order.updatedAt || "") || 0;
+    const previousUpdated = Date.parse(previous.updatedAt || "") || 0;
+    if (previousStatus && previousUpdated && incomingUpdated && previousUpdated > incomingUpdated) {
+      order.boardStatus = previousStatus;
+      order.overallStatus = previous.overallStatus || boardStatusLabel(previousStatus);
+    } else {
+      order.boardStatus = incomingStatus || previousStatus || "";
+      order.overallStatus = order.overallStatus ||
+        (order.boardStatus && boardStatusLabel(order.boardStatus)) ||
+        previous.overallStatus ||
+        "";
+    }
     order.status = computeStatus(order);
     return order;
   }

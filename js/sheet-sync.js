@@ -274,42 +274,43 @@
   }
 
   function toRow(order) {
-    const rounds = callStore("normalizeRevisions", "normalizeRevisions", order.revisions || []) || [];
-    const current = callStore("currentRevision", "currentRevision", order);
-    const tab = callStore("boardStatusOf", "boardStatusOf", order) || "";
-    const status = callStore("computeStatus", "computeStatus", order);
-    const typeLabel = callStore("orderTypeLabel", "orderTypeLabel", order) || "";
+    const live = liveOrder(order) || order || {};
+    const rounds = callStore("normalizeRevisions", "normalizeRevisions", live.revisions || []) || [];
+    const current = callStore("currentRevision", "currentRevision", live);
+    const tab = callStore("boardStatusOf", "boardStatusOf", live) || "";
+    const status = callStore("computeStatus", "computeStatus", live);
+    const typeLabel = callStore("orderTypeLabel", "orderTypeLabel", live) || "";
     const statusLabel = callStore("boardStatusLabel", "boardStatusLabel", tab) ||
       callStore("statusLabel", "statusLabel", status) ||
-      String(order.overallStatus || status || "");
+      String(live.overallStatus || status || "");
     return [
-      order.id || "",
-      formatDate(order.createdAt || order.createdAt),
-      formatTime(order.createdAt || order.createdAt),
-      formatDate(order.updatedAt || order.updatedAt),
-      formatTime(order.updatedAt || order.updatedAt),
-      accountNameOf(order),
-      order.whatsapp || "",
-      order.name || "",
-      order.orderValue || order.orderValue || "",
-      paymentLabel(order),
-      order.searchKeyword || order.searchKeyword || "",
+      live.id || "",
+      formatDate(live.createdAt || live.createdAt),
+      formatTime(live.createdAt || live.createdAt),
+      formatDate(live.updatedAt || live.updatedAt),
+      formatTime(live.updatedAt || live.updatedAt),
+      accountNameOf(live),
+      live.whatsapp || "",
+      live.name || "",
+      live.orderValue || live.orderValue || "",
+      paymentLabel(live),
+      live.searchKeyword || live.searchKeyword || "",
       typeLabel,
-      order.messageText || callStore("formatMessageThread", "formatMessageThread", order.messageThread || []) || "",
-      order.directRequirements || order.directRequirements || "",
-      fileRefs(order.requirementFiles || order.requirementFiles),
-      order.fiverrId || order.fiverrId || "",
-      order.fiverrGigUrl || order.fiverrGigUrl || "",
-      order.reviewText || order.reviewText || "",
+      live.messageText || callStore("formatMessageThread", "formatMessageThread", live.messageThread || []) || "",
+      live.directRequirements || live.directRequirements || "",
+      fileRefs(live.requirementFiles || live.requirementFiles),
+      live.fiverrId || live.fiverrId || "",
+      live.fiverrGigUrl || live.fiverrGigUrl || "",
+      live.reviewText || live.reviewText || "",
       rounds.length ? String(rounds.length) : "0",
-      revisionHistory(order),
+      revisionHistory(live),
       current ? ("Revision " + current.number) : "None",
       latestMessage(rounds, "buyer"),
       latestMessage(rounds, "seller"),
-      order.readyToApprove || order.readyToApprove ? "Ready to Approve" : "Not Ready",
+      live.readyToApprove || live.readyToApprove ? "Ready to Approve" : "Not Ready",
       statusLabel,
-      order.businessName || "",
-      order.clientName || ""
+      live.businessName || "",
+      live.clientName || ""
     ];
   }
 
@@ -779,49 +780,78 @@
     });
   }
 
-  let statusSyncQueue = Promise.resolve();
+  const writeQueues = {};
+
+  function liveOrder(order) {
+    if (order && order.id && store && typeof store.getOrder === "function") {
+      return store.getOrder(order.id) || order;
+    }
+    return order;
+  }
+
+  function enqueueOrderWrite(orderId, task) {
+    const key = String(orderId || "_none");
+    const previous = writeQueues[key] || Promise.resolve();
+    const next = previous.catch(function () {}).then(task);
+    writeQueues[key] = next;
+    return next;
+  }
 
   function updateOrderStatus(order) {
     if (!isConfigured() || !order || !order.id) {
       return Promise.resolve({ skipped: true });
     }
-    const orderId = order.id;
-    statusSyncQueue = statusSyncQueue.catch(function () {}).then(function () {
-      const latest = (store && store.getOrder && store.getOrder(orderId)) || order;
-      return sync(latest, { skipUploads: true });
+    return enqueueOrderWrite(order.id, function () {
+      const latest = liveOrder(order) || order;
+      const tab = callStore("boardStatusOf", "boardStatusOf", latest) || "in-progress";
+      const label = callStore("boardStatusLabel", "boardStatusLabel", tab) || "";
+      return postPayload({
+        action: "updateOrderStatus",
+        orderId: latest.id,
+        accountName: accountNameOf(latest),
+        tabName: tabNameOf(accountNameOf(latest)),
+        boardStatus: tab,
+        status: tab,
+        overallStatus: label,
+        statusLabel: label,
+        row: toRow(latest)
+      });
     });
-    return statusSyncQueue;
   }
 
   function sync(order, options) {
     if (!order) {
       return Promise.resolve({ skipped: true });
     }
-    const tabName = tabNameOf(accountNameOf(order));
-    const start = options && options.skipUploads ? Promise.resolve([]) : uploadOrderFiles(order);
-    return start.then(function (uploadResults) {
-      const missing = filesMissingDrive(order).map(function (file) { return file.name; });
-      const uploadedNames = (uploadResults || []).filter(function (item) {
-        return item && item.file && item.file.url;
-      }).map(function (item) { return item.file.name; });
-      return postPayload({
-        action: "upsert",
-        orderId: order.id,
-        accountName: accountNameOf(order),
-        tabName: tabName,
-        businessName: order.businessName || "",
-        clientName: order.clientName || "",
-        row: toRow(order),
-        uploads: []
-      }).then(function (result) {
-        result = result || { ok: true };
-        result.skippedLarge = [];
-        result.uploadedNames = uploadedNames;
-        result.uploadedLocalIds = (uploadResults || []).map(function (item) {
-          return item && item.file && item.file.id;
-        }).filter(Boolean);
-        result.missingDriveFiles = missing;
-        return result;
+    return enqueueOrderWrite(order.id, function () {
+      const latest = liveOrder(order) || order;
+      const tabName = tabNameOf(accountNameOf(latest));
+      const start = options && options.skipUploads ? Promise.resolve([]) : uploadOrderFiles(latest);
+      return start.then(function (uploadResults) {
+        const current = liveOrder(latest) || latest;
+        const missing = filesMissingDrive(current).map(function (file) { return file.name; });
+        const uploadedNames = (uploadResults || []).filter(function (item) {
+          return item && item.file && item.file.url;
+        }).map(function (item) { return item.file.name; });
+        return postPayload({
+          action: "upsert",
+          orderId: current.id,
+          accountName: accountNameOf(current),
+          tabName: tabName,
+          businessName: current.businessName || "",
+          clientName: current.clientName || "",
+          row: toRow(current),
+          uploads: []
+        }).then(function (result) {
+          result = result || { ok: true };
+          result.skippedLarge = [];
+          result.uploadedNames = uploadedNames;
+          result.uploadedLocalIds = (uploadResults || []).map(function (item) {
+            return item && item.file && item.file.id;
+          }).filter(Boolean);
+          result.missingDriveFiles = missing;
+          return result;
+        });
       });
     });
   }

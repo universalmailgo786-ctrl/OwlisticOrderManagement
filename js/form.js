@@ -1141,6 +1141,9 @@
       boardStatus: existing && existing.boardStatus
         ? existing.boardStatus
         : (boardStatusSelect ? boardStatusSelect.value : "in-progress"),
+      overallStatus: (store.boardStatusLabel && store.boardStatusLabel(
+        (existing && existing.boardStatus) || (boardStatusSelect && boardStatusSelect.value) || "in-progress"
+      )) || (existing && existing.overallStatus) || "",
       orderValue: document.getElementById("orderValue").value,
       paymentStatus: selectedPayment("paymentStatus"),
       searchKeyword: document.getElementById("searchKeyword").value.trim(),

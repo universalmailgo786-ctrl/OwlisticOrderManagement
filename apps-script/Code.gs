@@ -821,6 +821,26 @@ function orderFromRow_(row, tabName, files) {
   };
 }
 
+function rowUpdatedAt_(row) {
+  if (!row) return 0;
+  var dateVal = row[3];
+  var timeVal = row[4];
+  if (dateVal instanceof Date && !isNaN(dateVal.getTime()) && timeVal instanceof Date && !isNaN(timeVal.getTime())) {
+    return new Date(
+      dateVal.getFullYear(),
+      dateVal.getMonth(),
+      dateVal.getDate(),
+      timeVal.getHours(),
+      timeVal.getMinutes(),
+      timeVal.getSeconds()
+    ).getTime();
+  }
+  if (dateVal instanceof Date && !isNaN(dateVal.getTime())) return dateVal.getTime();
+  var combined = String(dateVal || "").trim() + " " + String(timeVal || "").trim();
+  var parsed = Date.parse(combined);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
 function parseBoardStatus_(value) {
   var raw = String(value || "").trim().toLowerCase();
   if (!raw) return "";
@@ -836,11 +856,18 @@ function parseBoardStatus_(value) {
   ) {
     return "on-revision";
   }
-  if (raw === "in-progress" || raw === "in progress" || raw === "waiting") return "in-progress";
-  if (/ready to approve/.test(raw)) return "ready-to-approve";
-  if (/complete/.test(raw)) return "completed";
-  if (/revision/.test(raw)) return "on-revision";
-  if (/progress/.test(raw)) return "in-progress";
+  if (
+    raw === "in-progress" ||
+    raw === "in progress" ||
+    raw === "waiting" ||
+    raw === "new order has to be placed"
+  ) {
+    return "in-progress";
+  }
+  if (/ready\s*to\s*approve/.test(raw)) return "ready-to-approve";
+  if (/^completed$|^complete$/.test(raw)) return "completed";
+  if (/on\s*revision|revision\s*pending|revision\s*needed/.test(raw)) return "on-revision";
+  if (/in\s*progress|new order/.test(raw)) return "in-progress";
   return "";
 }
 
@@ -956,6 +983,17 @@ function upsertOrderLocked_(ss, data) {
   if (existingRow) {
     if (!String(row[25] || "").trim()) row[25] = String(existingRow[25] || "").trim();
     if (!String(row[26] || "").trim()) row[26] = String(existingRow[26] || "").trim();
+    if (!String(row[24] || "").trim()) {
+      row[23] = existingRow[23];
+      row[24] = existingRow[24];
+    } else {
+      var incomingTs = rowUpdatedAt_(row);
+      var existingTs = rowUpdatedAt_(existingRow);
+      if (existingTs && incomingTs && incomingTs < existingTs) {
+        row[23] = existingRow[23];
+        row[24] = existingRow[24];
+      }
+    }
   }
   ensureNameColumns_(target);
 
