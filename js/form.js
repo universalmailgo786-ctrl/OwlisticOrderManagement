@@ -990,6 +990,8 @@
   function fillAccountEditor(account) {
     document.getElementById("account-edit-id").value = account && account.id ? account.id : "";
     document.getElementById("account-name").value = account && account.name ? account.name : "";
+    document.getElementById("account-username").value = account && account.username ? account.username : "";
+    document.getElementById("account-username-password").value = "";
     document.getElementById("account-whatsapp").value = account && account.whatsapp ? account.whatsapp : "";
     document.getElementById("account-person-name").value = account && account.personName ? account.personName : "";
     document.getElementById("account-fiverr-id").value = account && account.fiverrId ? account.fiverrId : "";
@@ -1523,7 +1525,7 @@
         showToast("You can only open orders for your account.");
         goToDefaultPage();
       }
-    } else if (!isAdmin()) {
+    } else {
       applyAccount(lockedAccount());
     }
   }
@@ -1543,7 +1545,6 @@
 
   accountSelect.addEventListener("change", function () {
     applyAccount(store.getAccount(accountSelect.value));
-    maybePersist();
   });
 
   document.getElementById("manage-accounts").addEventListener("click", openAccountModal);
@@ -1558,20 +1559,44 @@
   accountEditor.addEventListener("submit", function (event) {
     event.preventDefault();
     if (!isAdmin()) return;
-    const saved = store.upsertAccount({
+    const name = document.getElementById("account-name").value.trim();
+    if (!name) {
+      showToast("Account Name is required.");
+      document.getElementById("account-name").focus();
+      return;
+    }
+    const username = document.getElementById("account-username").value.trim();
+    const password = document.getElementById("account-username-password").value;
+    const payload = {
       id: document.getElementById("account-edit-id").value || undefined,
-      name: document.getElementById("account-name").value.trim(),
+      name: name,
       whatsapp: document.getElementById("account-whatsapp").value.trim(),
       personName: document.getElementById("account-person-name").value.trim(),
       paymentStatus: selectedPayment("accountPaymentStatus"),
       fiverrId: document.getElementById("account-fiverr-id").value.trim(),
       fiverrGigUrl: document.getElementById("account-fiverr-url").value.trim()
-    });
+    };
+    if (username) payload.username = username;
+    const saved = store.upsertAccount(payload);
     populateAccounts(saved.id);
     applyAccount(saved);
     fillAccountEditor(saved);
     renderAccountList();
     syncAccountTabs("Account saved. Sheet tab created.");
+    if (username && window.OwlisticSheet && typeof window.OwlisticSheet.upsertUser === "function") {
+      window.OwlisticSheet.upsertUser({
+        username: username,
+        password: password,
+        account: saved.name,
+        displayName: saved.personName || saved.name
+      }).then(function (result) {
+        if (result && result.ok === false) {
+          showToast(result.error || "Account saved. Login user was not stored.");
+        }
+      }).catch(function () {
+        showToast("Account saved. Login user was not stored.");
+      });
+    }
   });
 
   document.getElementById("check-prices").addEventListener("click", openPriceModal);

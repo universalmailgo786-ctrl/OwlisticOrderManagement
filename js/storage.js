@@ -134,23 +134,33 @@
   function upsertAccount(account) {
     const accounts = getAccounts();
     const stamp = nowIso();
-    if (!account.id) {
-      account.id = uid("acc");
-      account.createdAt = stamp;
-      accounts.push(account);
-    } else {
-      const index = accounts.findIndex(function (item) { return item.id === account.id; });
-      if (index === -1) {
-        account.createdAt = stamp;
-        accounts.push(account);
-      } else {
-        account.createdAt = accounts[index].createdAt || stamp;
-        accounts[index] = account;
-      }
+    const incoming = account || {};
+    let index = -1;
+    if (incoming.id) {
+      index = accounts.findIndex(function (item) { return item.id === incoming.id; });
     }
-    account.updatedAt = stamp;
+    if (index === -1 && incoming.name) {
+      index = accounts.findIndex(function (item) {
+        return sameAccountName(item.name, incoming.name) || sameAccountName(accountLabel(item), incoming.name);
+      });
+    }
+    if (index === -1) {
+      incoming.id = incoming.id || uid("acc");
+      incoming.createdAt = stamp;
+      incoming.updatedAt = stamp;
+      accounts.push(incoming);
+      saveAccounts(accounts);
+      return incoming;
+    }
+    const previous = accounts[index];
+    const merged = Object.assign({}, previous, incoming, {
+      id: previous.id,
+      createdAt: previous.createdAt || stamp,
+      updatedAt: stamp
+    });
+    accounts[index] = merged;
     saveAccounts(accounts);
-    return account;
+    return merged;
   }
 
   function deleteAccount(id) {
