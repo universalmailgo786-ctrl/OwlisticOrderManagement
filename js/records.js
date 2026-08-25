@@ -28,6 +28,11 @@
 
   let activeTab = "in-progress";
 
+  function orderNumber(order) {
+    const match = String((order && order.id) || "").match(/(\d+)/);
+    return match ? parseInt(match[1], 10) : 0;
+  }
+
   function badge(status, label) {
     const cls = status === "revision-pending" || status === "on-revision" ? "badge-red"
       : status === "ready-to-approve" ? "badge-gold"
@@ -421,7 +426,10 @@
     const revisionCount = maxRevisionCount(all);
     renderHead(pairCount, revisionCount);
     const orders = all.slice().sort(function (a, b) {
-      return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+      const na = orderNumber(a);
+      const nb = orderNumber(b);
+      if (na !== nb) return na - nb;
+      return String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
     }).filter(function (order) {
       return tabOf(order) === activeTab && matchesFilters(order);
     });
