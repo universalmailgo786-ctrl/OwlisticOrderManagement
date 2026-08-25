@@ -320,6 +320,8 @@
       "<th>Order</th>" +
       "<th>WhatsApp Number</th>" +
       "<th>Name</th>" +
+      "<th>Fiverr ID Name</th>" +
+      "<th>Fiverr GIG URL</th>" +
       "<th>Client Name</th>" +
       "<th>Business Name</th>" +
       "<th>Value</th>" +
@@ -327,8 +329,6 @@
       messageHeads.join("") +
       "<th>Direct Order Requirements</th>" +
       "<th>Requirement Files</th>" +
-      "<th>Fiverr ID Name</th>" +
-      "<th>Fiverr GIG URL</th>" +
       "<th>Review Text (Feedback)</th>" +
       revisionHeads.join("") +
       "<th>Payment</th>" +
@@ -473,6 +473,8 @@
         "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
         "<td>" + withCopy(escapeHtml(order.whatsapp || "—"), order.whatsapp || "", "WhatsApp number") + "</td>" +
         "<td>" + withCopy(escapeHtml(order.name || "—"), order.name || "", "name") + "</td>" +
+        "<td>" + withCopy(escapeHtml(order.fiverrId || "—"), order.fiverrId || "", "Fiverr ID name") + "</td>" +
+        '<td class="records-clip-cell">' + withCopy(linkCell(order.fiverrGigUrl), order.fiverrGigUrl || "", "Fiverr GIG URL") + "</td>" +
         "<td>" + editableNameCell(order, "clientName", "Add client name", "client name") + "</td>" +
         "<td>" + editableNameCell(order, "businessName", "Add business name", "business name") + "</td>" +
         '<td class="records-value">' + withCopy(formatValue(order.orderValue), order.orderValue == null ? "" : String(order.orderValue), "value") + "</td>" +
@@ -480,8 +482,6 @@
         messageCells +
         '<td class="records-clip-cell">' + withCopy(clipText(order.directRequirements), order.directRequirements || "", "direct order requirements") + "</td>" +
         mediaCell(filesCell(order.requirementFiles), filesCopyText(order.requirementFiles), "requirement files", hasFiles(order.requirementFiles)) +
-        "<td>" + withCopy(escapeHtml(order.fiverrId || "—"), order.fiverrId || "", "Fiverr ID name") + "</td>" +
-        '<td class="records-clip-cell">' + withCopy(linkCell(order.fiverrGigUrl), order.fiverrGigUrl || "", "Fiverr GIG URL") + "</td>" +
         '<td class="records-clip-cell">' + withCopy(clipText(order.reviewText), order.reviewText || "", "review text") + "</td>" +
         revisionCells +
         "<td>" + withCopy(badge(order.paymentStatus || "in-progress", paymentLabel || "—"), paymentLabel, "payment") + "</td>" +
