@@ -45,7 +45,7 @@ var GOLD_TEXT = "#6b5420";
 var SKY = "#e4eef4";
 var SKY_TEXT = "#1f4f66";
 var COL_WIDTHS = [118, 122, 108, 140, 128, 150, 150, 150, 108, 132, 140, 150, 240, 220, 220, 140, 200, 200, 92, 260, 140, 220, 220, 168, 168, 160, 160];
-var FILES_FOLDER_NAME = "Owlistic Order Files";
+var FILES_FOLDER_ID = "1feJrckxiyjHzCe9Rz_w-L879BWjpExdB";
 var TAB_COLORS = ["#9baa86", "#c4a574", "#4e91b1", "#e98a5f", "#708b55", "#8b6b4a"];
 var FORMAT_ROWS = 300;
 
@@ -335,9 +335,7 @@ function filesFromCell_(rich, fallbackText) {
 }
 
 function filesFolder_() {
-  var folders = DriveApp.getFoldersByName(FILES_FOLDER_NAME);
-  if (folders.hasNext()) return folders.next();
-  return DriveApp.createFolder(FILES_FOLDER_NAME);
+  return DriveApp.getFolderById(FILES_FOLDER_ID);
 }
 
 function orderFolder_(orderId) {
