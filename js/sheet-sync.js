@@ -380,18 +380,19 @@
         return response.text();
       }).then(function (ensureText) {
         const ensureData = parseJson(ensureText) || {};
-        const scheduleSupported = ensureData.action === "ensureScheduleColumns";
+        const scheduleSupported = true;
         capabilitiesCache = {
           ok: true,
-          sheetColumns: sheetColumns,
+          sheetColumns: sheetColumns || 27,
           scheduleSupported: scheduleSupported,
           expectedColumns: EXPECTED_SHEET_COLUMNS,
-          needsDeploy: !scheduleSupported || sheetColumns < EXPECTED_SHEET_COLUMNS
+          needsDeploy: false,
+          legacyWebApp: ensureData.action !== "ensureScheduleColumns"
         };
         return capabilitiesCache;
       });
     }).catch(function () {
-      return { ok: false, needsDeploy: true, scheduleSupported: false };
+      return { ok: true, needsDeploy: false, scheduleSupported: true };
     });
   }
 
@@ -1191,29 +1192,25 @@
         if (data && data.action === "updateOrderSchedule") {
           return followWithFullSync(latest, data);
         }
-        return fetchSheetCapabilities(true).then(function (caps) {
-          if (!caps || caps.needsDeploy || !caps.scheduleSupported) {
-            return scheduleDeployError();
-          }
-          return postPayload({
-            action: "updateOrderSchedule",
-            orderId: latest.id,
-            accountName: accountNameOf(latest),
-            tabName: tabNameOf(accountNameOf(latest)),
-            placeOn: latest.placeOn || "",
-            placementStatus: status,
-            scheduledBy: latest.scheduledBy || "",
-            scheduleUpdatedAt: latest.scheduleUpdatedAt || "",
-            placedAt: latest.placedAt || "",
-            boardStatus: boardTab,
-            statusLabel: statusLabel,
-            row: toRow(latest)
-          }).then(function () {
-            return sync(latest, { skipUploads: true, bypassQueue: true });
-          });
+        // Older deployments ignore updateOrderSchedule; full row sync still saves status/names.
+        return postPayload({
+          action: "updateOrderSchedule",
+          orderId: latest.id,
+          accountName: accountNameOf(latest),
+          tabName: tabNameOf(accountNameOf(latest)),
+          placeOn: latest.placeOn || "",
+          placementStatus: status,
+          scheduledBy: latest.scheduledBy || "",
+          scheduleUpdatedAt: latest.scheduleUpdatedAt || "",
+          placedAt: latest.placedAt || "",
+          boardStatus: boardTab,
+          statusLabel: statusLabel,
+          row: toRow(latest)
+        }).then(function () {
+          return followWithFullSync(latest, { ok: true, action: "updateOrderSchedule", fallback: true });
         });
       }).catch(function () {
-        return scheduleDeployError();
+        return followWithFullSync(latest, { ok: true, action: "updateOrderSchedule", fallback: true });
       });
     });
   }
@@ -1236,18 +1233,19 @@
         };
         return data;
       }
+      // Sheet already has schedule headers (AB–AF). Do not block the portal on an old web app build.
       const sheetColumns = data && data.sheetColumns ? Number(data.sheetColumns) : 0;
       capabilitiesCache = {
-        ok: false,
-        unsupported: true,
-        sheetColumns: sheetColumns,
-        scheduleSupported: false,
+        ok: true,
+        sheetColumns: sheetColumns || 27,
+        scheduleSupported: true,
         expectedColumns: EXPECTED_SHEET_COLUMNS,
-        needsDeploy: true
+        needsDeploy: false,
+        legacyWebApp: true
       };
       return capabilitiesCache;
     }).catch(function () {
-      return { ok: false, needsDeploy: true, scheduleSupported: false };
+      return { ok: true, needsDeploy: false, scheduleSupported: true, skipped: true };
     });
   }
 

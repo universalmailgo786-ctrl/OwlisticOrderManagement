@@ -30,25 +30,6 @@
       <p class="records-count" id="records-count">0 orders</p>
     </header>
 
-    <div class="sheet-upgrade-banner" id="sheet-upgrade-banner" hidden>
-      <div class="sheet-upgrade-copy">
-        <p class="sheet-upgrade-title">One step left: update Google Apps Script</p>
-        <p class="sheet-upgrade-text">The portal is ready. Your live sheet script is still on <span id="sheet-upgrade-columns">27</span> columns, so Place On / Placement Status / Placed At cannot be written yet.</p>
-        <ol class="sheet-upgrade-steps">
-          <li>Click <strong>Copy updated script</strong> (or use the script already on your clipboard if we just copied it)</li>
-          <li>Open the sheet → <strong>Extensions → Apps Script</strong></li>
-          <li>Select all in <code>Code.gs</code>, paste, then <strong>Save</strong> (Ctrl/Cmd+S)</li>
-          <li><strong>Deploy → Manage deployments →</strong> pencil icon → Version: <strong>New version</strong> → <strong>Deploy</strong></li>
-          <li>Come back here and click <strong>I redeployed — check again</strong></li>
-        </ol>
-      </div>
-      <div class="sheet-upgrade-actions">
-        <button type="button" class="submit-btn" id="copy-sheet-script-records">Copy updated script</button>
-        <a class="ghost-btn" href="https://docs.google.com/spreadsheets/d/1nZuMePQFJA9lCQ6C48d9MUC3Fwn00ao6Kilap5rbFfQ/edit" target="_blank" rel="noopener">Open Google Sheet</a>
-        <button type="button" class="ghost-btn" id="recheck-sheet-script">I redeployed — check again</button>
-      </div>
-    </div>
-
     <div class="records-tabs" role="tablist" aria-label="Order status">
       <button type="button" class="records-tab is-active" role="tab" id="tab-in-progress" data-tab="in-progress" aria-selected="true">
         New order has to be placed
@@ -265,10 +246,10 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="js/storage.js?v=placed5"></script>
+  <script src="js/storage.js?v=placed6"></script>
   <script src="js/apps-script-source.js?v=placed5"></script>
-  <script src="js/sheet-sync.js?v=placed5"></script>
+  <script src="js/sheet-sync.js?v=placed6"></script>
   <script src="js/auth.js?v=schedule1"></script>
-  <script src="js/records.js?v=placed5"></script>
+  <script src="js/records.js?v=placed6"></script>
 </body>
 </html>
