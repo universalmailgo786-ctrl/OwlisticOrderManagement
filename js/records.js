@@ -908,6 +908,28 @@
     updateAccountSummary(inProgress);
   }
 
+  function markFilterFields() {
+    const fields = [
+      [search, "search"],
+      [dateFilter, "date"],
+      [accountFilter, "account"],
+      [paymentFilter, "payment"],
+      [revisionFilter, "revision"],
+      [readyFilter, "ready"],
+      [placeOnFilter, "placeOn"]
+    ];
+    let active = Boolean(scheduleFilter);
+    fields.forEach(function (item) {
+      const input = item[0];
+      if (!input) return;
+      const filled = Boolean(String(input.value || "").trim());
+      const wrap = input.closest(".records-field");
+      if (wrap) wrap.classList.toggle("is-filled", filled);
+      if (filled) active = true;
+    });
+    if (scheduleClearAll) scheduleClearAll.classList.toggle("is-active", active);
+  }
+
   function render() {
     const all = auth.visibleOrders();
     updateTabCounts(all);
@@ -923,6 +945,7 @@
       return tabOf(order) === activeTab && matchesFilters(order);
     });
     updateScheduleChrome(all, orders);
+    markFilterFields();
 
     const noun = orders.length === 1 ? "order" : "orders";
     countEl.textContent = orders.length + " " + noun;

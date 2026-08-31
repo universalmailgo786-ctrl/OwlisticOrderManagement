@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=schedule1" />
+  <link rel="stylesheet" href="css/styles.css?v=filters2" />
 </head>
 <body class="records-page">
   <nav class="app-nav">
@@ -91,48 +91,57 @@
     <p class="schedule-account-summary" id="schedule-account-summary" hidden></p>
 
     <section class="records-filters" aria-label="Filter orders">
-      <label class="records-field records-field-search">
-        <span>Search</span>
-        <input type="search" id="records-search" placeholder="Order ID, Fiverr ID, name, message, or requirements" />
-      </label>
-      <label class="records-field">
-        <span>Date</span>
-        <input type="date" id="filter-date" />
-      </label>
-      <label class="records-field admin-only" id="filter-account-field">
-        <span>Account</span>
-        <select id="filter-account">
-          <option value="">All accounts</option>
-        </select>
-      </label>
-      <label class="records-field">
-        <span>Payment</span>
-        <select id="filter-payment">
-          <option value="">All payment statuses</option>
-          <option value="paid">Paid</option>
-          <option value="unpaid">Unpaid</option>
-        </select>
-      </label>
-      <label class="records-field">
-        <span>Revision</span>
-        <select id="filter-revision">
-          <option value="">All revisions</option>
-          <option value="pending">Revision Pending</option>
-          <option value="completed">Completed revision</option>
-          <option value="none">No revisions</option>
-        </select>
-      </label>
-      <label class="records-field">
-        <span>Ready to approve</span>
-        <select id="filter-ready">
-          <option value="">All approval states</option>
-          <option value="yes">Ready to Approve</option>
-          <option value="no">Not Ready</option>
-        </select>
-      </label>
+      <div class="records-filter-toolbar">
+        <label class="records-field records-field-search">
+          <span class="sr-only">Search</span>
+          <span class="records-search-wrap">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M16 16.5 20 20.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <input type="search" id="records-search" placeholder="Search by order ID, Fiverr ID, name, message, or requirements" />
+          </span>
+        </label>
+        <button type="button" class="schedule-clear" id="schedule-clear-all">Clear all</button>
+      </div>
+      <div class="records-filter-grid">
+        <label class="records-field">
+          <span>Created date</span>
+          <input type="date" id="filter-date" />
+        </label>
+        <label class="records-field admin-only" id="filter-account-field">
+          <span>Account</span>
+          <select id="filter-account">
+            <option value="">All accounts</option>
+          </select>
+        </label>
+        <label class="records-field">
+          <span>Payment</span>
+          <select id="filter-payment">
+            <option value="">All payment statuses</option>
+            <option value="paid">Paid</option>
+            <option value="unpaid">Unpaid</option>
+          </select>
+        </label>
+        <label class="records-field">
+          <span>Revision</span>
+          <select id="filter-revision">
+            <option value="">All revisions</option>
+            <option value="pending">Revision Pending</option>
+            <option value="completed">Completed revision</option>
+            <option value="none">No revisions</option>
+          </select>
+        </label>
+        <label class="records-field">
+          <span>Ready to approve</span>
+          <select id="filter-ready">
+            <option value="">All approval states</option>
+            <option value="yes">Ready to Approve</option>
+            <option value="no">Not Ready</option>
+          </select>
+        </label>
+      </div>
       <div class="schedule-filter-row" id="schedule-filter-row">
         <div class="schedule-filter-copy">
           <span>Place on</span>
+          <p class="schedule-filter-hint">Show orders by the date you chose to place them</p>
           <div class="schedule-chips" id="schedule-chips">
             <button type="button" class="schedule-chip" data-schedule-filter="today">Today</button>
             <button type="button" class="schedule-chip" data-schedule-filter="tomorrow">Tomorrow</button>
@@ -142,12 +151,9 @@
           </div>
         </div>
         <label class="records-field schedule-date-field">
-          <span>Place on date</span>
+          <span>Exact date</span>
           <input type="date" id="filter-place-on" />
         </label>
-        <div class="schedule-filter-actions">
-          <button type="button" class="schedule-clear" id="schedule-clear-all">Clear all</button>
-        </div>
       </div>
     </section>
 
@@ -239,6 +245,6 @@
   <script src="js/storage.js?v=schedule1"></script>
   <script src="js/sheet-sync.js?v=schedule1"></script>
   <script src="js/auth.js?v=schedule1"></script>
-  <script src="js/records.js?v=schedule1"></script>
+  <script src="js/records.js?v=filters2"></script>
 </body>
 </html>

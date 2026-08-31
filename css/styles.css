@@ -2013,21 +2013,71 @@ body.modal-open {
 .records-filters {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-columns: 1.6fr repeat(3, minmax(160px, 1fr));
-  gap: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   margin-bottom: 20px;
-  padding: 20px;
+  padding: 18px 20px 20px;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 20px;
   box-shadow: var(--shadow);
 }
 
+.records-filter-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.records-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 14px 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fbf8f3;
+}
+
+.records-search-wrap svg {
+  width: 18px;
+  height: 18px;
+  color: #223829;
+  flex-shrink: 0;
+}
+
+.records-search-wrap input {
+  height: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.records-search-wrap input:focus {
+  box-shadow: none;
+  background: transparent;
+}
+
+.records-search-wrap:focus-within {
+  border-color: #c9b9a8;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(155, 170, 134, 0.18);
+}
+
+.records-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px 14px;
+}
+
 .records-field {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -2035,21 +2085,21 @@ body.modal-open {
   color: var(--text-soft);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .records-field input,
 .records-field select {
   width: 100%;
-  height: 46px;
-  padding: 0 14px;
+  height: 42px;
+  padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: #fbf8f3;
   color: var(--text);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .records-field input:focus,
@@ -2060,8 +2110,20 @@ body.modal-open {
   box-shadow: 0 0 0 4px rgba(155, 170, 134, 0.18);
 }
 
+.records-field.is-filled input,
+.records-field.is-filled select {
+  border-color: #c5d3b8;
+  background: #f4f7f0;
+}
+
+.records-field-search.is-filled .records-search-wrap {
+  border-color: #c5d3b8;
+  background: #f4f7f0;
+}
+
 .records-field-search {
-  grid-column: 1 / -1;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .schedule-summary {
@@ -2163,13 +2225,12 @@ body.modal-open {
 }
 
 .schedule-filter-row {
-  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 14px 16px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--border);
+  gap: 14px 18px;
+  padding-top: 16px;
+  border-top: 1px solid #f0e8de;
 }
 
 .schedule-filter-row[hidden] {
@@ -2177,37 +2238,52 @@ body.modal-open {
 }
 
 .schedule-filter-copy {
-  flex: 1 1 420px;
+  flex: 1 1 480px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
 }
 
 .schedule-filter-copy > span {
   color: var(--text-soft);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.schedule-filter-hint {
+  margin: -4px 0 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .schedule-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  padding: 8px;
+  border-radius: 14px;
+  background: #f7f3ec;
 }
 
 .schedule-chip {
-  height: 36px;
-  padding: 0 12px;
+  height: 38px;
+  padding: 0 14px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: #fbf8f3;
+  background: #fff;
   color: var(--text);
   font: inherit;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.schedule-chip:hover {
+  border-color: #c9b9a8;
+  background: #fbf8f3;
 }
 
 .schedule-chip.is-active {
@@ -2217,7 +2293,8 @@ body.modal-open {
 }
 
 .schedule-date-field {
-  width: 180px;
+  width: 176px;
+  flex: 0 0 176px;
 }
 
 .schedule-filter-actions {
@@ -2225,15 +2302,24 @@ body.modal-open {
 }
 
 .schedule-clear {
-  height: 36px;
-  padding: 0;
-  border: 0;
-  background: none;
+  flex: 0 0 auto;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
   color: #223829;
   font: inherit;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
+  white-space: nowrap;
+}
+
+.schedule-clear:hover,
+.schedule-clear.is-active {
+  border-color: #223829;
+  background: #f4f7f0;
 }
 
 .schedule-place-btn,
@@ -3763,10 +3849,6 @@ body.modal-open {
 }
 
 @media (max-width: 1100px) {
-  .records-filters {
-    grid-template-columns: 1fr 1fr;
-  }
-
   .schedule-summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -3792,8 +3874,16 @@ body.modal-open {
   }
 
   .records-filters {
-    grid-template-columns: 1fr;
     padding: 16px;
+  }
+
+  .records-filter-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .records-filter-grid {
+    grid-template-columns: 1fr 1fr;
   }
 
   .schedule-summary {
@@ -3803,7 +3893,14 @@ body.modal-open {
   .schedule-date-field,
   .schedule-filter-actions {
     width: 100%;
+    flex: 1 1 100%;
     margin-left: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .records-filter-grid {
+    grid-template-columns: 1fr;
   }
 }
 
