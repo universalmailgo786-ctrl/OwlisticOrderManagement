@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=placed4" />
+  <link rel="stylesheet" href="css/styles.css?v=placed5" />
 </head>
 <body class="records-page">
   <nav class="app-nav">
@@ -32,19 +32,20 @@
 
     <div class="sheet-upgrade-banner" id="sheet-upgrade-banner" hidden>
       <div class="sheet-upgrade-copy">
-        <p class="sheet-upgrade-title">Google Sheet script needs an update</p>
-        <p class="sheet-upgrade-text">Your deployed Apps Script is still on the old version (<span id="sheet-upgrade-columns">27</span> columns). Schedule fields (Place On, Placement Status, Placed At) will not appear until you redeploy.</p>
-        <p class="sheet-upgrade-text">Completed status saves to the existing <strong>Overall Status</strong> column. Mark Placed and schedule dates need the updated script.</p>
+        <p class="sheet-upgrade-title">One step left: update Google Apps Script</p>
+        <p class="sheet-upgrade-text">The portal is ready. Your live sheet script is still on <span id="sheet-upgrade-columns">27</span> columns, so Place On / Placement Status / Placed At cannot be written yet.</p>
         <ol class="sheet-upgrade-steps">
-          <li>Open your Google Sheet → Extensions → Apps Script</li>
-          <li>Replace <code>Code.gs</code> with the copied script → Save</li>
-          <li>Deploy → Manage deployments → Edit → New version → Deploy</li>
-          <li>Reload this page (paste a new web app URL on the questionnaire page only if Deploy gives you one)</li>
+          <li>Click <strong>Copy updated script</strong> (or use the script already on your clipboard if we just copied it)</li>
+          <li>Open the sheet → <strong>Extensions → Apps Script</strong></li>
+          <li>Select all in <code>Code.gs</code>, paste, then <strong>Save</strong> (Ctrl/Cmd+S)</li>
+          <li><strong>Deploy → Manage deployments →</strong> pencil icon → Version: <strong>New version</strong> → <strong>Deploy</strong></li>
+          <li>Come back here and click <strong>I redeployed — check again</strong></li>
         </ol>
       </div>
       <div class="sheet-upgrade-actions">
-        <button type="button" class="ghost-btn" id="copy-sheet-script-records">Copy updated script</button>
-        <a class="ghost-btn" href="index.html#sheet-connect">Sheet setup</a>
+        <button type="button" class="submit-btn" id="copy-sheet-script-records">Copy updated script</button>
+        <a class="ghost-btn" href="https://docs.google.com/spreadsheets/d/1nZuMePQFJA9lCQ6C48d9MUC3Fwn00ao6Kilap5rbFfQ/edit" target="_blank" rel="noopener">Open Google Sheet</a>
+        <button type="button" class="ghost-btn" id="recheck-sheet-script">I redeployed — check again</button>
       </div>
     </div>
 
@@ -264,9 +265,10 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="js/storage.js?v=placed4"></script>
-  <script src="js/sheet-sync.js?v=placed4"></script>
+  <script src="js/storage.js?v=placed5"></script>
+  <script src="js/apps-script-source.js?v=placed5"></script>
+  <script src="js/sheet-sync.js?v=placed5"></script>
   <script src="js/auth.js?v=schedule1"></script>
-  <script src="js/records.js?v=placed4"></script>
+  <script src="js/records.js?v=placed5"></script>
 </body>
 </html>

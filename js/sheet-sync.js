@@ -345,14 +345,20 @@
 
   function loadScriptSource() {
     if (scriptSourceText) return Promise.resolve(scriptSourceText);
+    const embedded = global.OwlisticAppsScriptSource;
+    if (typeof embedded === "string" && embedded.trim()) {
+      scriptSourceText = embedded.trim();
+      return Promise.resolve(scriptSourceText);
+    }
     if (scriptSourceLoading) return scriptSourceLoading;
     scriptSourceLoading = fetch("apps-script/Code.gs", { credentials: "same-origin", cache: "no-store" }).then(function (response) {
       return response.ok ? response.text() : "";
     }).then(function (text) {
-      scriptSourceText = String(text || "").trim();
+      scriptSourceText = String(text || "").trim() || (typeof embedded === "string" ? embedded.trim() : "");
       return scriptSourceText;
     }).catch(function () {
-      return "";
+      scriptSourceText = typeof embedded === "string" ? embedded.trim() : "";
+      return scriptSourceText;
     });
     return scriptSourceLoading;
   }

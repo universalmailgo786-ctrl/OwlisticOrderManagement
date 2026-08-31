@@ -2062,5 +2062,30 @@
   if (copyScriptBtn) {
     copyScriptBtn.addEventListener("click", copySheetScript);
   }
+  const recheckBtn = document.getElementById("recheck-sheet-script");
+  if (recheckBtn) {
+    recheckBtn.addEventListener("click", function () {
+      const sheet = window.OwlisticSheet;
+      if (!sheet || typeof sheet.ensureScheduleColumns !== "function") {
+        showToast("Sheet connection not ready.");
+        return;
+      }
+      recheckBtn.disabled = true;
+      showToast("Checking Google Sheet script…");
+      sheet.ensureScheduleColumns().then(function (result) {
+        recheckBtn.disabled = false;
+        showSheetUpgradeBanner(result);
+        if (result && result.action === "ensureScheduleColumns" && !result.needsDeploy) {
+          showToast("Script is updated. Schedule columns are ready.");
+          loadFromSheet();
+          return;
+        }
+        showToast((result && result.error) || "Still on the old script. Paste Code.gs, Save, then Deploy → New version.");
+      }).catch(function () {
+        recheckBtn.disabled = false;
+        showToast("Could not reach Google Sheet. Try again.");
+      });
+    });
+  }
   loadFromSheet();
 })();
