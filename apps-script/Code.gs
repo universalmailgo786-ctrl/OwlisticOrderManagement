@@ -1511,10 +1511,18 @@ function updateOrderStatus_(ss, data) {
   }
   var ready = (tab === "completed" || tab === "ready-to-approve") ? "Ready to Approve" : "Not Ready";
   var now = new Date();
+  ensureScheduleColumns_(found.sheet);
   found.sheet.getRange(found.row, 4).setValue(now);
   found.sheet.getRange(found.row, 5).setValue(now);
   found.sheet.getRange(found.row, 24).setValue(ready);
   found.sheet.getRange(found.row, 25).setValue(label);
+  if ("placeOn" in data || "placeon" in data || "placementStatus" in data || "placementstatus" in data) {
+    found.sheet.getRange(found.row, 28).setValue(placeOnCellValue_((data.placeOn != null ? data.placeOn : data.placeon) || ""));
+    found.sheet.getRange(found.row, 29).setValue(String((data.placementStatus != null ? data.placementStatus : data.placementstatus) || ""));
+    found.sheet.getRange(found.row, 30).setValue(String((data.scheduledBy != null ? data.scheduledBy : data.scheduledby) || ""));
+    found.sheet.getRange(found.row, 31).setValue(String((data.scheduleUpdatedAt != null ? data.scheduleUpdatedAt : data.scheduleupdatedat) || ""));
+    found.sheet.getRange(found.row, 32).setValue(String((data.placedAt != null ? data.placedAt : data.placedat) || ""));
+  }
   return {
     ok: true,
     action: "updateOrderStatus",

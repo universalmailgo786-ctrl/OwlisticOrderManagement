@@ -1486,6 +1486,29 @@
     if (scheduleDate && status !== "On Hold") scheduleDate.focus();
   }
 
+  function persistBoardStatus(order, label) {
+    const sheet = window.OwlisticSheet;
+    const finish = function (result) {
+      render();
+      if (result && result.skipped) {
+        showToast("Status set to " + label);
+        return;
+      }
+      if (result && result.ok === false) {
+        showToast(result.error || "Status updated here, but not on the Google Sheet.");
+        return;
+      }
+      showToast("Status set to " + label + " and saved to Google Sheet");
+    };
+    if (!sheet || typeof sheet.updateOrderStatus !== "function") {
+      finish({ skipped: true });
+      return;
+    }
+    sheet.updateOrderStatus(order).then(finish).catch(function () {
+      finish({ ok: false, error: "Status updated here, but not on the Google Sheet." });
+    });
+  }
+
   function persistSchedule(order, message, options) {
     options = options || {};
     store.upsertOrder(order);
@@ -1869,35 +1892,8 @@
     }
     store.upsertOrder(order);
     const label = (store.boardStatusLabel && store.boardStatusLabel(nextTab)) || select.options[select.selectedIndex].text;
-    const sheet = window.OwlisticSheet;
     setActiveTab(tabOf(order));
-    showToast("Status set to " + label);
-    const finish = function (result) {
-      render();
-      if (result && result.skipped) return;
-      if (result && result.ok === false) {
-        showToast(result.error || "Status updated here, but not on the Google Sheet.");
-        return;
-      }
-      showToast("Status set to " + label + " and saved to Google Sheet");
-    };
-    if (sheet && typeof sheet.updateOrderStatus === "function") {
-      sheet.updateOrderStatus(order).then(finish).catch(function () {
-        if (sheet.sync) {
-          sheet.sync(order, { skipUploads: true }).then(finish).catch(function () {
-            finish({ ok: false, error: "Status updated here, but not on the Google Sheet." });
-          });
-          return;
-        }
-        finish({ ok: false, error: "Status updated here, but not on the Google Sheet." });
-      });
-      return;
-    }
-    if (sheet && typeof sheet.sync === "function") {
-      sheet.sync(order, { skipUploads: true }).then(finish).catch(function () {
-        finish({ ok: false, error: "Status updated here, but not on the Google Sheet." });
-      });
-    }
+    persistBoardStatus(order, label);
   });
   [search, dateFilter, accountFilter, paymentFilter, revisionFilter, readyFilter, placeOnFilter].forEach(function (input) {
     if (!input) return;

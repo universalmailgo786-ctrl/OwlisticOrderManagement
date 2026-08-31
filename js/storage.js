@@ -923,25 +923,41 @@
     return order;
   }
 
+  function scheduleStampMs(value) {
+    const text = String(value || "").trim();
+    if (!text) return 0;
+    const parsed = Date.parse(text);
+    if (!isNaN(parsed)) return parsed;
+    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+    if (!match) return 0;
+    return new Date(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
+      Number(match[4] || 0),
+      Number(match[5] || 0)
+    ).getTime();
+  }
+
   function mergeSchedule(order, previous) {
     if (!previous) {
       if (/on hold/i.test(String(order.placementStatus || ""))) order.placementHold = true;
       if (/^placed$/i.test(String(order.placementStatus || "").trim())) order.placementPlaced = true;
       return normalizeSchedule(order);
     }
-    const incomingStamp = Date.parse(order.scheduleUpdatedAt || "") || 0;
-    const previousStamp = Date.parse(previous.scheduleUpdatedAt || "") || 0;
+    const incomingStamp = scheduleStampMs(order.scheduleUpdatedAt);
+    const previousStamp = scheduleStampMs(previous.scheduleUpdatedAt);
     const incomingHold = Boolean(order.placementHold) || /on hold/i.test(String(order.placementStatus || ""));
     const incomingPlaced = Boolean(order.placementPlaced) || /^placed$/i.test(String(order.placementStatus || "").trim());
     const incomingDate = ymd(order.placeOn);
-    if (previousStamp && incomingStamp && previousStamp > incomingStamp) {
+    if (previousStamp > incomingStamp) {
       order.placeOn = previous.placeOn;
       order.placementHold = previous.placementHold;
       order.placementPlaced = previous.placementPlaced;
       order.scheduledBy = previous.scheduledBy;
       order.scheduleUpdatedAt = previous.scheduleUpdatedAt;
       order.placedAt = previous.placedAt;
-    } else if (!incomingDate && !incomingHold && !incomingPlaced && (previous.placeOn || previous.placementHold || previous.placementPlaced)) {
+    } else if (!incomingDate && !incomingHold && !incomingPlaced && !incomingStamp && (previous.placeOn || previous.placementHold || previous.placementPlaced)) {
       order.placeOn = previous.placeOn;
       order.placementHold = previous.placementHold;
       order.placementPlaced = previous.placementPlaced;
@@ -958,6 +974,7 @@
   function applyManualSchedule(order, patch, actor) {
     if (!order) return order;
     const next = patch || {};
+    const wasPlaced = Boolean(order.placementPlaced);
     if (next.clear) {
       order.placeOn = "";
       order.placementHold = false;
@@ -969,15 +986,15 @@
     } else if (next.placed) {
       order.placementPlaced = true;
       order.placementHold = false;
-      order.placedAt = order.placedAt || (todayYmd() + " " + pad2(new Date().getHours()) + ":" + pad2(new Date().getMinutes()));
+      order.placedAt = order.placedAt || nowIso();
       setBoardStatus(order, "orders-placed");
     } else {
       if (next.placeOn != null) order.placeOn = ymd(next.placeOn);
       order.placementHold = false;
-      order.placementPlaced = false;
+      if (!wasPlaced) order.placementPlaced = false;
     }
     order.scheduledBy = String(actor || order.scheduledBy || "");
-    order.scheduleUpdatedAt = todayYmd() + " " + pad2(new Date().getHours()) + ":" + pad2(new Date().getMinutes());
+    order.scheduleUpdatedAt = nowIso();
     return normalizeSchedule(order);
   }
 
@@ -1217,13 +1234,13 @@
     const previousStatus = parseBoardStatus(previous.boardStatus) || parseBoardStatus(previous.overallStatus);
     const incomingUpdated = Date.parse(order.updatedAt || "") || 0;
     const previousUpdated = Date.parse(previous.updatedAt || "") || 0;
-    if (previousStatus && previousUpdated && incomingUpdated && previousUpdated > incomingUpdated) {
-      order.boardStatus = previousStatus;
+    if (previousUpdated > incomingUpdated && previousStatus) {
+      order.boardStatus = previous.boardStatus || previousStatus;
       order.overallStatus = previous.overallStatus || boardStatusLabel(previousStatus);
     } else {
-      order.boardStatus = incomingStatus || previousStatus || "";
+      order.boardStatus = incomingStatus || previousStatus || order.boardStatus || "";
       order.overallStatus = order.overallStatus ||
-        (order.boardStatus && boardStatusLabel(order.boardStatus)) ||
+        (order.boardStatus && boardStatusLabel(parseBoardStatus(order.boardStatus))) ||
         previous.overallStatus ||
         "";
     }

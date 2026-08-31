@@ -1081,6 +1081,18 @@
     return next;
   }
 
+  function followWithFullSync(order, result) {
+    if (!order || !order.id) return Promise.resolve(result);
+    if (result && result.skipped) return Promise.resolve(result);
+    if (!isConfigured() || typeof sync !== "function") return Promise.resolve(result);
+    return sync(order, { skipUploads: true, bypassQueue: true }).then(function (syncResult) {
+      if (result && result.ok === false) return syncResult || result;
+      return result || syncResult;
+    }).catch(function () {
+      return result;
+    });
+  }
+
   function updateOrderSchedule(order) {
     if (!isConfigured() || !order || !order.id) {
       return Promise.resolve({ skipped: true });
@@ -1112,7 +1124,9 @@
         return response.text();
       }).then(function (text) {
         const data = parseJson(text);
-        if (data && data.action === "updateOrderSchedule") return data;
+        if (data && data.action === "updateOrderSchedule") {
+          return followWithFullSync(latest, data);
+        }
         return postPayload({
           action: "updateOrderSchedule",
           orderId: latest.id,
@@ -1158,16 +1172,54 @@
       const latest = liveOrder(order) || order;
       const tab = callStore("boardStatusOf", "boardStatusOf", latest) || "in-progress";
       const label = callStore("boardStatusLabel", "boardStatusLabel", tab) || "";
-      return postPayload({
-        action: "updateOrderStatus",
-        orderId: latest.id,
-        accountName: accountNameOf(latest),
-        tabName: tabNameOf(accountNameOf(latest)),
-        boardStatus: tab,
-        status: tab,
-        overallStatus: label,
-        statusLabel: label,
-        row: toRow(latest)
+      const placementStatus = callStore("placementStatusOf", "placementStatusOf", latest) || latest.placementStatus || "Unscheduled";
+      const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+      const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+      const url = getWebAppUrl() + join +
+        "action=updateOrderStatus" +
+        "&orderId=" + encodeURIComponent(latest.id) +
+        "&tab=" + encodeURIComponent(tabNameOf(accountNameOf(latest))) +
+        "&accountName=" + encodeURIComponent(accountNameOf(latest)) +
+        "&boardStatus=" + encodeURIComponent(tab) +
+        "&status=" + encodeURIComponent(tab) +
+        "&statusLabel=" + encodeURIComponent(label) +
+        "&overallStatus=" + encodeURIComponent(label) +
+        "&placeOn=" + encodeURIComponent(latest.placeOn || "") +
+        "&placementStatus=" + encodeURIComponent(placementStatus) +
+        "&scheduledBy=" + encodeURIComponent(latest.scheduledBy || "") +
+        "&scheduleUpdatedAt=" + encodeURIComponent(latest.scheduleUpdatedAt || "") +
+        "&placedAt=" + encodeURIComponent(latest.placedAt || "") +
+        "&role=" + encodeURIComponent((session && session.role) || "") +
+        "&userAccount=" + encodeURIComponent((session && session.account) || "") +
+        "&username=" + encodeURIComponent((session && session.username) || "") +
+        "&_=" + Date.now();
+      return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
+        return response.text();
+      }).then(function (text) {
+        const data = parseJson(text);
+        if (data && data.action === "updateOrderStatus") {
+          return followWithFullSync(latest, data);
+        }
+        return postPayload({
+          action: "updateOrderStatus",
+          orderId: latest.id,
+          accountName: accountNameOf(latest),
+          tabName: tabNameOf(accountNameOf(latest)),
+          boardStatus: tab,
+          status: tab,
+          overallStatus: label,
+          statusLabel: label,
+          placeOn: latest.placeOn || "",
+          placementStatus: placementStatus,
+          scheduledBy: latest.scheduledBy || "",
+          scheduleUpdatedAt: latest.scheduleUpdatedAt || "",
+          placedAt: latest.placedAt || "",
+          row: toRow(latest)
+        }).then(function (postResult) {
+          return followWithFullSync(latest, postResult);
+        });
+      }).catch(function () {
+        return followWithFullSync(latest, { ok: false });
       });
     });
   }
