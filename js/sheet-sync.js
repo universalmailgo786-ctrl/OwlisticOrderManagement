@@ -43,6 +43,10 @@
     "Schedule Updated At",
     "Placed At"
   ];
+  const EXPECTED_SHEET_COLUMNS = HEADERS.length;
+  let capabilitiesCache = null;
+  let scriptSourceText = "";
+  let scriptSourceLoading = null;
 
   function callStore(primary, fallback) {
     const fn = (store && store[primary]) || (store && store[fallback]);
@@ -329,6 +333,60 @@
       live.scheduleUpdatedAt || "",
       live.placedAt || ""
     ];
+  }
+
+  function scheduleDeployError() {
+    return {
+      ok: false,
+      needsDeploy: true,
+      error: "Schedule columns are not on your Google Sheet yet. Copy the updated Apps Script, deploy a new web app version, then reload this page."
+    };
+  }
+
+  function loadScriptSource() {
+    if (scriptSourceText) return Promise.resolve(scriptSourceText);
+    if (scriptSourceLoading) return scriptSourceLoading;
+    scriptSourceLoading = fetch("apps-script/Code.gs", { credentials: "same-origin", cache: "no-store" }).then(function (response) {
+      return response.ok ? response.text() : "";
+    }).then(function (text) {
+      scriptSourceText = String(text || "").trim();
+      return scriptSourceText;
+    }).catch(function () {
+      return "";
+    });
+    return scriptSourceLoading;
+  }
+
+  function fetchSheetCapabilities(force) {
+    if (!isConfigured()) {
+      return Promise.resolve({ ok: false, skipped: true, needsDeploy: false });
+    }
+    if (capabilitiesCache && !force) return Promise.resolve(capabilitiesCache);
+    const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+    const baseUrl = getWebAppUrl() + join + "_=" + Date.now();
+    const ensureUrl = getWebAppUrl() + join + "action=ensureScheduleColumns&_=" + Date.now();
+    return fetchWithTimeout(baseUrl, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
+      return response.text();
+    }).then(function (baseText) {
+      const baseData = parseJson(baseText) || {};
+      const sheetColumns = Number(baseData.sheetColumns) || 0;
+      return fetchWithTimeout(ensureUrl, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
+        return response.text();
+      }).then(function (ensureText) {
+        const ensureData = parseJson(ensureText) || {};
+        const scheduleSupported = ensureData.action === "ensureScheduleColumns";
+        capabilitiesCache = {
+          ok: true,
+          sheetColumns: sheetColumns,
+          scheduleSupported: scheduleSupported,
+          expectedColumns: EXPECTED_SHEET_COLUMNS,
+          needsDeploy: !scheduleSupported || sheetColumns < EXPECTED_SHEET_COLUMNS
+        };
+        return capabilitiesCache;
+      });
+    }).catch(function () {
+      return { ok: false, needsDeploy: true, scheduleSupported: false };
+    });
   }
 
   function fetchWithTimeout(url, options, ms) {
@@ -1127,24 +1185,29 @@
         if (data && data.action === "updateOrderSchedule") {
           return followWithFullSync(latest, data);
         }
-        return postPayload({
-          action: "updateOrderSchedule",
-          orderId: latest.id,
-          accountName: accountNameOf(latest),
-          tabName: tabNameOf(accountNameOf(latest)),
-          placeOn: latest.placeOn || "",
-          placementStatus: status,
-          scheduledBy: latest.scheduledBy || "",
-          scheduleUpdatedAt: latest.scheduleUpdatedAt || "",
-          placedAt: latest.placedAt || "",
-          boardStatus: boardTab,
-          statusLabel: statusLabel,
-          row: toRow(latest)
-        }).then(function () {
-          return sync(latest, { skipUploads: true, bypassQueue: true });
+        return fetchSheetCapabilities(true).then(function (caps) {
+          if (!caps || caps.needsDeploy || !caps.scheduleSupported) {
+            return scheduleDeployError();
+          }
+          return postPayload({
+            action: "updateOrderSchedule",
+            orderId: latest.id,
+            accountName: accountNameOf(latest),
+            tabName: tabNameOf(accountNameOf(latest)),
+            placeOn: latest.placeOn || "",
+            placementStatus: status,
+            scheduledBy: latest.scheduledBy || "",
+            scheduleUpdatedAt: latest.scheduleUpdatedAt || "",
+            placedAt: latest.placedAt || "",
+            boardStatus: boardTab,
+            statusLabel: statusLabel,
+            row: toRow(latest)
+          }).then(function () {
+            return sync(latest, { skipUploads: true, bypassQueue: true });
+          });
         });
       }).catch(function () {
-        return sync(latest, { skipUploads: true, bypassQueue: true });
+        return scheduleDeployError();
       });
     });
   }
@@ -1157,10 +1220,28 @@
       return response.text();
     }).then(function (text) {
       const data = parseJson(text);
-      if (data && data.action === "ensureScheduleColumns") return data;
-      return { ok: false, unsupported: true, sheetColumns: data && data.sheetColumns };
+      if (data && data.action === "ensureScheduleColumns") {
+        capabilitiesCache = {
+          ok: true,
+          sheetColumns: Number(data.sheetColumns) || EXPECTED_SHEET_COLUMNS,
+          scheduleSupported: true,
+          expectedColumns: EXPECTED_SHEET_COLUMNS,
+          needsDeploy: false
+        };
+        return data;
+      }
+      const sheetColumns = data && data.sheetColumns ? Number(data.sheetColumns) : 0;
+      capabilitiesCache = {
+        ok: false,
+        unsupported: true,
+        sheetColumns: sheetColumns,
+        scheduleSupported: false,
+        expectedColumns: EXPECTED_SHEET_COLUMNS,
+        needsDeploy: true
+      };
+      return capabilitiesCache;
     }).catch(function () {
-      return { ok: false };
+      return { ok: false, needsDeploy: true, scheduleSupported: false };
     });
   }
 
@@ -1428,8 +1509,13 @@
     isConfigured: isConfigured,
     getWebAppUrl: getWebAppUrl,
     setWebAppUrl: setWebAppUrl,
+    fetchSheetCapabilities: fetchSheetCapabilities,
+    loadScriptSource: loadScriptSource,
+    EXPECTED_SHEET_COLUMNS: EXPECTED_SHEET_COLUMNS,
     get scriptSource() {
-      return "";
+      return scriptSourceText;
     }
   };
+
+  loadScriptSource();
 })(window);

@@ -1413,7 +1413,8 @@
     const ensure = (window.OwlisticSheet.ensureScheduleColumns && typeof window.OwlisticSheet.ensureScheduleColumns === "function")
       ? window.OwlisticSheet.ensureScheduleColumns()
       : Promise.resolve();
-    ensure.then(function () {
+    ensure.then(function (ensureResult) {
+      showSheetUpgradeBanner(ensureResult);
       return window.OwlisticSheet.fetchOrders();
     }).then(function (result) {
       applySheetOrders(result);
@@ -1431,13 +1432,48 @@
     });
   }
 
-  renderAccountFilter();
-  tabButtons.forEach(function (button) {
-    button.addEventListener("click", function () {
-      setActiveTab(button.getAttribute("data-tab"));
-    });
-  });
-  loadFromSheet();
+  function showSheetUpgradeBanner(ensureResult) {
+    const banner = document.getElementById("sheet-upgrade-banner");
+    const columnsEl = document.getElementById("sheet-upgrade-columns");
+    if (!banner) return;
+    const sheet = window.OwlisticSheet;
+    const needsDeploy = !!(ensureResult && (ensureResult.needsDeploy || ensureResult.unsupported));
+    if (!needsDeploy && sheet && typeof sheet.fetchSheetCapabilities === "function") {
+      sheet.fetchSheetCapabilities().then(function (caps) {
+        if (caps && caps.needsDeploy) showSheetUpgradeBanner(caps);
+      });
+      return;
+    }
+    banner.hidden = !needsDeploy;
+    if (needsDeploy && columnsEl) {
+      const cols = ensureResult && ensureResult.sheetColumns ? ensureResult.sheetColumns : 27;
+      columnsEl.textContent = String(cols);
+    }
+  }
+
+  function copySheetScript() {
+    const sheet = window.OwlisticSheet;
+    const copy = function (source) {
+      if (!source) {
+        showToast("Could not load Apps Script file. Open apps-script/Code.gs from the project folder.");
+        return;
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(source).then(function () {
+          showToast("Script copied. Paste it in Extensions → Apps Script, then Deploy → New version.");
+        }).catch(function () {
+          showToast("Could not copy automatically. Open apps-script/Code.gs and copy manually.");
+        });
+        return;
+      }
+      showToast("Copy apps-script/Code.gs manually from the project folder.");
+    };
+    if (sheet && typeof sheet.loadScriptSource === "function") {
+      sheet.loadScriptSource().then(copy);
+      return;
+    }
+    copy(sheet && sheet.scriptSource ? sheet.scriptSource : "");
+  }
 
   function showToast(message) {
     let toast = document.getElementById("toast");
@@ -1534,6 +1570,11 @@
       return;
     }
     send.call(sheet, order).then(function (result) {
+      if (result && result.needsDeploy) {
+        showSheetUpgradeBanner(result);
+        fail(result.error || "Redeploy Apps Script to save schedule columns to Google Sheet.");
+        return;
+      }
       if (result && result.skipped) {
         finish(message || (options.movedToPlaced ? "Order moved to Orders Placed" : "Schedule saved"));
         return;
@@ -2010,4 +2051,16 @@
     }
     if (chatDrawer && !chatDrawer.hidden) closeChat();
   });
+
+  renderAccountFilter();
+  tabButtons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      setActiveTab(button.getAttribute("data-tab"));
+    });
+  });
+  const copyScriptBtn = document.getElementById("copy-sheet-script-records");
+  if (copyScriptBtn) {
+    copyScriptBtn.addEventListener("click", copySheetScript);
+  }
+  loadFromSheet();
 })();

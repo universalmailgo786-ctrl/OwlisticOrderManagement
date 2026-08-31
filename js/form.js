@@ -2068,12 +2068,22 @@
   });
 
   document.getElementById("copy-sheet-script").addEventListener("click", function () {
-    const source = window.OwlisticSheet.scriptSource || "";
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(source).then(function () {
-        showToast("Script copied. In your sheet: Extensions → Apps Script → paste → Deploy");
-      });
+    const copy = function (source) {
+      if (!source) {
+        showToast("Could not load Apps Script file. Open apps-script/Code.gs from the project folder.");
+        return;
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(source).then(function () {
+          showToast("Script copied. In your sheet: Extensions → Apps Script → paste → Deploy → New version");
+        });
+      }
+    };
+    if (window.OwlisticSheet && typeof window.OwlisticSheet.loadScriptSource === "function") {
+      window.OwlisticSheet.loadScriptSource().then(copy);
+      return;
     }
+    copy(window.OwlisticSheet.scriptSource || "");
   });
 
   document.getElementById("new-order-btn").addEventListener("click", function () {
