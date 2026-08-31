@@ -342,6 +342,14 @@
       return "on-revision";
     }
     if (
+      raw === "orders-placed" ||
+      raw === "orders placed" ||
+      raw === "order placed" ||
+      raw === "placed"
+    ) {
+      return "orders-placed";
+    }
+    if (
       raw === "in-progress" ||
       raw === "in progress" ||
       raw === "waiting" ||
@@ -352,14 +360,18 @@
     if (/ready\s*to\s*approve/.test(raw)) return "ready-to-approve";
     if (/^completed$|^complete$/.test(raw)) return "completed";
     if (/on\s*revision|revision\s*pending|revision\s*needed/.test(raw)) return "on-revision";
+    if (/orders\s*placed|^placed$/.test(raw)) return "orders-placed";
     if (/in\s*progress|new order/.test(raw)) return "in-progress";
     return "";
   }
 
   function boardStatusOf(order) {
     const fromBoard = parseBoardStatus(order && order.boardStatus);
-    if (fromBoard) return fromBoard;
+    if (fromBoard && fromBoard !== "in-progress") return fromBoard;
     const fromOverall = parseBoardStatus(order && order.overallStatus);
+    if (fromOverall && fromOverall !== "in-progress") return fromOverall;
+    if (order && order.placementPlaced) return "orders-placed";
+    if (fromBoard) return fromBoard;
     if (fromOverall) return fromOverall;
     if (order && order.readyToApprove) return "ready-to-approve";
     return "in-progress";
@@ -369,6 +381,7 @@
     if (tab === "completed") return "Completed";
     if (tab === "ready-to-approve") return "Ready to Approve";
     if (tab === "on-revision") return "On Revision";
+    if (tab === "orders-placed") return "Orders Placed";
     return "In Progress";
   }
 
@@ -811,6 +824,7 @@
     if (tab === "completed") return "completed";
     if (tab === "ready-to-approve") return "ready-to-approve";
     if (tab === "on-revision") return "revision-pending";
+    if (tab === "orders-placed") return "orders-placed";
     return "in-progress";
   }
 
@@ -956,6 +970,7 @@
       order.placementPlaced = true;
       order.placementHold = false;
       order.placedAt = order.placedAt || (todayYmd() + " " + pad2(new Date().getHours()) + ":" + pad2(new Date().getMinutes()));
+      setBoardStatus(order, "orders-placed");
     } else {
       if (next.placeOn != null) order.placeOn = ymd(next.placeOn);
       order.placementHold = false;

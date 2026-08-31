@@ -120,6 +120,12 @@ function doGet(e) {
   if (action === "updateOrderStatus") {
     return json_(updateOrderStatus_(SpreadsheetApp.openById(SPREADSHEET_ID), params));
   }
+  if (action === "updateOrderSchedule") {
+    return json_(updateOrderSchedule_(SpreadsheetApp.openById(SPREADSHEET_ID), params));
+  }
+  if (action === "ensureScheduleColumns") {
+    return json_(ensureAllScheduleColumns_(SpreadsheetApp.openById(SPREADSHEET_ID)));
+  }
   return json_({ ok: true, service: "Ashar Orders Management System", sheetColumns: HEADERS.length });
 }
 
@@ -176,6 +182,9 @@ function doPost(e) {
     }
     if (data.action === "updateOrderSchedule") {
       return json_(updateOrderSchedule_(ss, data));
+    }
+    if (data.action === "ensureScheduleColumns") {
+      return json_(ensureAllScheduleColumns_(ss));
     }
     if (data.action === "updateOrderStatus") {
       return json_(updateOrderStatus_(ss, data));
@@ -255,6 +264,7 @@ function listOrders_(params) {
     if (name === "Users") continue;
     if (!sheetMatchesAny_(name, allowedTabs)) continue;
     if (String(sheet.getRange(1, 1).getValue() || "").trim() !== "Order ID") continue;
+    ensureScheduleColumns_(sheet);
     var last = sheet.getLastRow();
     if (last < 2) continue;
     var cols = Math.max(sheet.getLastColumn(), 1);
@@ -275,7 +285,7 @@ function listOrders_(params) {
       orders.push(orderFromRow_(row, name, filesFromCell_(rich, row[14])));
     }
   }
-  return { ok: true, action: "listOrders", count: orders.length, orders: orders };
+  return { ok: true, action: "listOrders", count: orders.length, orders: orders, sheetColumns: HEADERS.length };
 }
 
 function allowedTabs_(params, forced) {
@@ -962,6 +972,14 @@ function parseBoardStatus_(value) {
     return "on-revision";
   }
   if (
+    raw === "orders-placed" ||
+    raw === "orders placed" ||
+    raw === "order placed" ||
+    raw === "placed"
+  ) {
+    return "orders-placed";
+  }
+  if (
     raw === "in-progress" ||
     raw === "in progress" ||
     raw === "waiting" ||
@@ -972,6 +990,7 @@ function parseBoardStatus_(value) {
   if (/ready\s*to\s*approve/.test(raw)) return "ready-to-approve";
   if (/^completed$|^complete$/.test(raw)) return "completed";
   if (/on\s*revision|revision\s*pending|revision\s*needed/.test(raw)) return "on-revision";
+  if (/orders\s*placed|^placed$/.test(raw)) return "orders-placed";
   if (/in\s*progress|new order/.test(raw)) return "in-progress";
   return "";
 }
@@ -1151,6 +1170,21 @@ function upsertOrderLocked_(ss, data) {
       }
     }
   }
+  var hasSchedule = ("placeOn" in data) || ("placeon" in data) || ("placementStatus" in data) || ("placementstatus" in data) || ("placedAt" in data) || ("placedat" in data);
+  if (hasSchedule) {
+    var placeOn = data.placeOn != null ? data.placeOn : data.placeon;
+    var placementStatus = data.placementStatus != null ? data.placementStatus : data.placementstatus;
+    var scheduledBy = data.scheduledBy != null ? data.scheduledBy : data.scheduledby;
+    var scheduleUpdatedAt = data.scheduleUpdatedAt != null ? data.scheduleUpdatedAt : data.scheduleupdatedat;
+    var placedAt = data.placedAt != null ? data.placedAt : data.placedat;
+    if (placeOn != null) row[27] = placeOnCellValue_(placeOn);
+    if (placementStatus != null) row[28] = String(placementStatus);
+    if (scheduledBy != null) row[29] = String(scheduledBy);
+    if (scheduleUpdatedAt != null) row[30] = String(scheduleUpdatedAt);
+    if (placedAt != null) row[31] = String(placedAt);
+  } else {
+    row[27] = placeOnCellValue_(row[27]);
+  }
   ensureNameColumns_(target);
 
   var existingRich = null;
@@ -1313,6 +1347,31 @@ function getOrder_(params) {
   };
 }
 
+function placeOnCellValue_(raw) {
+  if (raw instanceof Date && !isNaN(raw.getTime())) return raw;
+  var text = String(raw || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) {
+    var parts = text.slice(0, 10).split("-");
+    return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  }
+  return text;
+}
+
+function ensureAllScheduleColumns_(ss) {
+  if (!ss) ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheets = ss.getSheets();
+  var tabs = [];
+  var i;
+  for (i = 0; i < sheets.length; i++) {
+    var sheet = sheets[i];
+    if (sheet.getName() === "Users") continue;
+    if (String(sheet.getRange(1, 1).getValue() || "").trim() !== "Order ID") continue;
+    ensureScheduleColumns_(sheet);
+    tabs.push(sheet.getName());
+  }
+  return { ok: true, action: "ensureScheduleColumns", sheetColumns: HEADERS.length, tabs: tabs };
+}
+
 function ensureNameColumns_(sheet) {
   if (!sheet) return;
   var lastCol = Math.max(sheet.getLastColumn(), 1);
@@ -1325,14 +1384,13 @@ function ensureNameColumns_(sheet) {
 
 function ensureScheduleColumns_(sheet) {
   if (!sheet) return;
-  var headers = ["Place On", "Placement Status", "Scheduled By", "Schedule Updated At", "Placed At"];
+  try {
+    sheet.getRange(1, 28, 1, HEADERS.length).setValues([HEADERS.slice(27)]);
+  } catch (err) {}
   var widths = [132, 140, 140, 168, 150];
   var i;
-  for (i = 0; i < headers.length; i++) {
-    var col = 28 + i;
-    var current = String(sheet.getRange(1, col).getValue() || "").trim();
-    if (current !== headers[i]) sheet.getRange(1, col).setValue(headers[i]);
-    try { sheet.setColumnWidth(col, widths[i]); } catch (err) {}
+  for (i = 0; i < widths.length; i++) {
+    try { sheet.setColumnWidth(28 + i, widths[i]); } catch (err2) {}
   }
 }
 
@@ -1356,11 +1414,27 @@ function updateOrderSchedule_(ss, data) {
     return { ok: false, action: "updateOrderSchedule", error: "You can only edit orders for " + forced + "." };
   }
   ensureScheduleColumns_(found.sheet);
-  found.sheet.getRange(found.row, 28).setValue(String((data.placeOn != null ? data.placeOn : data.placeon) || ""));
-  found.sheet.getRange(found.row, 29).setValue(String((data.placementStatus != null ? data.placementStatus : data.placementstatus) || "Unscheduled"));
+  var placementStatus = String((data.placementStatus != null ? data.placementStatus : data.placementstatus) || "Unscheduled");
+  found.sheet.getRange(found.row, 28).setValue(placeOnCellValue_((data.placeOn != null ? data.placeOn : data.placeon) || ""));
+  found.sheet.getRange(found.row, 29).setValue(placementStatus);
   found.sheet.getRange(found.row, 30).setValue(String((data.scheduledBy != null ? data.scheduledBy : data.scheduledby) || ""));
   found.sheet.getRange(found.row, 31).setValue(String((data.scheduleUpdatedAt != null ? data.scheduleUpdatedAt : data.scheduleupdatedat) || ""));
   found.sheet.getRange(found.row, 32).setValue(String((data.placedAt != null ? data.placedAt : data.placedat) || ""));
+  var boardTab = parseBoardStatus_(data.boardStatus || data.status || "");
+  if (!boardTab && /^placed$/i.test(placementStatus)) boardTab = "orders-placed";
+  if (boardTab) {
+    var statusLabel = String((data.statusLabel != null ? data.statusLabel : data.statuslabel) || "").trim();
+    if (!statusLabel) {
+      statusLabel = boardTab === "completed" ? "Completed"
+        : boardTab === "ready-to-approve" ? "Ready to Approve"
+        : boardTab === "on-revision" ? "On Revision"
+        : boardTab === "orders-placed" ? "Orders Placed"
+        : "In Progress";
+    }
+    var ready = (boardTab === "completed" || boardTab === "ready-to-approve") ? "Ready to Approve" : "Not Ready";
+    found.sheet.getRange(found.row, 24).setValue(ready);
+    found.sheet.getRange(found.row, 25).setValue(statusLabel);
+  }
   found.sheet.getRange(found.row, 4).setValue(new Date());
   found.sheet.getRange(found.row, 5).setValue(new Date());
   return {
@@ -1432,6 +1506,7 @@ function updateOrderStatus_(ss, data) {
     label = tab === "completed" ? "Completed"
       : tab === "ready-to-approve" ? "Ready to Approve"
       : tab === "on-revision" ? "On Revision"
+      : tab === "orders-placed" ? "Orders Placed"
       : "In Progress";
   }
   var ready = (tab === "completed" || tab === "ready-to-approve") ? "Ready to Approve" : "Not Ready";
@@ -1583,7 +1658,7 @@ function styleSheet_(ss, sheet) {
     "Most recent buyer comment.",
     "Most recent seller reply.",
     "Ready to Approve or Not Ready. Dropdown in each cell.",
-    "Overall workflow status. Use In Progress, On Revision, or Completed to match the portal tabs.",
+    "Overall workflow status. Use In Progress, Orders Placed, On Revision, Ready to Approve, or Completed to match the portal tabs.",
     "Business name entered by hand in the portal.",
     "Client name entered by hand in the portal.",
     "Manually chosen date to place this order.",

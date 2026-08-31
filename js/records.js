@@ -30,6 +30,7 @@
   const scheduleModalTitle = document.getElementById("schedule-modal-title");
   const TAB_LABELS = {
     "in-progress": "New order has to be placed",
+    "orders-placed": "Orders Placed",
     "on-revision": "on revision",
     "ready-to-approve": "ready to approve",
     completed: "completed"
@@ -433,6 +434,7 @@
     const tab = tabOf(order);
     const options = [
       ["in-progress", "New order has to be placed"],
+      ["orders-placed", "Orders Placed"],
       ["on-revision", "On Revision"],
       ["ready-to-approve", "Ready to Approve"],
       ["completed", "Completed"]
@@ -447,6 +449,7 @@
   function statusCopyLabel(order) {
     const tab = tabOf(order);
     if (tab === "in-progress") return "New order has to be placed";
+    if (tab === "orders-placed") return "Orders Placed";
     if (tab === "on-revision") return "On Revision";
     if (tab === "ready-to-approve") return "Ready to Approve";
     if (tab === "completed") return "Completed";
@@ -594,6 +597,7 @@
     if (activeTab === "ready-to-approve") return 8;
     if (activeTab === "completed") return 7;
     if (activeTab === "in-progress") return 20;
+    if (activeTab === "orders-placed") return 17;
     return 17 + (revisionCount * 2);
   }
 
@@ -658,7 +662,8 @@
       table.classList.remove("is-ready-board");
       table.classList.remove("is-completed-board");
     }
-    const hideRevisionColumns = activeTab === "in-progress";
+    const hideRevisionColumns = activeTab === "in-progress" || activeTab === "orders-placed";
+    const showScheduleColumns = activeTab === "in-progress";
     const revisionHeads = [];
     if (!hideRevisionColumns) {
       for (let i = 1; i <= revisionCount; i += 1) {
@@ -684,9 +689,9 @@
       revisionHeads.join("") +
       "<th>Payment</th>" +
       "<th>Status</th>" +
-      (hideRevisionColumns ? "<th>Place On</th><th>Placement Status</th><th>Action</th>" : "") +
+      (showScheduleColumns ? "<th>Place On</th><th>Placement Status</th><th>Action</th>" : "") +
       "<th>Actions</th>";
-    if (table) table.style.minWidth = String((hideRevisionColumns ? 2180 : 1760) + (hideRevisionColumns ? 0 : revisionCount * 360)) + "px";
+    if (table) table.style.minWidth = String((hideRevisionColumns ? (showScheduleColumns ? 2180 : 1760) : 1760) + (hideRevisionColumns ? 0 : revisionCount * 360)) + "px";
   }
 
   function renderAccountFilter() {
@@ -836,7 +841,7 @@
   }
 
   function updateTabCounts(all) {
-    const counts = { "in-progress": 0, "on-revision": 0, "ready-to-approve": 0, completed: 0 };
+    const counts = { "in-progress": 0, "orders-placed": 0, "on-revision": 0, "ready-to-approve": 0, completed: 0 };
     all.forEach(function (order) {
       const tab = tabOf(order);
       if (counts[tab] != null) counts[tab] += 1;
@@ -1009,7 +1014,7 @@
         "</tr>";
       }
       let revisionCells = "";
-      if (activeTab !== "in-progress") {
+      if (activeTab !== "in-progress" && activeTab !== "orders-placed") {
         for (let r = 0; r < revisionCount; r += 1) {
           const round = rounds[r];
           const buyerText = revisionRoleText(round, "buyer");
@@ -1405,7 +1410,12 @@
     countEl.textContent = "Loading…";
     body.innerHTML =
       '<tr><td colspan="' + columnCount(0) + '"><div class="empty-state"><strong>Loading orders from Google Sheet</strong></div></td></tr>';
-    window.OwlisticSheet.fetchOrders().then(function (result) {
+    const ensure = (window.OwlisticSheet.ensureScheduleColumns && typeof window.OwlisticSheet.ensureScheduleColumns === "function")
+      ? window.OwlisticSheet.ensureScheduleColumns()
+      : Promise.resolve();
+    ensure.then(function () {
+      return window.OwlisticSheet.fetchOrders();
+    }).then(function (result) {
       applySheetOrders(result);
       renderAccountFilter();
       render();
@@ -1476,54 +1486,65 @@
     if (scheduleDate && status !== "On Hold") scheduleDate.focus();
   }
 
-  function persistSchedule(order, message) {
+  function persistSchedule(order, message, options) {
+    options = options || {};
     store.upsertOrder(order);
     closeScheduleModal();
     closeScheduleMenus();
-    render();
+    if (options.movedToPlaced) {
+      setActiveTab("orders-placed");
+    } else {
+      render();
+    }
     const sheet = window.OwlisticSheet;
     const send = sheet && (typeof sheet.updateOrderSchedule === "function"
       ? sheet.updateOrderSchedule
       : (typeof sheet.sync === "function" ? function (item) { return sheet.sync(item, { skipUploads: true }); } : null));
+    const finish = function (okMessage) {
+      showToast(okMessage || message || "Schedule saved");
+    };
+    const fail = function (err) {
+      showToast(err || "Schedule saved here, but not on the Google Sheet.");
+    };
     if (!send) {
-      showToast(message || "Schedule saved");
+      finish(message || (options.movedToPlaced ? "Order moved to Orders Placed" : "Schedule saved"));
       return;
     }
     send.call(sheet, order).then(function (result) {
       if (result && result.skipped) {
-        showToast(message || "Schedule saved");
+        finish(message || (options.movedToPlaced ? "Order moved to Orders Placed" : "Schedule saved"));
         return;
       }
       if (result && result.ok === false && sheet.sync) {
         return sheet.sync(order, { skipUploads: true }).then(function (retry) {
           if (retry && retry.ok === false) {
-            showToast(retry.error || result.error || "Schedule saved here, but not on the Google Sheet.");
+            fail(retry.error || result.error);
             return;
           }
-          showToast(message || "Schedule saved");
+          finish(message || (options.movedToPlaced ? "Order moved to Orders Placed" : "Schedule saved"));
         }).catch(function () {
-          showToast(result.error || "Schedule saved here, but not on the Google Sheet.");
+          fail(result.error);
         });
       }
       if (result && result.ok === false) {
-        showToast(result.error || "Schedule saved here, but not on the Google Sheet.");
+        fail(result.error);
         return;
       }
-      showToast(message || "Schedule saved");
+      finish(message || (options.movedToPlaced ? "Order moved to Orders Placed" : "Schedule saved"));
     }).catch(function () {
       if (sheet && sheet.sync) {
         sheet.sync(order, { skipUploads: true }).then(function (retry) {
           if (retry && retry.ok === false) {
-            showToast(retry.error || "Schedule saved here, but not on the Google Sheet.");
+            fail(retry.error);
             return;
           }
-          showToast(message || "Schedule saved");
+          finish(message || (options.movedToPlaced ? "Order moved to Orders Placed" : "Schedule saved"));
         }).catch(function () {
-          showToast("Schedule saved here, but not on the Google Sheet.");
+          fail("Schedule saved here, but not on the Google Sheet.");
         });
         return;
       }
-      showToast("Schedule saved here, but not on the Google Sheet.");
+      fail("Schedule saved here, but not on the Google Sheet.");
     });
   }
 
@@ -1541,7 +1562,7 @@
     if (!store.applyManualSchedule) return;
     if (action === "placed") {
       store.applyManualSchedule(order, { placed: true }, scheduleActor());
-      persistSchedule(order, "Schedule saved");
+      persistSchedule(order, "Order moved to Orders Placed", { movedToPlaced: true });
       return;
     }
     if (action === "hold") {

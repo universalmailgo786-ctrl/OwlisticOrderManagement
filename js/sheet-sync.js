@@ -1088,18 +1088,65 @@
     return enqueueOrderWrite(order.id, function () {
       const latest = liveOrder(order) || order;
       const status = callStore("placementStatusOf", "placementStatusOf", latest) || latest.placementStatus || "Unscheduled";
-      return postPayload({
-        action: "updateOrderSchedule",
-        orderId: latest.id,
-        accountName: accountNameOf(latest),
-        tabName: tabNameOf(accountNameOf(latest)),
-        placeOn: latest.placeOn || "",
-        placementStatus: status,
-        scheduledBy: latest.scheduledBy || "",
-        scheduleUpdatedAt: latest.scheduleUpdatedAt || "",
-        placedAt: latest.placedAt || "",
-        row: toRow(latest)
+      const boardTab = callStore("boardStatusOf", "boardStatusOf", latest) || latest.boardStatus || "in-progress";
+      const statusLabel = callStore("boardStatusLabel", "boardStatusLabel", boardTab) || latest.overallStatus || "";
+      const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+      const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+      const url = getWebAppUrl() + join +
+        "action=updateOrderSchedule" +
+        "&orderId=" + encodeURIComponent(latest.id) +
+        "&tab=" + encodeURIComponent(tabNameOf(accountNameOf(latest))) +
+        "&accountName=" + encodeURIComponent(accountNameOf(latest)) +
+        "&placeOn=" + encodeURIComponent(latest.placeOn || "") +
+        "&placementStatus=" + encodeURIComponent(status) +
+        "&scheduledBy=" + encodeURIComponent(latest.scheduledBy || "") +
+        "&scheduleUpdatedAt=" + encodeURIComponent(latest.scheduleUpdatedAt || "") +
+        "&placedAt=" + encodeURIComponent(latest.placedAt || "") +
+        "&boardStatus=" + encodeURIComponent(boardTab) +
+        "&statusLabel=" + encodeURIComponent(statusLabel) +
+        "&role=" + encodeURIComponent((session && session.role) || "") +
+        "&userAccount=" + encodeURIComponent((session && session.account) || "") +
+        "&username=" + encodeURIComponent((session && session.username) || "") +
+        "&_=" + Date.now();
+      return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
+        return response.text();
+      }).then(function (text) {
+        const data = parseJson(text);
+        if (data && data.action === "updateOrderSchedule") return data;
+        return postPayload({
+          action: "updateOrderSchedule",
+          orderId: latest.id,
+          accountName: accountNameOf(latest),
+          tabName: tabNameOf(accountNameOf(latest)),
+          placeOn: latest.placeOn || "",
+          placementStatus: status,
+          scheduledBy: latest.scheduledBy || "",
+          scheduleUpdatedAt: latest.scheduleUpdatedAt || "",
+          placedAt: latest.placedAt || "",
+          boardStatus: boardTab,
+          statusLabel: statusLabel,
+          row: toRow(latest)
+        }).then(function () {
+          return sync(latest, { skipUploads: true, bypassQueue: true });
+        });
+      }).catch(function () {
+        return sync(latest, { skipUploads: true, bypassQueue: true });
       });
+    });
+  }
+
+  function ensureScheduleColumns() {
+    if (!isConfigured()) return Promise.resolve({ skipped: true });
+    const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+    const url = getWebAppUrl() + join + "action=ensureScheduleColumns&_=" + Date.now();
+    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      const data = parseJson(text);
+      if (data && data.action === "ensureScheduleColumns") return data;
+      return { ok: false, unsupported: true, sheetColumns: data && data.sheetColumns };
+    }).catch(function () {
+      return { ok: false };
     });
   }
 
@@ -1145,6 +1192,11 @@
             tabName: tabName,
             businessName: current.businessName || "",
             clientName: current.clientName || "",
+            placeOn: current.placeOn || "",
+            placementStatus: callStore("placementStatusOf", "placementStatusOf", current) || current.placementStatus || "Unscheduled",
+            scheduledBy: current.scheduledBy || "",
+            scheduleUpdatedAt: current.scheduleUpdatedAt || "",
+            placedAt: current.placedAt || "",
             row: toRow(current),
             uploads: []
           }).then(function (result) {
@@ -1284,7 +1336,7 @@
       const orders = (data.orders || []).filter(function (order) {
         return orderOnCreatedAccountTab(order, tabs);
       });
-      return { ok: true, orders: orders };
+      return { ok: true, orders: orders, sheetColumns: data.sheetColumns || 0 };
     }).catch(function () {
       return { ok: false, error: "Could not reach Google Sheet.", orders: [] };
     });
@@ -1304,6 +1356,7 @@
     fetchOrders: fetchOrders,
     updateOrderNames: updateOrderNames,
     updateOrderSchedule: updateOrderSchedule,
+    ensureScheduleColumns: ensureScheduleColumns,
     updateOrderStatus: updateOrderStatus,
     findDuplicateOrder: findDuplicateOrder,
     confirmSheetWrite: confirmSheetWrite,

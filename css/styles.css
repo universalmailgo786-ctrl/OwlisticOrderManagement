@@ -2657,6 +2657,11 @@ body.modal-open {
   color: #6b5420;
 }
 
+.records-status.is-orders-placed {
+  background-color: #dce8d4;
+  color: #3d5a2c;
+}
+
 .records-table td.records-clip-cell {
   white-space: normal;
   min-width: 168px;

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=filters2" />
+  <link rel="stylesheet" href="css/styles.css?v=placed2" />
 </head>
 <body class="records-page">
   <nav class="app-nav">
@@ -34,6 +34,10 @@
       <button type="button" class="records-tab is-active" role="tab" id="tab-in-progress" data-tab="in-progress" aria-selected="true">
         New order has to be placed
         <span class="records-tab-count" data-tab-count="in-progress">0</span>
+      </button>
+      <button type="button" class="records-tab" role="tab" id="tab-orders-placed" data-tab="orders-placed" aria-selected="false">
+        Orders Placed
+        <span class="records-tab-count" data-tab-count="orders-placed">0</span>
       </button>
       <button type="button" class="records-tab" role="tab" id="tab-on-revision" data-tab="on-revision" aria-selected="false">
         On revision
@@ -242,9 +246,9 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="js/storage.js?v=schedule1"></script>
-  <script src="js/sheet-sync.js?v=schedule1"></script>
+  <script src="js/storage.js?v=placed2"></script>
+  <script src="js/sheet-sync.js?v=placed2"></script>
   <script src="js/auth.js?v=schedule1"></script>
-  <script src="js/records.js?v=filters2"></script>
+  <script src="js/records.js?v=placed2"></script>
 </body>
 </html>
