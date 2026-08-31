@@ -196,6 +196,10 @@ function doPost(e) {
   }
 }
 
+function installScheduleColumns() {
+  return ensureAllScheduleColumns_(SpreadsheetApp.openById(SPREADSHEET_ID));
+}
+
 function setupUsersSheet() {
   return setupUsersSheet_();
 }
