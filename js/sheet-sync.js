@@ -36,7 +36,12 @@
     "Ready to Approve",
     "Overall Status",
     "Business Name",
-    "Client Name"
+    "Client Name",
+    "Place On",
+    "Placement Status",
+    "Scheduled By",
+    "Schedule Updated At",
+    "Placed At"
   ];
 
   function callStore(primary, fallback) {
@@ -317,7 +322,12 @@
       live.readyToApprove || live.readyToApprove ? "Ready to Approve" : "Not Ready",
       statusLabel,
       live.businessName || "",
-      live.clientName || ""
+      live.clientName || "",
+      live.placeOn || "",
+      live.placementStatus || callStore("placementStatusOf", "placementStatusOf", live) || "Unscheduled",
+      live.scheduledBy || "",
+      live.scheduleUpdatedAt || "",
+      live.placedAt || ""
     ];
   }
 
@@ -1071,6 +1081,28 @@
     return next;
   }
 
+  function updateOrderSchedule(order) {
+    if (!isConfigured() || !order || !order.id) {
+      return Promise.resolve({ skipped: true });
+    }
+    return enqueueOrderWrite(order.id, function () {
+      const latest = liveOrder(order) || order;
+      const status = callStore("placementStatusOf", "placementStatusOf", latest) || latest.placementStatus || "Unscheduled";
+      return postPayload({
+        action: "updateOrderSchedule",
+        orderId: latest.id,
+        accountName: accountNameOf(latest),
+        tabName: tabNameOf(accountNameOf(latest)),
+        placeOn: latest.placeOn || "",
+        placementStatus: status,
+        scheduledBy: latest.scheduledBy || "",
+        scheduleUpdatedAt: latest.scheduleUpdatedAt || "",
+        placedAt: latest.placedAt || "",
+        row: toRow(latest)
+      });
+    });
+  }
+
   function updateOrderStatus(order) {
     if (!isConfigured() || !order || !order.id) {
       return Promise.resolve({ skipped: true });
@@ -1271,6 +1303,7 @@
     filesMissingDrive: filesMissingDrive,
     fetchOrders: fetchOrders,
     updateOrderNames: updateOrderNames,
+    updateOrderSchedule: updateOrderSchedule,
     updateOrderStatus: updateOrderStatus,
     findDuplicateOrder: findDuplicateOrder,
     confirmSheetWrite: confirmSheetWrite,

@@ -17,6 +17,17 @@
   const revisionFilter = document.getElementById("filter-revision");
   const readyFilter = document.getElementById("filter-ready");
   const tabButtons = Array.prototype.slice.call(document.querySelectorAll(".records-tab"));
+  const scheduleSummary = document.getElementById("schedule-summary");
+  const scheduleAccountSummary = document.getElementById("schedule-account-summary");
+  const scheduleFilterRow = document.getElementById("schedule-filter-row");
+  const placeOnFilter = document.getElementById("filter-place-on");
+  const scheduleClearAll = document.getElementById("schedule-clear-all");
+  const scheduleModal = document.getElementById("schedule-modal");
+  const scheduleDate = document.getElementById("schedule-date");
+  const scheduleMode = document.getElementById("schedule-mode");
+  const scheduleSave = document.getElementById("schedule-save");
+  const scheduleModalOrder = document.getElementById("schedule-modal-order");
+  const scheduleModalTitle = document.getElementById("schedule-modal-title");
   const TAB_LABELS = {
     "in-progress": "New order has to be placed",
     "on-revision": "on revision",
@@ -25,8 +36,12 @@
   };
   const COPY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8.2" y="8.2" width="11.2" height="11.2" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5.4 15.4V6.8A1.8 1.8 0 0 1 7.2 5h9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
   const PENCIL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.4 19.4 7.6 18.6 19 7.2a1.5 1.5 0 0 0 0-2.1L17 3.1a1.5 1.5 0 0 0-2.1 0L4.6 13.4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M13.6 4.6 17.4 8.4" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>';
+  const CAL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 4v4M16 4v4M4 10h16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
 
   let activeTab = "in-progress";
+  let scheduleFilter = "";
+  let scheduleEditingId = "";
+  let openScheduleMenuId = "";
 
   function orderNumber(order) {
     const match = String((order && order.id) || "").match(/(\d+)/);
@@ -578,7 +593,7 @@
     if (activeTab === "on-revision") return 10;
     if (activeTab === "ready-to-approve") return 8;
     if (activeTab === "completed") return 7;
-    if (activeTab === "in-progress") return 17;
+    if (activeTab === "in-progress") return 20;
     return 17 + (revisionCount * 2);
   }
 
@@ -669,8 +684,9 @@
       revisionHeads.join("") +
       "<th>Payment</th>" +
       "<th>Status</th>" +
+      (hideRevisionColumns ? "<th>Place On</th><th>Placement Status</th><th>Action</th>" : "") +
       "<th>Actions</th>";
-    if (table) table.style.minWidth = String(1760 + (hideRevisionColumns ? 0 : revisionCount * 360)) + "px";
+    if (table) table.style.minWidth = String((hideRevisionColumns ? 2180 : 1760) + (hideRevisionColumns ? 0 : revisionCount * 360)) + "px";
   }
 
   function renderAccountFilter() {
@@ -692,7 +708,69 @@
     }
   }
 
-  function matchesFilters(order) {
+  function scheduleActor() {
+    const current = (auth.getSession && auth.getSession()) || session;
+    if (!current) return "";
+    return String(current.name || current.username || "").trim();
+  }
+
+  function placeOnLabel(order) {
+    const status = store.placementStatusOf ? store.placementStatusOf(order) : (order.placementStatus || "Unscheduled");
+    if (status === "On Hold" || status === "Unscheduled" || !order.placeOn) return "—";
+    return store.formatPlaceOn ? store.formatPlaceOn(order.placeOn) : order.placeOn;
+  }
+
+  function placementPill(order) {
+    const status = store.placementStatusOf ? store.placementStatusOf(order) : (order.placementStatus || "Unscheduled");
+    const cls = status === "Place Today" ? "is-today"
+      : status === "Scheduled" ? "is-scheduled"
+      : status === "Later" ? "is-later"
+      : status === "On Hold" ? "is-hold"
+      : status === "Placed" ? "is-placed"
+      : "is-unscheduled";
+    return '<span class="placement-pill ' + cls + '"><i></i>' + escapeHtml(status) + "</span>";
+  }
+
+  function placeOnCell(order) {
+    return '<button type="button" class="schedule-place-btn" data-schedule-do="open" data-schedule-order="' + escapeHtml(order.id) + '">' +
+      CAL_ICON + escapeHtml(placeOnLabel(order)) +
+    "</button>";
+  }
+
+  function scheduleActionHtml(order) {
+    const status = store.placementStatusOf ? store.placementStatusOf(order) : (order.placementStatus || "Unscheduled");
+    let primaryLabel = "Schedule";
+    let primaryAction = "open";
+    if (status === "Place Today") {
+      primaryLabel = "Mark Placed";
+      primaryAction = "placed";
+    } else if (status !== "Unscheduled") {
+      primaryLabel = "Edit Schedule";
+      primaryAction = "open";
+    }
+    const open = openScheduleMenuId === order.id;
+    return '<div class="schedule-action-wrap">' +
+      '<button type="button" class="schedule-action-btn' + (status === "Placed" ? " is-placed" : "") + '" data-schedule-do="' + primaryAction + '" data-schedule-order="' + escapeHtml(order.id) + '">' +
+        escapeHtml(primaryLabel) +
+      "</button>" +
+      '<button type="button" class="schedule-action-btn is-menu" data-toggle-schedule-menu="' + escapeHtml(order.id) + '" aria-label="More schedule actions">▾</button>' +
+      '<div class="schedule-menu"' + (open ? "" : " hidden") + ' data-schedule-menu="' + escapeHtml(order.id) + '">' +
+        '<button type="button" data-schedule-do="open" data-schedule-order="' + escapeHtml(order.id) + '">Schedule Order</button>' +
+        '<button type="button" data-schedule-do="open" data-schedule-order="' + escapeHtml(order.id) + '">Edit Schedule</button>' +
+        '<button type="button" data-schedule-do="clear" data-schedule-order="' + escapeHtml(order.id) + '">Remove Schedule</button>' +
+        '<button type="button" data-schedule-do="hold" data-schedule-order="' + escapeHtml(order.id) + '">Put On Hold</button>' +
+        '<button type="button" data-schedule-do="placed" data-schedule-order="' + escapeHtml(order.id) + '">Mark Placed</button>' +
+      "</div>" +
+    "</div>";
+  }
+
+  function scheduleCells(order) {
+    return "<td>" + placeOnCell(order) + "</td>" +
+      "<td>" + placementPill(order) + "</td>" +
+      "<td>" + scheduleActionHtml(order) + "</td>";
+  }
+
+  function matchesBaseFilters(order) {
     const query = (search.value || "").trim().toLowerCase();
     const created = order.createdAt ? order.createdAt.slice(0, 10) : "";
     if (dateFilter.value && created !== dateFilter.value) return false;
@@ -719,17 +797,32 @@
       order.accountName,
       order.messageText,
       messages,
-      revisionRounds(order).map(function (round) {
+      revisionRounds.map(function (round) {
         return revisionRoleText(round, "buyer") + " " + revisionRoleText(round, "seller");
       }).join(" "),
       order.directRequirements,
       order.fiverrGigUrl,
       order.reviewText,
+      order.placeOn,
+      store.placementStatusOf ? store.placementStatusOf(order) : (order.placementStatus || ""),
       requirementFileList(order.requirementFiles).map(function (file) { return file.name; }).join(" ")
     ]
       .join(" ")
       .toLowerCase();
     return haystack.indexOf(query) !== -1;
+  }
+
+  function matchesFilters(order) {
+    if (!matchesBaseFilters(order)) return false;
+    if (activeTab !== "in-progress") return true;
+    const placeOnValue = placeOnFilter && placeOnFilter.value ? placeOnFilter.value : "";
+    const date = store.ymd ? store.ymd(order.placeOn) : String(order.placeOn || "").slice(0, 10);
+    if (placeOnValue && date !== placeOnValue) return false;
+    if (scheduleFilter) {
+      const bucket = store.placementBucket ? store.placementBucket(order) : "";
+      if (bucket !== scheduleFilter) return false;
+    }
+    return true;
   }
 
   function setActiveTab(tab) {
@@ -754,6 +847,67 @@
     });
   }
 
+  function updateAccountSummary(inProgress) {
+    if (!scheduleAccountSummary) return;
+    if (activeTab !== "in-progress" || !accountFilter.value) {
+      scheduleAccountSummary.hidden = true;
+      scheduleAccountSummary.textContent = "";
+      return;
+    }
+    const account = (auth.visibleAccounts() || []).find(function (item) {
+      return item.id === accountFilter.value;
+    });
+    const label = account ? store.accountLabel(account) : accountFilter.options[accountFilter.selectedIndex].text;
+    const scoped = (inProgress || []).filter(function (order) {
+      return order.accountId === accountFilter.value;
+    });
+    const counts = { today: 0, tomorrow: 0, later: 0, unscheduled: 0, hold: 0 };
+    scoped.forEach(function (order) {
+      const bucket = store.placementBucket ? store.placementBucket(order) : "unscheduled";
+      if (counts[bucket] != null) counts[bucket] += 1;
+    });
+    scheduleAccountSummary.hidden = false;
+    scheduleAccountSummary.textContent = label + " — " +
+      counts.today + " scheduled today · " +
+      counts.tomorrow + " tomorrow · " +
+      counts.later + " later · " +
+      counts.unscheduled + " unscheduled · " +
+      counts.hold + " on hold";
+  }
+
+  function updateScheduleChrome(all, shown) {
+    const show = activeTab === "in-progress";
+    if (scheduleSummary) scheduleSummary.hidden = !show;
+    if (scheduleFilterRow) scheduleFilterRow.hidden = !show;
+    document.querySelectorAll("[data-schedule-filter]").forEach(function (el) {
+      el.classList.toggle("is-active", show && scheduleFilter && el.getAttribute("data-schedule-filter") === scheduleFilter);
+    });
+    if (!show) {
+      if (scheduleAccountSummary) {
+        scheduleAccountSummary.hidden = true;
+        scheduleAccountSummary.textContent = "";
+      }
+      return;
+    }
+    const inProgress = (all || []).filter(function (order) {
+      return tabOf(order) === "in-progress" && matchesBaseFilters(order);
+    });
+    const counts = { today: 0, tomorrow: 0, later: 0, unscheduled: 0, hold: 0 };
+    inProgress.forEach(function (order) {
+      const bucket = store.placementBucket ? store.placementBucket(order) : "unscheduled";
+      if (counts[bucket] != null) counts[bucket] += 1;
+    });
+    document.querySelectorAll("[data-schedule-count]").forEach(function (el) {
+      const key = el.getAttribute("data-schedule-count");
+      el.textContent = String(counts[key] || 0);
+    });
+    const totalEl = document.getElementById("schedule-total-count");
+    const showingEl = document.getElementById("schedule-showing-copy");
+    if (totalEl) totalEl.textContent = String(inProgress.length);
+    if (showingEl) showingEl.textContent = "Showing " + (shown || []).length + " of " + inProgress.length;
+    updateAccountSummary(inProgress);
+  }
+
   function render() {
     const all = auth.visibleOrders();
     updateTabCounts(all);
@@ -768,6 +922,7 @@
     }).filter(function (order) {
       return tabOf(order) === activeTab && matchesFilters(order);
     });
+    updateScheduleChrome(all, orders);
 
     const noun = orders.length === 1 ? "order" : "orders";
     countEl.textContent = orders.length + " " + noun;
@@ -860,6 +1015,7 @@
         revisionCells +
         "<td>" + withCopy(badge(order.paymentStatus || "in-progress", paymentLabel || "—"), paymentLabel, "payment") + "</td>" +
         "<td>" + withCopy(statusSelect(order), statusLabel, "status") + "</td>" +
+        (activeTab === "in-progress" ? scheduleCells(order) : "") +
         actions +
       "</tr>";
     }).join("");
@@ -1266,6 +1422,135 @@
     }, 2800);
   }
 
+  function closeScheduleMenus() {
+    openScheduleMenuId = "";
+    document.querySelectorAll("[data-schedule-menu]").forEach(function (menu) {
+      menu.hidden = true;
+    });
+  }
+
+  function closeScheduleModal() {
+    scheduleEditingId = "";
+    if (scheduleModal) scheduleModal.hidden = true;
+  }
+
+  function openScheduleModal(order) {
+    if (!order || !scheduleModal) return;
+    closeScheduleMenus();
+    scheduleEditingId = order.id;
+    const status = store.placementStatusOf ? store.placementStatusOf(order) : (order.placementStatus || "");
+    if (scheduleModalTitle) {
+      scheduleModalTitle.textContent = !status || status === "Unscheduled" ? "Schedule order" : "Edit schedule";
+    }
+    if (scheduleModalOrder) {
+      scheduleModalOrder.textContent = order.id + (order.fiverrId ? " · " + order.fiverrId : "");
+    }
+    if (scheduleDate) {
+      scheduleDate.value = store.ymd ? store.ymd(order.placeOn) : String(order.placeOn || "").slice(0, 10);
+    }
+    if (scheduleMode) scheduleMode.value = status === "On Hold" ? "hold" : "scheduled";
+    scheduleModal.hidden = false;
+    if (scheduleDate && status !== "On Hold") scheduleDate.focus();
+  }
+
+  function persistSchedule(order, message) {
+    store.upsertOrder(order);
+    closeScheduleModal();
+    closeScheduleMenus();
+    render();
+    const sheet = window.OwlisticSheet;
+    const send = sheet && (typeof sheet.updateOrderSchedule === "function"
+      ? sheet.updateOrderSchedule
+      : (typeof sheet.sync === "function" ? function (item) { return sheet.sync(item, { skipUploads: true }); } : null));
+    if (!send) {
+      showToast(message || "Schedule saved");
+      return;
+    }
+    send.call(sheet, order).then(function (result) {
+      if (result && result.skipped) {
+        showToast(message || "Schedule saved");
+        return;
+      }
+      if (result && result.ok === false && sheet.sync) {
+        return sheet.sync(order, { skipUploads: true }).then(function (retry) {
+          if (retry && retry.ok === false) {
+            showToast(retry.error || result.error || "Schedule saved here, but not on the Google Sheet.");
+            return;
+          }
+          showToast(message || "Schedule saved");
+        }).catch(function () {
+          showToast(result.error || "Schedule saved here, but not on the Google Sheet.");
+        });
+      }
+      if (result && result.ok === false) {
+        showToast(result.error || "Schedule saved here, but not on the Google Sheet.");
+        return;
+      }
+      showToast(message || "Schedule saved");
+    }).catch(function () {
+      if (sheet && sheet.sync) {
+        sheet.sync(order, { skipUploads: true }).then(function (retry) {
+          if (retry && retry.ok === false) {
+            showToast(retry.error || "Schedule saved here, but not on the Google Sheet.");
+            return;
+          }
+          showToast(message || "Schedule saved");
+        }).catch(function () {
+          showToast("Schedule saved here, but not on the Google Sheet.");
+        });
+        return;
+      }
+      showToast("Schedule saved here, but not on the Google Sheet.");
+    });
+  }
+
+  function applyScheduleAction(orderId, action) {
+    const order = store.getOrder(orderId);
+    if (!order) return;
+    if (typeof auth.canSeeOrder === "function" && !auth.canSeeOrder(order)) {
+      showToast("You can only schedule orders for your account.");
+      return;
+    }
+    if (action === "open") {
+      openScheduleModal(order);
+      return;
+    }
+    if (!store.applyManualSchedule) return;
+    if (action === "placed") {
+      store.applyManualSchedule(order, { placed: true }, scheduleActor());
+      persistSchedule(order, "Schedule saved");
+      return;
+    }
+    if (action === "hold") {
+      store.applyManualSchedule(order, { hold: true }, scheduleActor());
+      persistSchedule(order, "Schedule saved");
+      return;
+    }
+    if (action === "clear") {
+      store.applyManualSchedule(order, { clear: true }, scheduleActor());
+      persistSchedule(order, "Schedule saved");
+    }
+  }
+
+  function saveScheduleModal() {
+    const order = store.getOrder(scheduleEditingId);
+    if (!order) return;
+    if (!store.applyManualSchedule) return;
+    const mode = scheduleMode ? scheduleMode.value : "scheduled";
+    if (mode === "hold") {
+      store.applyManualSchedule(order, { hold: true }, scheduleActor());
+      persistSchedule(order, "Schedule saved");
+      return;
+    }
+    const date = scheduleDate ? String(scheduleDate.value || "").trim() : "";
+    if (!date) {
+      showToast("Choose a Place On date, or set status to On Hold.");
+      return;
+    }
+    store.applyManualSchedule(order, { placeOn: date }, scheduleActor());
+    persistSchedule(order, "Schedule saved");
+  }
+
   function copyText(text) {
     const value = String(text == null ? "" : text);
     if (!value) {
@@ -1392,6 +1677,28 @@
     if (editBtn && !editBtn.hasAttribute("data-name-input")) {
       event.preventDefault();
       startNameEdit(editBtn);
+      return;
+    }
+
+    const toggleMenu = event.target.closest("[data-toggle-schedule-menu]");
+    if (toggleMenu) {
+      event.preventDefault();
+      event.stopPropagation();
+      const id = toggleMenu.getAttribute("data-toggle-schedule-menu");
+      const willOpen = openScheduleMenuId !== id;
+      closeScheduleMenus();
+      if (willOpen) {
+        openScheduleMenuId = id;
+        const menu = body.querySelector('[data-schedule-menu="' + id + '"]');
+        if (menu) menu.hidden = false;
+      }
+      return;
+    }
+
+    const scheduleDo = event.target.closest("[data-schedule-do]");
+    if (scheduleDo) {
+      event.preventDefault();
+      applyScheduleAction(scheduleDo.getAttribute("data-schedule-order"), scheduleDo.getAttribute("data-schedule-do"));
       return;
     }
 
@@ -1548,12 +1855,46 @@
       });
     }
   });
-  [search, dateFilter, accountFilter, paymentFilter, revisionFilter, readyFilter].forEach(function (input) {
+  [search, dateFilter, accountFilter, paymentFilter, revisionFilter, readyFilter, placeOnFilter].forEach(function (input) {
+    if (!input) return;
     input.addEventListener("input", render);
     input.addEventListener("change", render);
   });
+  if (scheduleSave) {
+    scheduleSave.addEventListener("click", function () {
+      saveScheduleModal();
+    });
+  }
+  if (scheduleClearAll) {
+    scheduleClearAll.addEventListener("click", function () {
+      scheduleFilter = "";
+      if (search) search.value = "";
+      if (dateFilter) dateFilter.value = "";
+      if (accountFilter) accountFilter.value = "";
+      if (paymentFilter) paymentFilter.value = "";
+      if (revisionFilter) revisionFilter.value = "";
+      if (readyFilter) readyFilter.value = "";
+      if (placeOnFilter) placeOnFilter.value = "";
+      render();
+    });
+  }
 
   document.addEventListener("click", function (event) {
+    if (event.target.closest("[data-close-schedule]")) {
+      closeScheduleModal();
+      return;
+    }
+    const filterBtn = event.target.closest("[data-schedule-filter]");
+    if (filterBtn) {
+      event.preventDefault();
+      const next = filterBtn.getAttribute("data-schedule-filter") || "";
+      scheduleFilter = scheduleFilter === next ? "" : next;
+      render();
+      return;
+    }
+    if (!event.target.closest(".schedule-action-wrap")) {
+      closeScheduleMenus();
+    }
     if (event.target.closest("[data-close-chat]")) {
       closeChat();
       return;
@@ -1611,6 +1952,10 @@
 
   document.addEventListener("keydown", function (event) {
     if (event.key !== "Escape") return;
+    if (scheduleModal && !scheduleModal.hidden) {
+      closeScheduleModal();
+      return;
+    }
     if (chatLightbox && !chatLightbox.hidden) {
       closeLightbox();
       return;

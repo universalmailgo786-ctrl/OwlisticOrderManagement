@@ -825,9 +825,155 @@
     return revisions.length ? revisions[revisions.length - 1] : null;
   }
 
+  function pad2(n) {
+    return (Number(n) < 10 ? "0" : "") + String(n);
+  }
+
+  function ymd(value) {
+    const text = String(value || "").trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const parsed = new Date(text);
+    if (isNaN(parsed.getTime())) return "";
+    return parsed.getFullYear() + "-" + pad2(parsed.getMonth() + 1) + "-" + pad2(parsed.getDate());
+  }
+
+  function todayYmd() {
+    const d = new Date();
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+
+  function shiftYmd(value, days) {
+    const date = ymd(value);
+    if (!date) return "";
+    const parts = date.split("-");
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    d.setDate(d.getDate() + Number(days || 0));
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+
+  function formatPlaceOn(value) {
+    const date = ymd(value);
+    if (!date) return "—";
+    const parts = date.split("-");
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  function placementStatusOf(order) {
+    if (!order) return "Unscheduled";
+    if (order.placementPlaced) return "Placed";
+    if (order.placementHold) return "On Hold";
+    const date = ymd(order.placeOn);
+    if (!date) return "Unscheduled";
+    const today = todayYmd();
+    if (date === today) return "Place Today";
+    if (date === shiftYmd(today, 1)) return "Scheduled";
+    if (date > shiftYmd(today, 1)) return "Later";
+    return "Scheduled";
+  }
+
+  function placementBucket(order) {
+    const status = placementStatusOf(order);
+    if (status === "On Hold") return "hold";
+    if (status === "Placed") return "placed";
+    if (status === "Unscheduled") return "unscheduled";
+    const date = ymd(order.placeOn);
+    const today = todayYmd();
+    if (date === today) return "today";
+    if (date === shiftYmd(today, 1)) return "tomorrow";
+    if (date > shiftYmd(today, 1)) return "later";
+    return "scheduled";
+  }
+
+  function normalizeSchedule(order) {
+    if (!order) return order;
+    order.placeOn = ymd(order.placeOn);
+    order.placementHold = Boolean(order.placementHold);
+    order.placementPlaced = Boolean(order.placementPlaced);
+    if (order.placementPlaced) order.placementHold = false;
+    order.scheduledBy = String(order.scheduledBy || "");
+    order.scheduleUpdatedAt = String(order.scheduleUpdatedAt || "");
+    order.placedAt = String(order.placedAt || "");
+    order.placementStatus = placementStatusOf(order);
+    return order;
+  }
+
+  function keepSchedule(order, previous) {
+    if (!order || !previous) return order;
+    if (order.placeOn == null) order.placeOn = previous.placeOn;
+    if (order.placementHold == null) order.placementHold = previous.placementHold;
+    if (order.placementPlaced == null) order.placementPlaced = previous.placementPlaced;
+    if (order.scheduledBy == null) order.scheduledBy = previous.scheduledBy;
+    if (order.scheduleUpdatedAt == null) order.scheduleUpdatedAt = previous.scheduleUpdatedAt;
+    if (order.placedAt == null) order.placedAt = previous.placedAt;
+    return order;
+  }
+
+  function mergeSchedule(order, previous) {
+    if (!previous) {
+      if (/on hold/i.test(String(order.placementStatus || ""))) order.placementHold = true;
+      if (/^placed$/i.test(String(order.placementStatus || "").trim())) order.placementPlaced = true;
+      return normalizeSchedule(order);
+    }
+    const incomingStamp = Date.parse(order.scheduleUpdatedAt || "") || 0;
+    const previousStamp = Date.parse(previous.scheduleUpdatedAt || "") || 0;
+    const incomingHold = Boolean(order.placementHold) || /on hold/i.test(String(order.placementStatus || ""));
+    const incomingPlaced = Boolean(order.placementPlaced) || /^placed$/i.test(String(order.placementStatus || "").trim());
+    const incomingDate = ymd(order.placeOn);
+    if (previousStamp && incomingStamp && previousStamp > incomingStamp) {
+      order.placeOn = previous.placeOn;
+      order.placementHold = previous.placementHold;
+      order.placementPlaced = previous.placementPlaced;
+      order.scheduledBy = previous.scheduledBy;
+      order.scheduleUpdatedAt = previous.scheduleUpdatedAt;
+      order.placedAt = previous.placedAt;
+    } else if (!incomingDate && !incomingHold && !incomingPlaced && (previous.placeOn || previous.placementHold || previous.placementPlaced)) {
+      order.placeOn = previous.placeOn;
+      order.placementHold = previous.placementHold;
+      order.placementPlaced = previous.placementPlaced;
+      order.scheduledBy = previous.scheduledBy || order.scheduledBy;
+      order.scheduleUpdatedAt = previous.scheduleUpdatedAt || order.scheduleUpdatedAt;
+      order.placedAt = previous.placedAt || order.placedAt;
+    } else {
+      order.placementHold = incomingHold;
+      order.placementPlaced = incomingPlaced;
+    }
+    return normalizeSchedule(order);
+  }
+
+  function applyManualSchedule(order, patch, actor) {
+    if (!order) return order;
+    const next = patch || {};
+    if (next.clear) {
+      order.placeOn = "";
+      order.placementHold = false;
+      order.placementPlaced = false;
+    } else if (next.hold) {
+      order.placementHold = true;
+      order.placementPlaced = false;
+      order.placeOn = "";
+    } else if (next.placed) {
+      order.placementPlaced = true;
+      order.placementHold = false;
+      order.placedAt = order.placedAt || (todayYmd() + " " + pad2(new Date().getHours()) + ":" + pad2(new Date().getMinutes()));
+    } else {
+      if (next.placeOn != null) order.placeOn = ymd(next.placeOn);
+      order.placementHold = false;
+      order.placementPlaced = false;
+    }
+    order.scheduledBy = String(actor || order.scheduledBy || "");
+    order.scheduleUpdatedAt = todayYmd() + " " + pad2(new Date().getHours()) + ":" + pad2(new Date().getMinutes());
+    return normalizeSchedule(order);
+  }
+
   function upsertOrder(order) {
     const orders = getOrders();
     const stamp = nowIso();
+    const existing = order && order.id
+      ? orders.find(function (item) { return item.id === order.id; })
+      : null;
+    if (existing) keepSchedule(order, existing);
+    normalizeSchedule(order);
     order.status = computeStatus(order);
     order.revisions = normalizeRevisions(order.revisions);
     order.messageThread = messageThreadOf(order);
@@ -1015,7 +1161,7 @@
         (order.boardStatus && boardStatusLabel(order.boardStatus)) ||
         "";
       order.status = computeStatus(order);
-      return order;
+      return mergeSchedule(order, null);
     }
     const incomingRevisions = order.revisions || [];
     const looksLikeSheetStub = incomingRevisions.length && incomingRevisions.every(function (item) {
@@ -1067,7 +1213,7 @@
         "";
     }
     order.status = computeStatus(order);
-    return order;
+    return mergeSchedule(order, previous);
   }
 
   function importOrders(incoming) {
@@ -1152,6 +1298,13 @@
     getOrders: getOrders,
     getOrder: getOrder,
     upsertOrder: upsertOrder,
+    applyManualSchedule: applyManualSchedule,
+    placementStatusOf: placementStatusOf,
+    placementBucket: placementBucket,
+    formatPlaceOn: formatPlaceOn,
+    ymd: ymd,
+    todayYmd: todayYmd,
+    normalizeSchedule: normalizeSchedule,
     adoptOrderId: adoptOrderId,
     rememberOrderNumber: rememberOrderNumber,
     orderNumberOf: orderNumberOf,
@@ -1222,4 +1375,8 @@
   global.OwlisticStore.boardStatusOf = boardStatusOf;
   global.OwlisticStore.boardStatusLabel = boardStatusLabel;
   global.OwlisticStore.upsertOrder = upsertOrder;
+  global.OwlisticStore.applyManualSchedule = applyManualSchedule;
+  global.OwlisticStore.placementStatusOf = placementStatusOf;
+  global.OwlisticStore.placementBucket = placementBucket;
+  global.OwlisticStore.formatPlaceOn = formatPlaceOn;
 })(window);

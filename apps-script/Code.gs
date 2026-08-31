@@ -49,7 +49,12 @@ var HEADERS = [
   "Ready to Approve",
   "Overall Status",
   "Business Name",
-  "Client Name"
+  "Client Name",
+  "Place On",
+  "Placement Status",
+  "Scheduled By",
+  "Schedule Updated At",
+  "Placed At"
 ];
 
 var FOREST = "#223829";
@@ -65,7 +70,7 @@ var GOLD = "#f4ead0";
 var GOLD_TEXT = "#6b5420";
 var SKY = "#e4eef4";
 var SKY_TEXT = "#1f4f66";
-var COL_WIDTHS = [118, 122, 108, 140, 128, 150, 150, 150, 108, 132, 140, 150, 240, 220, 220, 140, 200, 200, 92, 260, 140, 220, 220, 168, 168, 160, 160];
+var COL_WIDTHS = [118, 122, 108, 140, 128, 150, 150, 150, 108, 132, 140, 150, 240, 220, 220, 140, 200, 200, 92, 260, 140, 220, 220, 168, 168, 160, 160, 132, 140, 140, 168, 150];
 var FILES_FOLDER_ID = "1feJrckxiyjHzCe9Rz_w-L879BWjpExdB";
 var TAB_COLORS = ["#9baa86", "#c4a574", "#4e91b1", "#e98a5f", "#708b55", "#8b6b4a"];
 var FORMAT_ROWS = 300;
@@ -168,6 +173,9 @@ function doPost(e) {
     }
     if (data.action === "updateOrderNames") {
       return json_(updateOrderNames_(ss, data));
+    }
+    if (data.action === "updateOrderSchedule") {
+      return json_(updateOrderSchedule_(ss, data));
     }
     if (data.action === "updateOrderStatus") {
       return json_(updateOrderStatus_(ss, data));
@@ -906,6 +914,13 @@ function orderFromRow_(row, tabName, files) {
     boardStatus: parseBoardStatus_(row[24]),
     businessName: String(row[25] || "").trim(),
     clientName: String(row[26] || "").trim(),
+    placeOn: String(row[27] || "").trim(),
+    placementStatus: String(row[28] || "").trim(),
+    scheduledBy: String(row[29] || "").trim(),
+    scheduleUpdatedAt: String(row[30] || "").trim(),
+    placedAt: String(row[31] || "").trim(),
+    placementHold: /on hold/i.test(String(row[28] || "")),
+    placementPlaced: /^placed$/i.test(String(row[28] || "").trim()),
     createdAt: isoFrom_(row[1], row[2]),
     updatedAt: isoFrom_(row[3], row[4]) || isoFrom_(row[1], row[2])
   };
@@ -1117,6 +1132,13 @@ function upsertOrderLocked_(ss, data) {
   if (existingRow) {
     if (!String(row[25] || "").trim()) row[25] = String(existingRow[25] || "").trim();
     if (!String(row[26] || "").trim()) row[26] = String(existingRow[26] || "").trim();
+    if (!String(row[30] || "").trim() && (String(existingRow[27] || "").trim() || String(existingRow[28] || "").trim() || String(existingRow[29] || "").trim() || String(existingRow[31] || "").trim())) {
+      row[27] = existingRow[27];
+      row[28] = existingRow[28];
+      row[29] = existingRow[29];
+      row[30] = existingRow[30];
+      row[31] = existingRow[31];
+    }
     if (!String(row[24] || "").trim()) {
       row[23] = existingRow[23];
       row[24] = existingRow[24];
@@ -1298,6 +1320,56 @@ function ensureNameColumns_(sheet) {
   var clientHeader = lastCol >= 27 ? String(sheet.getRange(1, 27).getValue() || "").trim() : "";
   if (bizHeader !== "Business Name") sheet.getRange(1, 26).setValue("Business Name");
   if (clientHeader !== "Client Name") sheet.getRange(1, 27).setValue("Client Name");
+  ensureScheduleColumns_(sheet);
+}
+
+function ensureScheduleColumns_(sheet) {
+  if (!sheet) return;
+  var headers = ["Place On", "Placement Status", "Scheduled By", "Schedule Updated At", "Placed At"];
+  var widths = [132, 140, 140, 168, 150];
+  var i;
+  for (i = 0; i < headers.length; i++) {
+    var col = 28 + i;
+    var current = String(sheet.getRange(1, col).getValue() || "").trim();
+    if (current !== headers[i]) sheet.getRange(1, col).setValue(headers[i]);
+    try { sheet.setColumnWidth(col, widths[i]); } catch (err) {}
+  }
+}
+
+function updateOrderSchedule_(ss, data) {
+  var orderId = String((data && (data.orderId || data.orderid)) || "").trim();
+  if (!orderId) {
+    return { ok: false, action: "updateOrderSchedule", error: "Order ID is required." };
+  }
+  var forced = forcedAccount_(data);
+  var wantedName = tabName_(data.tabName || data.tab || data.accountName || "");
+  var found = null;
+  if (wantedName) {
+    var sheet = sheetForAccount_(ss, wantedName);
+    if (sheet) found = findOrderOnSheet_(sheet, orderId);
+  }
+  if (!found) found = findOrder_(ss, orderId);
+  if (!found) {
+    return { ok: false, action: "updateOrderSchedule", found: false, error: "Order " + orderId + " was not found on the Google Sheet." };
+  }
+  if (forced && !canAccessFound_(found, forced)) {
+    return { ok: false, action: "updateOrderSchedule", error: "You can only edit orders for " + forced + "." };
+  }
+  ensureScheduleColumns_(found.sheet);
+  found.sheet.getRange(found.row, 28).setValue(String((data.placeOn != null ? data.placeOn : data.placeon) || ""));
+  found.sheet.getRange(found.row, 29).setValue(String((data.placementStatus != null ? data.placementStatus : data.placementstatus) || "Unscheduled"));
+  found.sheet.getRange(found.row, 30).setValue(String((data.scheduledBy != null ? data.scheduledBy : data.scheduledby) || ""));
+  found.sheet.getRange(found.row, 31).setValue(String((data.scheduleUpdatedAt != null ? data.scheduleUpdatedAt : data.scheduleupdatedat) || ""));
+  found.sheet.getRange(found.row, 32).setValue(String((data.placedAt != null ? data.placedAt : data.placedat) || ""));
+  found.sheet.getRange(found.row, 4).setValue(new Date());
+  found.sheet.getRange(found.row, 5).setValue(new Date());
+  return {
+    ok: true,
+    action: "updateOrderSchedule",
+    updated: true,
+    orderId: orderId,
+    tab: found.sheet.getName()
+  };
 }
 
 function updateOrderNames_(ss, data) {
@@ -1513,7 +1585,12 @@ function styleSheet_(ss, sheet) {
     "Ready to Approve or Not Ready. Dropdown in each cell.",
     "Overall workflow status. Use In Progress, On Revision, or Completed to match the portal tabs.",
     "Business name entered by hand in the portal.",
-    "Client name entered by hand in the portal."
+    "Client name entered by hand in the portal.",
+    "Manually chosen date to place this order.",
+    "Unscheduled, Place Today, Scheduled, Later, On Hold, or Placed.",
+    "Who last set the schedule.",
+    "When the schedule was last saved.",
+    "When the order was marked Placed."
   ]]);
 
   var dataRows = Math.max(lastRow - 1, FORMAT_ROWS - 1);

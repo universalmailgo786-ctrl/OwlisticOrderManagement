@@ -1197,7 +1197,14 @@
       revisions: revisions,
       readyToApprove: existing
         ? (existing.boardStatus === "completed" || existing.boardStatus === "ready-to-approve" || Boolean(existing.readyToApprove))
-        : Boolean(boardStatusSelect && (boardStatusSelect.value === "completed" || boardStatusSelect.value === "ready-to-approve"))
+        : Boolean(boardStatusSelect && (boardStatusSelect.value === "completed" || boardStatusSelect.value === "ready-to-approve")),
+      placeOn: existing ? existing.placeOn : "",
+      placementHold: existing ? Boolean(existing.placementHold) : false,
+      placementPlaced: existing ? Boolean(existing.placementPlaced) : false,
+      placementStatus: existing ? existing.placementStatus : "Unscheduled",
+      scheduledBy: existing ? existing.scheduledBy : "",
+      scheduleUpdatedAt: existing ? existing.scheduleUpdatedAt : "",
+      placedAt: existing ? existing.placedAt : ""
     };
   }
 
