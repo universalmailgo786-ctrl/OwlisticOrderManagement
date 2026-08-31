@@ -378,7 +378,7 @@
 
   function splitMessageBody(raw) {
     const text = String(raw || "").trim();
-    const match = text.match(/^(.*?)(?:\s*—\s*Files:\s*|\s+\|\s*Files:\s*)(.*)$/);
+    const match = text.match(/^([\s\S]*?)(?:\s*—\s*Files:\s*|\s+\|\s*Files:\s*)([\s\S]*)$/);
     if (!match) {
       return { text: text.replace(/^\(no text\)\s*$/i, "").trim(), files: [] };
     }
@@ -386,6 +386,22 @@
       text: String(match[1] || "").replace(/^\(no text\)\s*$/i, "").trim(),
       files: parseFileRefs(match[2])
     };
+  }
+
+  function markedBlocks(text, regex) {
+    const raw = String(text || "").replace(/\r/g, "");
+    const re = new RegExp(regex.source, regex.flags);
+    const matches = [];
+    let m = re.exec(raw);
+    while (m) {
+      matches.push({
+        index: m.index,
+        end: m.index + m[0].length,
+        match: m
+      });
+      m = re.exec(raw);
+    }
+    return { raw: raw, matches: matches };
   }
 
   function splitRevisionMessageParts(text) {
@@ -655,12 +671,13 @@
   }
 
   function parseRevisionHistoryText(text, createdAt) {
+    const blocks = markedBlocks(text, /^Revision\s+(\d+)\s*\[(Completed|Open)\]\s*:?\s*/gim);
     const rounds = [];
-    String(text || "").replace(/\r/g, "").split(/\n+/).forEach(function (line) {
-      const match = String(line || "").match(/^Revision\s+(\d+)\s*\[(Completed|Open)\]\s*:?\s*(.*)$/i);
-      if (!match) return;
+    blocks.matches.forEach(function (item, i) {
+      const match = item.match;
       const number = Number(match[1]) || rounds.length + 1;
-      const rest = String(match[3] || "").trim();
+      const stop = i + 1 < blocks.matches.length ? blocks.matches[i + 1].index : blocks.raw.length;
+      const rest = String(blocks.raw.slice(item.end, stop) || "").trim();
       const messages = [];
       if (rest && rest !== "(empty)") {
         splitRevisionMessageParts(rest).forEach(function (part, index) {
@@ -914,45 +931,32 @@
   }
 
   function parseMessageThreadText(text) {
-    const rounds = [];
-    String(text || "").replace(/\r/g, "").split(/\n+/).forEach(function (line) {
-      const raw = String(line || "").trim();
-      if (!raw) return;
-      const buyer = raw.match(/^Buyer Message\s+(\d+)\s*:\s*(.*)$/i);
-      const client = raw.match(/^Client Reply\s+(\d+)\s*:\s*(.*)$/i);
-      if (buyer) {
-        const body = splitMessageBody(buyer[2]);
-        rounds.push({
-          id: "mt_sheet_b_" + buyer[1],
-          role: "buyer",
-          createdAt: "",
-          text: body.text,
-          files: body.files
-        });
-        return;
-      }
-      if (client) {
-        const body = splitMessageBody(client[2]);
-        rounds.push({
-          id: "mt_sheet_c_" + client[1],
-          role: "client",
-          createdAt: "",
-          text: body.text,
-          files: body.files
-        });
-        return;
-      }
+    const blocks = markedBlocks(text, /^(Buyer Message|Client Reply)\s+(\d+)\s*:\s*/gim);
+    if (!blocks.matches.length) {
+      const plain = String(text || "").trim();
+      if (!plain) return [];
+      return [{
+        id: "mt_sheet_plain",
+        role: "buyer",
+        createdAt: "",
+        text: plain,
+        files: []
+      }];
+    }
+    return blocks.matches.map(function (item, i) {
+      const label = item.match[1];
+      const number = item.match[2];
+      const stop = i + 1 < blocks.matches.length ? blocks.matches[i + 1].index : blocks.raw.length;
+      const body = splitMessageBody(String(blocks.raw.slice(item.end, stop) || "").trim());
+      const isClient = /^Client Reply$/i.test(label);
+      return {
+        id: (isClient ? "mt_sheet_c_" : "mt_sheet_b_") + number,
+        role: isClient ? "client" : "buyer",
+        createdAt: "",
+        text: body.text,
+        files: body.files
+      };
     });
-    if (rounds.length) return rounds;
-    const plain = String(text || "").trim();
-    if (!plain) return [];
-    return [{
-      id: "mt_sheet_plain",
-      role: "buyer",
-      createdAt: "",
-      text: plain,
-      files: []
-    }];
   }
 
   function messageThreadOf(order) {

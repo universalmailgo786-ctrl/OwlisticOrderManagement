@@ -754,9 +754,7 @@ function writeOrderRow_(sheet, rowIndex, row, files) {
   styleDataRow_(sheet, rowIndex);
   writeFilesCell_(sheet.getRange(rowIndex, 15), files);
   paintRevisionRow_(sheet, rowIndex, row);
-  if (files && files.length > 1) {
-    sheet.setRowHeight(rowIndex, Math.min(28 + files.length * 16, 96));
-  }
+  fitOrderRowHeight_(sheet, rowIndex, files);
 }
 
 function paintRevisionRow_(sheet, rowIndex, row) {
@@ -781,7 +779,7 @@ function parseRevisionMessages_(rest, createdAt, number) {
     var cleaned = part.replace(/^(Buyer|Seller)(?:\s*\([^)]*\))?\s*—\s*/i, "");
     var files = [];
     var body = cleaned;
-    var fileMatch = cleaned.match(/^(.*?)(?:\s*—\s*Files:\s*|\s+\|\s*Files:\s*)(.*)$/);
+    var fileMatch = cleaned.match(/^([\s\S]*?)(?:\s*—\s*Files:\s*|\s+\|\s*Files:\s*)([\s\S]*)$/);
     if (fileMatch) {
       body = String(fileMatch[1] || "").replace(/^\(no text\)\s*$/i, "").trim();
       files = parseFiles_(fileMatch[2]);
@@ -803,18 +801,28 @@ function parseRevisions_(history, revisionCount, createdAt, latestBuyer, latestS
   var raw = String(history || "").replace(/\r/g, "").trim();
   var rounds = [];
   if (raw) {
-    var lines = raw.split(/\n+/);
+    var re = /^Revision\s+(\d+)\s*\[(Completed|Open)\]\s*:?\s*/gim;
+    var matches = [];
+    var m;
+    while ((m = re.exec(raw)) !== null) {
+      matches.push({
+        index: m.index,
+        end: m.index + m[0].length,
+        number: Number(m[1]) || 0,
+        status: m[2]
+      });
+    }
     var i;
-    for (i = 0; i < lines.length; i++) {
-      var match = String(lines[i] || "").match(/^Revision\s+(\d+)\s*\[(Completed|Open)\]\s*:?\s*(.*)$/i);
-      if (!match) continue;
-      var number = Number(match[1]) || (rounds.length + 1);
+    for (i = 0; i < matches.length; i++) {
+      var number = matches[i].number || (rounds.length + 1);
+      var restEnd = i + 1 < matches.length ? matches[i + 1].index : raw.length;
+      var rest = String(raw.slice(matches[i].end, restEnd) || "").trim();
       rounds.push({
         id: "rev_sheet_" + number,
         number: number,
         createdAt: createdAt,
-        completed: String(match[2] || "").toLowerCase() === "completed",
-        messages: parseRevisionMessages_(match[3], createdAt, number)
+        completed: String(matches[i].status || "").toLowerCase() === "completed",
+        messages: parseRevisionMessages_(rest, createdAt, number)
       });
     }
   }
@@ -1469,6 +1477,16 @@ function styleSheet_(ss, sheet) {
   body.setVerticalAlignment("middle");
   body.setWrap(true);
 
+  var longCols = [13, 14, 18, 20, 21, 22, 23];
+  var lc;
+  for (lc = 0; lc < longCols.length; lc++) {
+    try {
+      sheet.getRange(2, longCols[lc], dataRows, 1).setWrap(true).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+    } catch (errW) {
+      sheet.getRange(2, longCols[lc], dataRows, 1).setWrap(true);
+    }
+  }
+
   sheet.getRange(2, 1, dataRows, 1).setFontWeight("bold").setFontColor(FOREST);
   sheet.getRange(2, 2, dataRows, 4).setHorizontalAlignment("center");
   sheet.getRange(2, 9, dataRows, 1).setHorizontalAlignment("right");
@@ -1487,6 +1505,9 @@ function styleSheet_(ss, sheet) {
 
   for (var c = 0; c < COL_WIDTHS.length; c++) {
     sheet.setColumnWidth(c + 1, COL_WIDTHS[c]);
+  }
+  if (sheet.getLastRow() >= 2) {
+    try { sheet.autoResizeRows(2, sheet.getLastRow()); } catch (errH) {}
   }
 
   var filter = sheet.getFilter();
@@ -1507,7 +1528,36 @@ function styleDataRow_(sheet, row) {
   range.setVerticalAlignment("middle");
   range.setWrap(true);
   sheet.getRange(row, 1).setFontWeight("bold").setFontColor(FOREST);
-  sheet.setRowHeight(row, 32);
+  wrapLongTextCells_(sheet, row);
+}
+
+function wrapLongTextCells_(sheet, row) {
+  var cols = [13, 14, 18, 20, 21, 22, 23];
+  var i;
+  for (i = 0; i < cols.length; i++) {
+    try {
+      sheet.getRange(row, cols[i]).setWrap(true).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+    } catch (err) {
+      sheet.getRange(row, cols[i]).setWrap(true);
+    }
+  }
+}
+
+function fitOrderRowHeight_(sheet, rowIndex, files) {
+  try {
+    sheet.autoResizeRows(rowIndex, rowIndex);
+  } catch (err) {}
+  var height = 32;
+  try {
+    height = sheet.getRowHeight(rowIndex);
+  } catch (err2) {}
+  if (height < 32) height = 32;
+  if (files && files.length > 1) {
+    var fileH = Math.min(28 + files.length * 16, 96);
+    if (fileH > height) height = fileH;
+  }
+  if (height > 409) height = 409;
+  sheet.setRowHeight(rowIndex, height);
 }
 
 function applyStatusColors_(sheet, dataRows) {
