@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=placed5" />
+  <link rel="stylesheet" href="css/styles.css?v=placed7" />
 </head>
 <body class="records-page">
   <nav class="app-nav">
@@ -29,6 +29,23 @@
       </div>
       <p class="records-count" id="records-count">0 orders</p>
     </header>
+
+    <section class="sheet-upgrade-banner" id="sheet-upgrade-banner" hidden>
+      <div>
+        <p class="sheet-upgrade-title">Schedule saves need a one-time Google Apps Script update</p>
+        <p class="sheet-upgrade-text">ORD-003 and other schedules are saved in the portal but not written to columns AB–AF until the updated script is allowed.</p>
+        <ol class="sheet-upgrade-steps">
+          <li>Click <strong>Allow updated script</strong> and approve access in Google.</li>
+          <li>Click <strong>Check again</strong>, then open ORD-003 and save the schedule once more.</li>
+        </ol>
+      </div>
+      <div class="sheet-upgrade-actions">
+        <button type="button" class="ghost-btn" id="sheet-copy-script">Copy Apps Script</button>
+        <button type="button" class="ghost-btn" id="sheet-open-script">Open Google Sheet</button>
+        <button type="button" class="submit-btn" id="sheet-authorize-script">Allow updated script</button>
+        <button type="button" class="ghost-btn" id="sheet-recheck-script">Check again</button>
+      </div>
+    </section>
 
     <div class="records-tabs" role="tablist" aria-label="Order status">
       <button type="button" class="records-tab is-active" role="tab" id="tab-in-progress" data-tab="in-progress" aria-selected="true">
@@ -246,10 +263,10 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="js/storage.js?v=placed6"></script>
-  <script src="js/apps-script-source.js?v=placed5"></script>
-  <script src="js/sheet-sync.js?v=placed6"></script>
+  <script src="js/storage.js?v=placed7"></script>
+  <script src="js/apps-script-source.js?v=placed7"></script>
+  <script src="js/sheet-sync.js?v=placed7"></script>
   <script src="js/auth.js?v=schedule1"></script>
-  <script src="js/records.js?v=placed6"></script>
+  <script src="js/records.js?v=placed7"></script>
 </body>
 </html>

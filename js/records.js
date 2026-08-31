@@ -28,6 +28,12 @@
   const scheduleSave = document.getElementById("schedule-save");
   const scheduleModalOrder = document.getElementById("schedule-modal-order");
   const scheduleModalTitle = document.getElementById("schedule-modal-title");
+  const sheetUpgradeBanner = document.getElementById("sheet-upgrade-banner");
+  const sheetCopyScriptBtn = document.getElementById("sheet-copy-script");
+  const sheetOpenScriptBtn = document.getElementById("sheet-open-script");
+  const sheetAuthorizeScriptBtn = document.getElementById("sheet-authorize-script");
+  const sheetRecheckScriptBtn = document.getElementById("sheet-recheck-script");
+  const SHEET_URL = "https://docs.google.com/spreadsheets/d/1nZuMePQFJA9lCQ6C48d9MUC3Fwn00ao6Kilap5rbFfQ/edit";
   const TAB_LABELS = {
     "in-progress": "New order has to be placed",
     "orders-placed": "Orders Placed",
@@ -43,6 +49,67 @@
   let scheduleFilter = "";
   let scheduleEditingId = "";
   let openScheduleMenuId = "";
+
+  function refreshSheetUpgradeBanner(caps) {
+    if (!sheetUpgradeBanner) return;
+    const needsDeploy = caps && caps.needsDeploy;
+    sheetUpgradeBanner.hidden = !needsDeploy;
+  }
+
+  function bindSheetUpgradeBanner() {
+    if (!window.OwlisticSheet) return;
+    if (sheetAuthorizeScriptBtn) {
+      sheetAuthorizeScriptBtn.addEventListener("click", function () {
+        const url = (typeof window.OwlisticSheet.getNextWebAppUrl === "function"
+          ? window.OwlisticSheet.getNextWebAppUrl()
+          : "") + "?action=ensureScheduleColumns";
+        window.open(url, "_blank", "noopener");
+        showToast("Allow access in the Google tab, then click Check again.");
+      });
+    }
+    if (sheetRecheckScriptBtn) {
+      sheetRecheckScriptBtn.addEventListener("click", function () {
+        const run = (typeof window.OwlisticSheet.tryMigrateWebApp === "function")
+          ? window.OwlisticSheet.tryMigrateWebApp()
+          : (typeof window.OwlisticSheet.fetchSheetCapabilities === "function"
+            ? window.OwlisticSheet.fetchSheetCapabilities(true)
+            : Promise.resolve({ needsDeploy: true }));
+        run.then(function (caps) {
+          refreshSheetUpgradeBanner(caps);
+          if (caps && caps.scheduleSupported) {
+            showToast("Schedule sync is ready. Save ORD-003 again.");
+            loadFromSheet();
+            return;
+          }
+          showToast("Still waiting for Google Apps Script access.");
+        }).catch(function () {
+          showToast("Could not verify the Google Apps Script update.");
+        });
+      });
+    }
+    if (sheetCopyScriptBtn) {
+      sheetCopyScriptBtn.addEventListener("click", function () {
+        const source = (window.OwlisticAppsScriptSource || "").trim();
+        const copy = (source && navigator.clipboard && navigator.clipboard.writeText)
+          ? navigator.clipboard.writeText(source)
+          : (typeof window.OwlisticSheet.loadScriptSource === "function"
+            ? window.OwlisticSheet.loadScriptSource().then(function (text) {
+              return navigator.clipboard.writeText(text || "");
+            })
+            : Promise.reject());
+        Promise.resolve(copy).then(function () {
+          showToast("Apps Script copied. Paste in Extensions → Apps Script if needed.");
+        }).catch(function () {
+          showToast("Could not copy Apps Script automatically.");
+        });
+      });
+    }
+    if (sheetOpenScriptBtn) {
+      sheetOpenScriptBtn.addEventListener("click", function () {
+        window.open(SHEET_URL, "_blank", "noopener");
+      });
+    }
+  }
 
   function orderNumber(order) {
     const match = String((order && order.id) || "").match(/(\d+)/);
@@ -1414,6 +1481,7 @@
       ? window.OwlisticSheet.ensureScheduleColumns()
       : Promise.resolve();
     ensure.then(function (ensureResult) {
+      refreshSheetUpgradeBanner(ensureResult);
       return window.OwlisticSheet.fetchOrders();
     }).then(function (result) {
       applySheetOrders(result);
@@ -1528,6 +1596,11 @@
     send.call(sheet, order).then(function (result) {
       if (result && result.skipped) {
         finish(message || (options.movedToPlaced ? "Order moved to Orders Placed" : "Schedule saved"));
+        return;
+      }
+      if (result && result.needsDeploy) {
+        refreshSheetUpgradeBanner({ needsDeploy: true });
+        fail(result.error || "Schedule saved here, but not on the Google Sheet yet. Allow the updated script, then save again.");
         return;
       }
       if (result && result.ok === false && sheet.sync) {
@@ -2009,5 +2082,6 @@
       setActiveTab(button.getAttribute("data-tab"));
     });
   });
+  bindSheetUpgradeBanner();
   loadFromSheet();
 })();

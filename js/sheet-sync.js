@@ -2,10 +2,14 @@
   const URL_KEY = "owlistic.sheetWebAppUrl";
   const SPREADSHEET_ID = "1nZuMePQFJA9lCQ6C48d9MUC3Fwn00ao6Kilap5rbFfQ";
   const ACCOUNTS_SHEET_ID = "19hiEAgjNTcfDwEU1NsKJ2as90thmaIMzAXpHBWXKRrc";
-  const DEFAULT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbytKcOqCtxVNXpPWmD6hQ7inpefem-MIf2ThOQEmCqKKgDLQVk1IlHIfIXstFznpwwM/exec";
+  const LEGACY_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbytKcOqCtxVNXpPWmD6hQ7inpefem-MIf2ThOQEmCqKKgDLQVk1IlHIfIXstFznpwwM/exec";
+  const NEXT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx-XBKX5WcoBIHgHss2uQ_RXRodMLoCO8qjBbDql32XO2RdfFSsBphKBUHgkf0SUdC7/exec";
+  const DEFAULT_WEB_APP_URL = LEGACY_WEB_APP_URL;
   const STALE_WEB_APP_URLS = [
     "https://script.google.com/macros/s/AKfycbxc9UyzIdr73zkuzHH-8R2tWxOmr3Rc88ApfrVA2RnKObATD3J8PSCJuwtF9FahSmIq/exec",
-    "https://script.google.com/macros/s/AKfycbyLFBc8mr5QL_Hz3wpIfelJfyv_SbDUfbu1plPvzmUbClJzXF_MuHbPijOwzl9wPLuELw/exec"
+    "https://script.google.com/macros/s/AKfycbyLFBc8mr5QL_Hz3wpIfelJfyv_SbDUfbu1plPvzmUbClJzXF_MuHbPijOwzl9wPLuELw/exec",
+    "https://script.google.com/macros/s/AKfycbw_Mkm_RUYAHrep4XFmwN4R7hSg8BYT7Pkz1-Kdhco-mIUTzFpI7qdTPFvi_BBcheDN/exec",
+    "https://script.google.com/macros/s/AKfycbwHfmky-_-ZdQLc9Rdr_5gViPVseJPpN0bwbjrthV4/exec"
   ];
   const store = global.OwlisticStore || global.OwlisticStore;
 
@@ -339,8 +343,101 @@
     return {
       ok: false,
       needsDeploy: true,
-      error: "Schedule columns are not on your Google Sheet yet. Copy the updated Apps Script, deploy a new web app version, then reload this page."
+      error: "Schedule could not be saved to the Google Sheet. Open the updated Apps Script link, allow access once, then save the schedule again."
     };
+  }
+
+  function scheduleStatusOf(order) {
+    return callStore("placementStatusOf", "placementStatusOf", order) || order.placementStatus || "Unscheduled";
+  }
+
+  function scheduleYmd(value) {
+    const text = String(value || "").trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const parsed = new Date(text);
+    if (isNaN(parsed.getTime())) return "";
+    return parsed.getFullYear() + "-" + String(parsed.getMonth() + 1).padStart(2, "0") + "-" + String(parsed.getDate()).padStart(2, "0");
+  }
+
+  function scheduleMatches(order, remote) {
+    if (!remote) return false;
+    const expectedStatus = scheduleStatusOf(order);
+    const remoteStatus = String(remote.placementStatus || "").trim() || "Unscheduled";
+    if (expectedStatus !== remoteStatus) return false;
+    if (expectedStatus === "On Hold" || expectedStatus === "Unscheduled" || expectedStatus === "Placed") {
+      return true;
+    }
+    const expectedDate = scheduleYmd(order.placeOn);
+    const remoteDate = scheduleYmd(remote.placeOn);
+    if (!expectedDate) return !remoteDate;
+    return expectedDate === remoteDate;
+  }
+
+  function verifyScheduleOnSheet(order) {
+    if (!order || !order.id) return Promise.resolve({ ok: true, skipped: true });
+    return fetchOrder(order).then(function (result) {
+      if (!result || result.unsupported) {
+        return { ok: false, needsDeploy: true, error: scheduleDeployError().error };
+      }
+      if (!result.found || !scheduleMatches(order, result.order)) {
+        return scheduleDeployError();
+      }
+      return { ok: true, verified: true };
+    }).catch(function () {
+      return scheduleDeployError();
+    });
+  }
+
+  function probeWebAppUrl(url) {
+    const base = String(url || "").trim();
+    if (!base) return Promise.resolve({ ok: false, skipped: true });
+    const join = base.indexOf("?") >= 0 ? "&" : "?";
+    const baseUrl = base + join + "_=" + Date.now();
+    const ensureUrl = base + join + "action=ensureScheduleColumns&_=" + Date.now();
+    return fetchWithTimeout(baseUrl, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
+      return response.text();
+    }).then(function (baseText) {
+      const baseData = parseJson(baseText) || {};
+      return fetchWithTimeout(ensureUrl, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
+        return response.text();
+      }).then(function (ensureText) {
+        const ensureData = parseJson(ensureText) || {};
+        const sheetColumns = Number((ensureData.sheetColumns || baseData.sheetColumns) || 0);
+        const scheduleSupported = ensureData.action === "ensureScheduleColumns" && sheetColumns >= EXPECTED_SHEET_COLUMNS;
+        return {
+          ok: Boolean(baseData.ok || ensureData.ok),
+          url: base,
+          sheetColumns: sheetColumns || Number(baseData.sheetColumns) || 0,
+          scheduleSupported: scheduleSupported,
+          expectedColumns: EXPECTED_SHEET_COLUMNS,
+          needsDeploy: !scheduleSupported,
+          legacyWebApp: ensureData.action !== "ensureScheduleColumns",
+          authorized: Boolean(baseData.ok && (scheduleSupported || ensureData.action === "ensureScheduleColumns"))
+        };
+      });
+    }).catch(function () {
+      return { ok: false, url: base, needsDeploy: true, authorized: false };
+    });
+  }
+
+  function tryMigrateWebApp() {
+    const current = getWebAppUrl();
+    return probeWebAppUrl(current).then(function (currentCaps) {
+      if (currentCaps && currentCaps.scheduleSupported) {
+        capabilitiesCache = currentCaps;
+        return currentCaps;
+      }
+      return probeWebAppUrl(NEXT_WEB_APP_URL).then(function (nextCaps) {
+        if (nextCaps && nextCaps.scheduleSupported) {
+          setWebAppUrl(NEXT_WEB_APP_URL);
+          capabilitiesCache = nextCaps;
+          return nextCaps;
+        }
+        capabilitiesCache = currentCaps || nextCaps || { ok: false, needsDeploy: true };
+        capabilitiesCache.needsDeploy = true;
+        return capabilitiesCache;
+      });
+    });
   }
 
   function loadScriptSource() {
@@ -368,31 +465,8 @@
       return Promise.resolve({ ok: false, skipped: true, needsDeploy: false });
     }
     if (capabilitiesCache && !force) return Promise.resolve(capabilitiesCache);
-    const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
-    const baseUrl = getWebAppUrl() + join + "_=" + Date.now();
-    const ensureUrl = getWebAppUrl() + join + "action=ensureScheduleColumns&_=" + Date.now();
-    return fetchWithTimeout(baseUrl, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
-      return response.text();
-    }).then(function (baseText) {
-      const baseData = parseJson(baseText) || {};
-      const sheetColumns = Number(baseData.sheetColumns) || 0;
-      return fetchWithTimeout(ensureUrl, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
-        return response.text();
-      }).then(function (ensureText) {
-        const ensureData = parseJson(ensureText) || {};
-        const scheduleSupported = true;
-        capabilitiesCache = {
-          ok: true,
-          sheetColumns: sheetColumns || 27,
-          scheduleSupported: scheduleSupported,
-          expectedColumns: EXPECTED_SHEET_COLUMNS,
-          needsDeploy: false,
-          legacyWebApp: ensureData.action !== "ensureScheduleColumns"
-        };
-        return capabilitiesCache;
-      });
-    }).catch(function () {
-      return { ok: true, needsDeploy: false, scheduleSupported: true };
+    return tryMigrateWebApp().catch(function () {
+      return { ok: false, needsDeploy: true, scheduleSupported: false };
     });
   }
 
@@ -1164,14 +1238,13 @@
     }
     return enqueueOrderWrite(order.id, function () {
       const latest = liveOrder(order) || order;
-      const status = callStore("placementStatusOf", "placementStatusOf", latest) || latest.placementStatus || "Unscheduled";
+      const status = scheduleStatusOf(latest);
       const boardTab = callStore("boardStatusOf", "boardStatusOf", latest) || latest.boardStatus || "in-progress";
       const statusLabel = callStore("boardStatusLabel", "boardStatusLabel", boardTab) || latest.overallStatus || "";
       const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
       const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
-      const url = getWebAppUrl() + join +
-        "action=updateOrderSchedule" +
-        "&orderId=" + encodeURIComponent(latest.id) +
+      const scheduleParams =
+        "orderId=" + encodeURIComponent(latest.id) +
         "&tab=" + encodeURIComponent(tabNameOf(accountNameOf(latest))) +
         "&accountName=" + encodeURIComponent(accountNameOf(latest)) +
         "&placeOn=" + encodeURIComponent(latest.placeOn || "") +
@@ -1185,67 +1258,82 @@
         "&userAccount=" + encodeURIComponent((session && session.account) || "") +
         "&username=" + encodeURIComponent((session && session.username) || "") +
         "&_=" + Date.now();
-      return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
+      const scheduleUrl = getWebAppUrl() + join + "action=updateOrderSchedule&" + scheduleParams;
+      const statusUrl = getWebAppUrl() + join + "action=updateOrderStatus&status=" + encodeURIComponent(boardTab) +
+        "&overallStatus=" + encodeURIComponent(statusLabel) + "&" + scheduleParams;
+
+      function finishWithVerify(result) {
+        return verifyScheduleOnSheet(latest).then(function (verified) {
+          if (verified && verified.ok) {
+            return result || verified;
+          }
+          return verified || scheduleDeployError();
+        });
+      }
+
+      return fetchWithTimeout(scheduleUrl, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
         return response.text();
       }).then(function (text) {
         const data = parseJson(text);
         if (data && data.action === "updateOrderSchedule") {
-          return followWithFullSync(latest, data);
+          return finishWithVerify(data);
         }
-        // Older deployments ignore updateOrderSchedule; full row sync still saves status/names.
-        return postPayload({
-          action: "updateOrderSchedule",
-          orderId: latest.id,
-          accountName: accountNameOf(latest),
-          tabName: tabNameOf(accountNameOf(latest)),
-          placeOn: latest.placeOn || "",
-          placementStatus: status,
-          scheduledBy: latest.scheduledBy || "",
-          scheduleUpdatedAt: latest.scheduleUpdatedAt || "",
-          placedAt: latest.placedAt || "",
-          boardStatus: boardTab,
-          statusLabel: statusLabel,
-          row: toRow(latest)
-        }).then(function () {
-          return followWithFullSync(latest, { ok: true, action: "updateOrderSchedule", fallback: true });
+        return fetchWithTimeout(statusUrl, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
+          return response.text();
+        }).then(function (statusText) {
+          const statusData = parseJson(statusText);
+          if (statusData && statusData.action === "updateOrderStatus") {
+            return finishWithVerify(statusData);
+          }
+          return postPayload({
+            action: "upsert",
+            orderId: latest.id,
+            accountName: accountNameOf(latest),
+            tabName: tabNameOf(accountNameOf(latest)),
+            placeOn: latest.placeOn || "",
+            placementStatus: status,
+            scheduledBy: latest.scheduledBy || "",
+            scheduleUpdatedAt: latest.scheduleUpdatedAt || "",
+            placedAt: latest.placedAt || "",
+            boardStatus: boardTab,
+            statusLabel: statusLabel,
+            row: toRow(latest)
+          }).then(function () {
+            return finishWithVerify({ ok: true, action: "updateOrderSchedule", fallback: true });
+          });
         });
       }).catch(function () {
-        return followWithFullSync(latest, { ok: true, action: "updateOrderSchedule", fallback: true });
+        return finishWithVerify(scheduleDeployError());
       });
     });
   }
 
   function ensureScheduleColumns() {
     if (!isConfigured()) return Promise.resolve({ skipped: true });
-    const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
-    const url = getWebAppUrl() + join + "action=ensureScheduleColumns&_=" + Date.now();
-    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
-      return response.text();
-    }).then(function (text) {
-      const data = parseJson(text);
-      if (data && data.action === "ensureScheduleColumns") {
-        capabilitiesCache = {
-          ok: true,
-          sheetColumns: Number(data.sheetColumns) || EXPECTED_SHEET_COLUMNS,
-          scheduleSupported: true,
-          expectedColumns: EXPECTED_SHEET_COLUMNS,
-          needsDeploy: false
-        };
-        return data;
+    return tryMigrateWebApp().then(function (caps) {
+      if (caps && caps.scheduleSupported) {
+        const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+        const url = getWebAppUrl() + join + "action=ensureScheduleColumns&_=" + Date.now();
+        return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 20000).then(function (response) {
+          return response.text();
+        }).then(function (text) {
+          const data = parseJson(text);
+          if (data && data.action === "ensureScheduleColumns") {
+            capabilitiesCache = {
+              ok: true,
+              sheetColumns: Number(data.sheetColumns) || EXPECTED_SHEET_COLUMNS,
+              scheduleSupported: true,
+              expectedColumns: EXPECTED_SHEET_COLUMNS,
+              needsDeploy: false
+            };
+            return data;
+          }
+          return caps;
+        }).catch(function () {
+          return caps;
+        });
       }
-      // Sheet already has schedule headers (AB–AF). Do not block the portal on an old web app build.
-      const sheetColumns = data && data.sheetColumns ? Number(data.sheetColumns) : 0;
-      capabilitiesCache = {
-        ok: true,
-        sheetColumns: sheetColumns || 27,
-        scheduleSupported: true,
-        expectedColumns: EXPECTED_SHEET_COLUMNS,
-        needsDeploy: false,
-        legacyWebApp: true
-      };
-      return capabilitiesCache;
-    }).catch(function () {
-      return { ok: true, needsDeploy: false, scheduleSupported: true, skipped: true };
+      return caps || { ok: false, needsDeploy: true, scheduleSupported: false };
     });
   }
 
@@ -1513,6 +1601,9 @@
     isConfigured: isConfigured,
     getWebAppUrl: getWebAppUrl,
     setWebAppUrl: setWebAppUrl,
+    getNextWebAppUrl: function () { return NEXT_WEB_APP_URL; },
+    probeWebAppUrl: probeWebAppUrl,
+    tryMigrateWebApp: tryMigrateWebApp,
     fetchSheetCapabilities: fetchSheetCapabilities,
     loadScriptSource: loadScriptSource,
     EXPECTED_SHEET_COLUMNS: EXPECTED_SHEET_COLUMNS,
