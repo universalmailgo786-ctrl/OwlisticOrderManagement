@@ -1164,10 +1164,14 @@
     syncMessageTextField();
     const existingId = document.getElementById("order-id").value;
     const existing = existingId && store.getOrder(existingId);
+    const session = auth.getSession ? auth.getSession() : null;
+    const accountName = (account && store.accountLabel(account))
+      || (session && session.role !== "superadmin" && session.account)
+      || "";
     return {
       id: existingId || undefined,
       accountId: account && account.id ? account.id : "",
-      accountName: store.accountLabel(account),
+      accountName: accountName,
       whatsapp: document.getElementById("whatsapp").value.trim(),
       name: document.getElementById("name").value.trim(),
       businessName: existing && existing.businessName ? existing.businessName : "",
@@ -1264,28 +1268,15 @@
     if (isSubmitting && submitBtn) {
       submitBtn.textContent = pendingFiles.length ? "Uploading images to Drive…" : "Saving to Google Sheet…";
     }
-    const existingList = (store.getOrders && store.getOrders()) || [];
-    const alreadyById = existingList.some(function (item) {
-      return String((item && item.id) || "") === String(saved.id);
-    });
-    const duplicate = typeof sheet.findDuplicateOrder === "function"
-      ? sheet.findDuplicateOrder(existingList, saved)
-      : null;
-    if (duplicate && !alreadyById) {
-      return Promise.resolve({
-        saved: saved,
-        duplicate: true,
-        confirmed: true,
-        existing: duplicate,
-        sheet: { ok: true, duplicate: true }
-      });
-    }
     return sheet.sync(saved, { skipUploads: !pendingFiles.length }).then(function (syncResult) {
+      const live = store.getOrder((syncResult && syncResult.orderId) || saved.id) || saved;
+      if (live && live.id) saved.id = live.id;
+      applySavedOrder(live);
       if (syncResult && syncResult.skipped) {
         showToast("Order " + saved.id + " saved locally. Connect Google Sheet to sync.");
         return { saved: saved, sheet: syncResult };
       }
-      if (syncResult && syncResult.ok === false) {
+      if (syncResult && (syncResult.ok === false || syncResult.confirmed === false)) {
         return { saved: saved, sheet: syncResult, confirmed: false, sheetFailed: true };
       }
       if (!pendingFiles.length && syncResult) {
@@ -1295,12 +1286,12 @@
       return {
         saved: saved,
         sheet: syncResult,
-        confirmed: true,
+        confirmed: Boolean(syncResult && syncResult.confirmed),
         duplicate: false
       };
     }).catch(function () {
-      showToast("Order " + saved.id + " saved locally, but Google Sheet sync failed");
-      return { saved: saved, sheetFailed: true };
+      showToast("Order " + (saved && saved.id ? saved.id : "") + " saved locally, but Google Sheet sync failed");
+      return { saved: saved, sheetFailed: true, confirmed: false };
     });
   }
 
@@ -2159,19 +2150,12 @@
         }
         return;
       }
-      if (outcome.duplicate && outcome.confirmed) {
-        goToDefaultPage();
-        showToast("This order is already in the Google Sheet.", 5000);
-        return;
-      }
       if (outcome.confirmed) {
         goToDefaultPage();
         showToast("Order is filled in the Google Sheet.", 5000);
         return;
       }
-      if (outcome.sheetFailed) {
-        showToast("Could not save this order to the Google Sheet. Check the sheet and try Save again.", 5000);
-      }
+      showToast("Could not save this order to the Google Sheet. Check the sheet and try Save again.", 5000);
     }).catch(function () {
       showToast("Could not save this order");
     }).then(function () {

@@ -125,10 +125,42 @@
     writeJson(ORD_KEY, orders);
   }
 
+  function orderNumberOf(id) {
+    const match = String(id || "").match(/(\d+)/);
+    return match ? parseInt(match[1], 10) : 0;
+  }
+
+  function padOrderId(n) {
+    const s = String(n || 0);
+    return "ORD-" + (s.length >= 3 ? s : ("000" + s).slice(-3));
+  }
+
+  function rememberOrderNumber(id) {
+    const n = orderNumberOf(id);
+    if (!n) return;
+    const current = Number(localStorage.getItem(CTR_KEY) || 0);
+    if (n > current) localStorage.setItem(CTR_KEY, String(n));
+  }
+
   function nextOrderId() {
     const next = Number(localStorage.getItem(CTR_KEY) || 0) + 1;
     localStorage.setItem(CTR_KEY, String(next));
-    return "ORD-" + String(next).padStart(3, "0");
+    return padOrderId(next);
+  }
+
+  function adoptOrderId(oldId, newId) {
+    const from = String(oldId || "").trim();
+    const to = String(newId || "").trim();
+    if (!to) return to;
+    rememberOrderNumber(to);
+    if (!from || from === to) return to;
+    const orders = getOrders();
+    const index = orders.findIndex(function (item) { return item.id === from; });
+    if (index >= 0) {
+      orders[index].id = to;
+      saveOrders(orders);
+    }
+    return to;
   }
 
   function upsertAccount(account) {
@@ -806,6 +838,7 @@
       order.id = nextOrderId();
       order.createdAt = stamp;
       order.updatedAt = stamp;
+      rememberOrderNumber(order.id);
       orders.push(order);
     } else {
       const index = orders.findIndex(function (item) { return item.id === order.id; });
@@ -1044,6 +1077,7 @@
       const index = orders.findIndex(function (item) { return item.id === order.id; });
       const previous = index === -1 ? null : orders[index];
       const next = hydrateImportedOrder(order, previous);
+      rememberOrderNumber(next.id);
       if (index === -1) orders.push(next);
       else orders[index] = next;
     });
@@ -1057,7 +1091,9 @@
     (incoming || []).forEach(function (order) {
       if (!order || !order.id) return;
       const previous = previousAll.find(function (item) { return item.id === order.id; }) || null;
-      next.push(hydrateImportedOrder(order, previous));
+      const hydrated = hydrateImportedOrder(order, previous);
+      rememberOrderNumber(hydrated.id);
+      next.push(hydrated);
     });
     saveOrders(next);
     return getOrders();
@@ -1116,6 +1152,10 @@
     getOrders: getOrders,
     getOrder: getOrder,
     upsertOrder: upsertOrder,
+    adoptOrderId: adoptOrderId,
+    rememberOrderNumber: rememberOrderNumber,
+    orderNumberOf: orderNumberOf,
+    padOrderId: padOrderId,
     deleteOrder: deleteOrder,
     importOrders: importOrders,
     replaceOrders: replaceOrders,

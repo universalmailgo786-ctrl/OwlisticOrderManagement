@@ -233,11 +233,16 @@
   }
 
   function accountNameOf(orderOrAccount) {
-    if (!orderOrAccount) return "";
-    if (orderOrAccount.accountName) return orderOrAccount.accountName;
+    const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+    const sessionAcc = session && session.role !== "superadmin" ? String(session.account || "").trim() : "";
+    if (!orderOrAccount) return sessionAcc;
+    if (orderOrAccount.accountName && !/^(no account)$/i.test(String(orderOrAccount.accountName).trim())) {
+      return orderOrAccount.accountName;
+    }
+    if (sessionAcc) return sessionAcc;
     const labeled = callStore("accountLabel", "accountLabel", orderOrAccount);
-    if (labeled && labeled !== "No account" && labeled !== "No account") return labeled;
-    return orderOrAccount.name || "";
+    if (labeled && !/^(no account)$/i.test(labeled)) return labeled;
+    return orderOrAccount.name || sessionAcc || "";
   }
 
   function tabNameOf(name) {
@@ -682,26 +687,95 @@
   }
 
   function confirmSheetWrite(order, options) {
-    if (options && (options.existedBefore || options.skipConfirm)) {
-      return Promise.resolve({ ok: true, confirmed: true, skipped: true });
-    }
-    const timeout = (options && options.timeout) || 8000;
+    const timeout = (options && options.timeout) || 15000;
     const started = Date.now();
     function attempt() {
       return hasOrder(order).then(function (result) {
-        if (result && result.unsupported) {
-          return { ok: true, confirmed: true, fallback: true };
-        }
         if (result && result.found) {
-          return { ok: true, confirmed: true, order: order };
+          return { ok: true, confirmed: true, found: true, tab: result.tab || "", order: order };
+        }
+        if (result && result.unsupported) {
+          return fetchOrders().then(function (list) {
+            const id = String((order && order.id) || "");
+            const found = ((list && list.orders) || []).some(function (item) {
+              return String((item && item.id) || "") === id;
+            });
+            if (found) return { ok: true, confirmed: true, found: true, order: order };
+            if (Date.now() - started >= timeout) {
+              return { ok: false, confirmed: false, found: false, timeout: true };
+            }
+            return delay(400).then(attempt);
+          });
         }
         if (Date.now() - started >= timeout) {
-          return { ok: false, confirmed: false, timeout: true };
+          return { ok: false, confirmed: false, found: false, timeout: true };
         }
-        return delay(250).then(attempt);
+        return delay(400).then(attempt);
       });
     }
     return attempt();
+  }
+
+  function orderIdNumber(id) {
+    const match = String(id || "").match(/(\d+)/);
+    return match ? parseInt(match[1], 10) : 0;
+  }
+
+  function padOrderId(n) {
+    if (store && typeof store.padOrderId === "function") return store.padOrderId(n);
+    const s = String(n || 0);
+    return "ORD-" + (s.length >= 3 ? s : ("000" + s).slice(-3));
+  }
+
+  function adoptId(order, newId) {
+    if (!order || !newId) return order;
+    if (store && typeof store.adoptOrderId === "function") {
+      store.adoptOrderId(order.id, newId);
+    }
+    order.id = newId;
+    if (store && typeof store.rememberOrderNumber === "function") {
+      store.rememberOrderNumber(newId);
+    }
+    return order;
+  }
+
+  function fetchNextOrderId() {
+    if (!isConfigured()) return Promise.resolve("");
+    const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+    const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+    const url = getWebAppUrl() + join +
+      "action=nextOrderId" +
+      "&role=" + encodeURIComponent((session && session.role) || "") +
+      "&userAccount=" + encodeURIComponent((session && session.account) || "") +
+      "&username=" + encodeURIComponent((session && session.username) || "") +
+      "&_=" + Date.now();
+    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 15000).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      const data = parseJson(text);
+      if (data && data.ok && data.action === "nextOrderId" && data.orderId) return String(data.orderId);
+      return "";
+    }).catch(function () {
+      return "";
+    });
+  }
+
+  function allocateSheetOrderId(order) {
+    const current = liveOrder(order) || order;
+    return hasOrder(current).then(function (result) {
+      if (result && result.found) return current;
+      return fetchNextOrderId().then(function (remoteId) {
+        if (remoteId && (!current.id || orderIdNumber(remoteId) > orderIdNumber(current.id))) {
+          return adoptId(current, remoteId);
+        }
+        return current;
+      });
+    });
+  }
+
+  function bumpLocalOrderId(order) {
+    const next = padOrderId(orderIdNumber(order && order.id) + 1);
+    return adoptId(order, next);
   }
 
   function hasOrder(order) {
@@ -1024,33 +1098,71 @@
       return Promise.resolve({ skipped: true });
     }
     const run = function () {
-      const latest = liveOrder(order) || order;
-      const tabName = tabNameOf(accountNameOf(latest));
-      const start = options && options.skipUploads ? Promise.resolve([]) : uploadOrderFiles(latest);
+      const start = options && options.skipUploads ? Promise.resolve([]) : uploadOrderFiles(liveOrder(order) || order);
       return start.then(function (uploadResults) {
-        const current = liveOrder(latest) || latest;
-        const missing = filesMissingDrive(current).map(function (file) { return file.name; });
-        const uploadedNames = (uploadResults || []).filter(function (item) {
-          return item && item.file && item.file.url;
-        }).map(function (item) { return item.file.name; });
-        return postPayload({
-          action: "upsert",
-          orderId: current.id,
-          accountName: accountNameOf(current),
-          tabName: tabName,
-          businessName: current.businessName || "",
-          clientName: current.clientName || "",
-          row: toRow(current),
-          uploads: []
-        }).then(function (result) {
-          result = result || { ok: true };
-          result.skippedLarge = [];
-          result.uploadedNames = uploadedNames;
-          result.uploadedLocalIds = (uploadResults || []).map(function (item) {
-            return item && item.file && item.file.id;
-          }).filter(Boolean);
-          result.missingDriveFiles = missing;
-          return result;
+        function postOnce(current) {
+          const tabName = tabNameOf(accountNameOf(current));
+          const missing = filesMissingDrive(current).map(function (file) { return file.name; });
+          const uploadedNames = (uploadResults || []).filter(function (item) {
+            return item && item.file && item.file.url;
+          }).map(function (item) { return item.file.name; });
+          return postPayload({
+            action: "upsert",
+            orderId: current.id,
+            accountName: accountNameOf(current),
+            tabName: tabName,
+            businessName: current.businessName || "",
+            clientName: current.clientName || "",
+            row: toRow(current),
+            uploads: []
+          }).then(function (result) {
+            result = result || { ok: true };
+            result.skippedLarge = [];
+            result.uploadedNames = uploadedNames;
+            result.uploadedLocalIds = (uploadResults || []).map(function (item) {
+              return item && item.file && item.file.id;
+            }).filter(Boolean);
+            result.missingDriveFiles = missing;
+            result.orderId = current.id;
+            return result;
+          });
+        }
+
+        function writeAndConfirm(current, attempt) {
+          return postOnce(current).then(function (result) {
+            function retry() {
+              if (attempt >= 6) {
+                result = result || {};
+                result.ok = false;
+                result.confirmed = false;
+                result.error = result.error || "Order did not appear in the Google Sheet.";
+                return result;
+              }
+              return fetchNextOrderId().then(function (remoteId) {
+                if (remoteId && orderIdNumber(remoteId) > orderIdNumber(current.id)) {
+                  adoptId(current, remoteId);
+                } else {
+                  bumpLocalOrderId(current);
+                }
+                return writeAndConfirm(current, attempt + 1);
+              });
+            }
+            if (result && result.ok === false) return retry();
+            return confirmSheetWrite(current, { timeout: 2500 }).then(function (confirm) {
+              if (confirm && confirm.found) {
+                result.ok = true;
+                result.confirmed = true;
+                result.orderId = current.id;
+                result.tab = confirm.tab || "";
+                return result;
+              }
+              return retry();
+            });
+          });
+        }
+
+        return allocateSheetOrderId(liveOrder(order) || order).then(function (current) {
+          return writeAndConfirm(current, 0);
         });
       });
     };
@@ -1162,6 +1274,7 @@
     updateOrderStatus: updateOrderStatus,
     findDuplicateOrder: findDuplicateOrder,
     confirmSheetWrite: confirmSheetWrite,
+    fetchNextOrderId: fetchNextOrderId,
     recordFingerprint: recordFingerprint,
     deleteOrder: deleteOrder,
     confirmDelete: confirmDelete,

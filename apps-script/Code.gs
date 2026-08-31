@@ -97,6 +97,9 @@ function doGet(e) {
   if (action === "hasOrder") {
     return json_(hasOrder_(params));
   }
+  if (action === "nextOrderId") {
+    return json_(nextOrderId_(params));
+  }
   if (action === "getOrder") {
     return json_(getOrder_(params));
   }
@@ -751,10 +754,10 @@ function mergeRequirementFiles_(existingRich, existingText, incomingText, saved)
 
 function writeOrderRow_(sheet, rowIndex, row, files) {
   sheet.getRange(rowIndex, 1, 1, HEADERS.length).setValues([row]);
-  styleDataRow_(sheet, rowIndex);
-  writeFilesCell_(sheet.getRange(rowIndex, 15), files);
-  paintRevisionRow_(sheet, rowIndex, row);
-  fitOrderRowHeight_(sheet, rowIndex, files);
+  try { styleDataRow_(sheet, rowIndex); } catch (err) {}
+  try { writeFilesCell_(sheet.getRange(rowIndex, 15), files); } catch (err2) {}
+  try { paintRevisionRow_(sheet, rowIndex, row); } catch (err3) {}
+  try { fitOrderRowHeight_(sheet, rowIndex, files); } catch (err4) {}
 }
 
 function paintRevisionRow_(sheet, rowIndex, row) {
@@ -990,6 +993,47 @@ function fingerprintHasFields_(fingerprint) {
   return false;
 }
 
+function padOrderId_(n) {
+  var s = String(n || 0);
+  while (s.length < 3) s = "0" + s;
+  return "ORD-" + s;
+}
+
+function orderIdNumber_(value) {
+  var match = String(value || "").match(/(\d+)/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+function nextGlobalOrderId_(ss) {
+  var max = 0;
+  var sheets = ss.getSheets();
+  var s;
+  for (s = 0; s < sheets.length; s++) {
+    var sheet = sheets[s];
+    var name = sheet.getName();
+    if (name === "Users") continue;
+    if (String(sheet.getRange(1, 1).getValue() || "").trim() !== "Order ID") continue;
+    var last = sheet.getLastRow();
+    if (last < 2) continue;
+    var ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+    var i;
+    for (i = 0; i < ids.length; i++) {
+      var n = orderIdNumber_(ids[i][0]);
+      if (n > max) max = n;
+    }
+  }
+  return padOrderId_(max + 1);
+}
+
+function nextOrderId_(params) {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  return {
+    ok: true,
+    action: "nextOrderId",
+    orderId: nextGlobalOrderId_(ss)
+  };
+}
+
 function findDuplicateRecord_(ss, row, tabName, excludeOrderId) {
   var wanted = recordFingerprint_(row, tabName);
   if (!fingerprintHasFields_(wanted)) return null;
@@ -1045,7 +1089,8 @@ function upsertOrderLocked_(ss, data) {
   var found = findOrderOnSheet_(target, orderId);
   if (!found) found = findOrder_(ss, orderId);
   if (found && forced && !canAccessFound_(found, forced)) {
-    return { ok: false, error: "You can only edit orders for " + forced + "." };
+    found = null;
+    orderId = "";
   }
 
   var existingRow = null;
@@ -1058,6 +1103,8 @@ function upsertOrderLocked_(ss, data) {
     row.push("");
   }
   row = row.slice(0, HEADERS.length);
+  if (!orderId) orderId = nextGlobalOrderId_(ss);
+  row[0] = orderId;
   if (forced) {
     row[5] = target.getName();
   }
