@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=placed12" />
+  <link rel="stylesheet" href="css/styles.css?v=hanif1" />
 </head>
 <body class="records-page">
   <nav class="app-nav">
@@ -69,6 +69,10 @@
         Completed
         <span class="records-tab-count" data-tab-count="completed">0</span>
       </button>
+      <button type="button" class="records-tab admin-only" role="tab" id="tab-hanif-costing" data-tab="hanif-costing" aria-selected="false" hidden>
+        Hanif Costing
+        <span class="records-tab-count" data-tab-count="hanif-costing">0</span>
+      </button>
     </div>
 
     <section class="schedule-summary" id="schedule-summary" hidden>
@@ -112,6 +116,7 @@
     </section>
     <p class="schedule-account-summary" id="schedule-account-summary" hidden></p>
 
+    <div id="records-main-panel">
     <section class="records-filters" aria-label="Filter orders">
       <div class="records-filter-toolbar">
         <label class="records-field records-field-search">
@@ -187,6 +192,91 @@
         <tbody id="records-body"></tbody>
       </table>
     </div>
+    </div>
+
+    <section class="hanif-costing-panel admin-only" id="hanif-costing-panel" hidden>
+      <header class="hanif-header">
+        <div>
+          <h2>Hanif Costing</h2>
+          <p class="hanif-count" id="hanif-records-count">0 records</p>
+        </div>
+        <div class="hanif-header-actions">
+          <button type="button" class="ghost-btn" id="hanif-bulk-unpaid">Mark Selected Unpaid</button>
+          <button type="button" class="ghost-btn" id="hanif-bulk-paid">Mark Selected Paid</button>
+          <button type="button" class="submit-btn" id="hanif-export-btn">Export Excel</button>
+        </div>
+      </header>
+
+      <section class="hanif-filters" aria-label="Filter Hanif costing">
+        <div class="hanif-filter-grid">
+          <label class="records-field">
+            <span>Month</span>
+            <select id="hanif-filter-month"><option value="">All Months</option></select>
+          </label>
+          <label class="records-field">
+            <span>Year</span>
+            <select id="hanif-filter-year"></select>
+          </label>
+          <label class="records-field">
+            <span>Account</span>
+            <select id="hanif-filter-account"><option value="">All Accounts</option></select>
+          </label>
+          <label class="records-field">
+            <span>Payment Status</span>
+            <select id="hanif-filter-payment">
+              <option value="">All</option>
+              <option value="paid">Paid</option>
+              <option value="unpaid">Unpaid</option>
+            </select>
+          </label>
+          <label class="records-field">
+            <span>Created date</span>
+            <input type="date" id="hanif-filter-date" />
+          </label>
+          <label class="records-field records-field-search">
+            <span>Search</span>
+            <input type="search" id="hanif-filter-search" placeholder="Search order, account, client, business" />
+          </label>
+        </div>
+      </section>
+
+      <section class="hanif-summary" aria-label="Hanif costing summary">
+        <article class="hanif-stat-card"><span>Total Orders</span><strong id="hanif-stat-orders">0</strong></article>
+        <article class="hanif-stat-card"><span>Total Investment</span><strong id="hanif-stat-investment">$0</strong></article>
+        <article class="hanif-stat-card"><span>Total Hanif Cost</span><strong id="hanif-stat-hanif-cost">$0</strong></article>
+        <article class="hanif-stat-card"><span>Fiverr Fee</span><strong id="hanif-stat-fiverr-fee">$0</strong></article>
+        <article class="hanif-stat-card is-loss"><span>Total Loss</span><strong id="hanif-stat-loss">$0</strong></article>
+        <article class="hanif-stat-card is-return"><span>Return After Loss</span><strong id="hanif-stat-return">$0</strong></article>
+        <article class="hanif-stat-card is-paid"><span>Total Paid</span><strong id="hanif-stat-paid">$0</strong></article>
+        <article class="hanif-stat-card is-unpaid"><span>Total Unpaid</span><strong id="hanif-stat-unpaid">$0</strong></article>
+      </section>
+
+      <p class="hanif-notes">Hanif cost is calculated from the order value pricing chart. Exchange rate used: 1 USD = 275 PKR. Loss in PKR: <strong id="hanif-stat-loss-pkr">PKR 0</strong>.</p>
+
+      <div class="records-table-wrap hanif-table-wrap">
+        <table class="records-table hanif-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="hanif-select-all" aria-label="Select all rows" /></th>
+              <th>Order ID</th>
+              <th>Created</th>
+              <th>Account / Fiverr ID</th>
+              <th>Client Name</th>
+              <th>Business Name</th>
+              <th>Order Value</th>
+              <th>Hanif Cost</th>
+              <th>Fiverr Fee</th>
+              <th>Return After Fee</th>
+              <th>Total Loss</th>
+              <th>Order Status</th>
+              <th>Payment Status</th>
+              <th>Paid Amount</th>
+            </tr>
+          </thead>
+          <tbody id="hanif-records-body"></tbody>
+        </table>
+      </div>
+    </section>
   </div>
 
   <div class="chat-drawer" id="chat-drawer" hidden>
@@ -264,10 +354,13 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="js/storage.js?v=placed12"></script>
-  <script src="js/apps-script-source.js?v=placed12"></script>
-  <script src="js/sheet-sync.js?v=placed12"></script>
+  <script src="js/storage.js?v=hanif1"></script>
+  <script src="js/apps-script-source.js?v=hanif1"></script>
+  <script src="js/sheet-sync.js?v=hanif1"></script>
   <script src="js/auth.js?v=schedule1"></script>
-  <script src="js/records.js?v=placed12"></script>
+  <script src="js/hanif-pricing.js?v=hanif1"></script>
+  <script src="js/hanif-sheet.js?v=hanif1"></script>
+  <script src="js/hanif-costing.js?v=hanif1"></script>
+  <script src="js/records.js?v=hanif1"></script>
 </body>
 </html>

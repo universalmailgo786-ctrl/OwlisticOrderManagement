@@ -4031,3 +4031,172 @@ body.modal-open {
   padding: 4px 10px;
   font-size: 12px;
 }
+
+.hanif-costing-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.hanif-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.hanif-header h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(1.5rem, 2vw, 2rem);
+  color: var(--forest);
+}
+
+.hanif-count {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.hanif-header-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.hanif-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.hanif-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.hanif-stat-card {
+  background: var(--paper);
+  border: 1px solid rgba(34, 56, 41, 0.08);
+  border-radius: 16px;
+  padding: 14px 16px;
+  display: grid;
+  gap: 6px;
+}
+
+.hanif-stat-card span {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hanif-stat-card strong {
+  font-size: 1.2rem;
+  color: var(--forest);
+}
+
+.hanif-stat-card.is-loss strong {
+  color: #8a3d22;
+}
+
+.hanif-stat-card.is-return strong {
+  color: #3d5a2c;
+}
+
+.hanif-stat-card.is-paid strong {
+  color: #3d5a2c;
+}
+
+.hanif-stat-card.is-unpaid strong {
+  color: #8a3d22;
+}
+
+.hanif-notes {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.hanif-table-wrap {
+  overflow-x: auto;
+}
+
+.hanif-table th,
+.hanif-table td {
+  vertical-align: top;
+}
+
+.hanif-money {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.hanif-money.is-loss {
+  color: #8a3d22;
+  font-weight: 600;
+}
+
+.hanif-payment-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hanif-payment-pill.is-paid {
+  background: #e7efe0;
+  color: #3d5a2c;
+}
+
+.hanif-payment-pill.is-unpaid {
+  background: #fbe7dc;
+  color: #8a3d22;
+}
+
+.hanif-payment-edit {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.hanif-payment-select,
+.hanif-paid-input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(34, 56, 41, 0.12);
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.hanif-paid-amount {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hanif-paid-at {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.hanif-cost-warning {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #8a3d22;
+}
+
+.hanif-row.has-cost-warning td {
+  background: #fff8f3;
+}
+
+.hanif-row.has-cost-warning td:first-child {
+  box-shadow: inset 3px 0 0 #c96d45;
+}

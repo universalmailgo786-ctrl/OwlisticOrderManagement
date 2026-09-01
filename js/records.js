@@ -39,7 +39,8 @@
     "orders-placed": "Orders Placed",
     "on-revision": "on revision",
     "ready-to-approve": "ready to approve",
-    completed: "completed"
+    completed: "completed",
+    "hanif-costing": "Hanif Costing"
   };
   const COPY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8.2" y="8.2" width="11.2" height="11.2" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5.4 15.4V6.8A1.8 1.8 0 0 1 7.2 5h9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
   const PENCIL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.4 19.4 7.6 18.6 19 7.2a1.5 1.5 0 0 0 0-2.1L17 3.1a1.5 1.5 0 0 0-2.1 0L4.6 13.4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M13.6 4.6 17.4 8.4" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>';
@@ -908,6 +909,13 @@
       button.classList.toggle("is-active", selected);
       button.setAttribute("aria-selected", selected ? "true" : "false");
     });
+    if (tab === "hanif-costing") {
+      if (window.OwlisticHanifCosting) {
+        window.OwlisticHanifCosting.onTabActivated(store.getOrders ? store.getOrders() : auth.visibleOrders());
+      }
+      return;
+    }
+    if (window.OwlisticHanifCosting) window.OwlisticHanifCosting.onTabDeactivated();
     render();
   }
 
@@ -921,6 +929,9 @@
       const key = el.getAttribute("data-tab-count");
       el.textContent = String(counts[key] || 0);
     });
+    if (window.OwlisticHanifCosting) {
+      window.OwlisticHanifCosting.onOrdersLoaded(all);
+    }
   }
 
   function updateAccountSummary(inProgress) {
@@ -1007,6 +1018,7 @@
   }
 
   function render() {
+    if (activeTab === "hanif-costing") return;
     const all = auth.visibleOrders();
     updateTabCounts(all);
     closeCompletePop();
@@ -1920,6 +1932,7 @@
     button.disabled = true;
     const finish = function (result) {
       if (store.deleteOrder) store.deleteOrder(id);
+      if (window.OwlisticHanifCosting) window.OwlisticHanifCosting.onOrderDeleted(id);
       render();
       if (result && result.sheetRemaining) {
         showToast("Deleted from the portal. The Google Sheet row is still there. Try Delete again.");
@@ -1930,6 +1943,7 @@
     if (sheet && typeof sheet.removeOrder === "function") {
       sheet.removeOrder(order).then(finish).catch(function () {
         if (store.deleteOrder) store.deleteOrder(id);
+        if (window.OwlisticHanifCosting) window.OwlisticHanifCosting.onOrderDeleted(id);
         render();
         showToast("Order " + id + " deleted from the portal");
       });
@@ -2128,5 +2142,8 @@
     });
   });
   bindSheetUpgradeBanner();
+  if (auth.isSuperAdmin() && window.OwlisticHanifCosting) {
+    window.OwlisticHanifCosting.mount({ showToast: showToast });
+  }
   loadFromSheet();
 })();
