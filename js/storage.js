@@ -571,6 +571,27 @@
     }, revisionNumber);
   }
 
+  function deleteSubRevision(order, revisionId, subRevisionId, revisionNumber) {
+    var removed = false;
+    var ok = touchRevisionRound(order, revisionId, function (round) {
+      const subs = normalizeSubRevisions(round.subRevisions || [], round.number);
+      const target = subs.find(function (sub) {
+        return String(sub.id) === String(subRevisionId);
+      });
+      if (!target) return;
+      const wasLatest = !target.completed && target.status === "active";
+      let nextSubs = subs.filter(function (sub) {
+        return String(sub.id) !== String(subRevisionId);
+      });
+      if (wasLatest) {
+        nextSubs = promoteNextSubRevision(nextSubs);
+      }
+      round.subRevisions = normalizeSubRevisions(nextSubs, round.number);
+      removed = true;
+    }, revisionNumber);
+    return ok && removed;
+  }
+
   function setMainRevisionStatus(order, revisionId, status, revisionNumber) {
     const raw = String(status || "").trim().toLowerCase();
     if (raw === "completed") {
@@ -1797,6 +1818,7 @@
     applyRevisionsData: applyRevisionsData,
     addSubRevision: addSubRevision,
     updateSubRevision: updateSubRevision,
+    deleteSubRevision: deleteSubRevision,
     setSubRevisionCompleted: setSubRevisionCompleted,
     setSubRevisionStatus: setSubRevisionStatus,
     setMainRevisionStatus: setMainRevisionStatus,
@@ -1859,6 +1881,7 @@
   global.OwlisticStore.applyRevisionsData = applyRevisionsData;
   global.OwlisticStore.addSubRevision = addSubRevision;
   global.OwlisticStore.updateSubRevision = updateSubRevision;
+  global.OwlisticStore.deleteSubRevision = deleteSubRevision;
   global.OwlisticStore.setSubRevisionCompleted = setSubRevisionCompleted;
   global.OwlisticStore.setSubRevisionStatus = setSubRevisionStatus;
   global.OwlisticStore.setMainRevisionStatus = setMainRevisionStatus;
