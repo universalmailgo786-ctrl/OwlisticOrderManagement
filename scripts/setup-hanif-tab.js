@@ -73,6 +73,9 @@ async function main() {
   const setup = await fetchJson(`${WEB_APP_URL}?action=setupHanifSheet&role=superadmin`);
   console.log("setupHanifSheet:", setup);
 
+  const reconcile = await fetchJson(`${WEB_APP_URL}?action=reconcileHanifRecords&role=superadmin`);
+  console.log("reconcileHanifRecords:", reconcile);
+
   const accounts = await fetchJson(`${WEB_APP_URL}?action=listAccounts&role=superadmin`);
   const schedule = await fetchJson(`${WEB_APP_URL}?action=ensureScheduleColumns&role=superadmin`);
   const tabsFromAccounts = [...new Set((accounts.accounts || []).map((a) => a.account).filter(Boolean))];

@@ -132,6 +132,9 @@ function doGet(e) {
   if (action === "setupHanifSheet") {
     return json_(setupHanifSheet_(params));
   }
+  if (action === "reconcileHanifRecords") {
+    return json_(reconcileHanifRecordsAction_(params));
+  }
   if (action === "formatHanifLedger") {
     return json_(setupHanifSheet_(params));
   }
@@ -200,6 +203,9 @@ function doPost(e) {
     }
     if (data.action === "syncHanifRecords") {
       return json_(syncHanifRecords_(data));
+    }
+    if (data.action === "reconcileHanifRecords") {
+      return json_(reconcileHanifRecordsAction_(data));
     }
     if (data.action === "updateHanifPayment") {
       return json_(updateHanifPayment_(data));
@@ -1230,11 +1236,13 @@ function upsertOrderLocked_(ss, data) {
   if (found) {
     if (found.sheet.getSheetId() === target.getSheetId()) {
       writeOrderRow_(target, found.row, row, files);
+      touchHanifForOrder_(ss, row, target.getName());
       return { ok: true, updated: true, orderId: orderId, tab: target.getName() };
     }
     target.appendRow(row);
     writeOrderRow_(target, target.getLastRow(), row, files);
     found.sheet.deleteRow(found.row);
+    touchHanifForOrder_(ss, row, target.getName());
     return { ok: true, moved: true, orderId: orderId, tab: target.getName() };
   }
 
@@ -1252,6 +1260,7 @@ function upsertOrderLocked_(ss, data) {
 
   target.appendRow(row);
   writeOrderRow_(target, target.getLastRow(), row, files);
+  touchHanifForOrder_(ss, row, target.getName());
   return { ok: true, created: true, orderId: orderId, tab: target.getName() };
 }
 
@@ -1269,6 +1278,7 @@ function deleteOrder_(ss, data) {
     return { ok: false, error: "You can only delete orders for " + forced + "." };
   }
   found.sheet.deleteRow(found.row);
+  try { removeHanifRecordByOrderId_(ss, orderId, true); } catch (err) {}
   return { ok: true, action: "deleteOrder", orderId: orderId, tab: found.sheet.getName() };
 }
 
@@ -1462,6 +1472,7 @@ function updateOrderSchedule_(ss, data) {
   }
   found.sheet.getRange(found.row, 4).setValue(new Date());
   found.sheet.getRange(found.row, 5).setValue(new Date());
+  touchHanifForOrder_(ss, found.sheet.getRange(found.row, 1, 1, HEADERS.length).getValues()[0], found.sheet.getName());
   return {
     ok: true,
     action: "updateOrderSchedule",
@@ -1495,6 +1506,7 @@ function updateOrderNames_(ss, data) {
   var client = String((data.clientName != null ? data.clientName : data.clientname) || "").trim();
   found.sheet.getRange(found.row, 26).setValue(biz);
   found.sheet.getRange(found.row, 27).setValue(client);
+  touchHanifForOrder_(ss, found.sheet.getRange(found.row, 1, 1, HEADERS.length).getValues()[0], found.sheet.getName());
   return {
     ok: true,
     action: "updateOrderNames",
@@ -1548,6 +1560,7 @@ function updateOrderStatus_(ss, data) {
     found.sheet.getRange(found.row, 31).setValue(String((data.scheduleUpdatedAt != null ? data.scheduleUpdatedAt : data.scheduleupdatedat) || ""));
     found.sheet.getRange(found.row, 32).setValue(String((data.placedAt != null ? data.placedAt : data.placedat) || ""));
   }
+  touchHanifForOrder_(ss, found.sheet.getRange(found.row, 1, 1, HEADERS.length).getValues()[0], found.sheet.getName());
   return {
     ok: true,
     action: "updateOrderStatus",
@@ -2506,7 +2519,7 @@ function setupHanifSheet_(params) {
   var denied = requireSuperAdmin_(params);
   if (denied) return denied;
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  refreshHanifLedger_(ss);
+  var reconcile = reconcileHanifRecords_(ss);
   var sheet = resolveHanifDataSheet_(ss);
   return {
     ok: true,
@@ -2515,8 +2528,21 @@ function setupHanifSheet_(params) {
     dashboardName: HANIF_DASHBOARD_SHEET_NAME,
     columns: HANIF_HEADERS.length,
     rows: Math.max(hanifDataLastRow_(sheet) - 1, 0),
-    pkrRate: hanifPkrRate_(ss)
+    pkrRate: hanifPkrRate_(ss),
+    reconcile: reconcile
   };
+}
+
+function reconcileHanifRecordsAction_(params) {
+  var denied = requireSuperAdmin_(params);
+  if (denied) return denied;
+  return reconcileHanifRecords_(SpreadsheetApp.openById(SPREADSHEET_ID));
+}
+
+function touchHanifForOrder_(ss, row, tabName) {
+  try {
+    syncHanifFromOrderRow_(ss, row, tabName, true);
+  } catch (err) {}
 }
 
 function ensureHanifSheet_(sheet) {
@@ -2609,64 +2635,18 @@ function syncHanifRecords_(data) {
   var denied = requireSuperAdmin_(data);
   if (denied) return denied;
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = resolveHanifDataSheet_(ss);
   var incoming = (data && data.orders) || [];
   var updated = 0;
   var created = 0;
-  var rate = hanifPkrRate_(ss);
   var i;
   for (i = 0; i < incoming.length; i++) {
     var item = incoming[i] || {};
-    var orderId = String(item.orderId || "").trim();
-    if (!orderId) continue;
-    var found = findHanifRow_(sheet, orderId);
-    var existing = null;
-    if (found) {
-      existing = hanifRecordFromRow_(sheet.getRange(found.row, 1, 1, HANIF_HEADERS.length).getValues()[0]);
-    }
-    var paymentStatus = existing ? existing.hanifPaymentStatus : "unpaid";
-    var paidAmount = existing ? existing.paidAmount : 0;
-    var paidAt = existing ? existing.paidAt : "";
-    if (!existing) {
-      paymentStatus = "unpaid";
-      paidAmount = 0;
-      paidAt = "";
-    }
-    if (/^paid$/i.test(paymentStatus) && paidAmount <= 0) {
-      paidAmount = hanifNumber_(item.hanifCost);
-    }
-    var totalLoss = hanifNumber_(item.totalLoss);
-    var merged = {
-      orderId: orderId,
-      createdDate: item.createdDate || (existing && existing.createdDate) || "",
-      orderNumber: Number(item.orderNumber || 0) || (existing && existing.orderNumber) || orderIdNumber_(orderId),
-      account: hanifAccountLabel_(item.account || (existing && existing.account) || "", item.fiverrId || ""),
-      clientName: hanifCleanText_(item.clientName || ""),
-      businessName: hanifCleanText_(item.businessName || ""),
-      orderValue: hanifNumber_(item.orderValue),
-      hanifCost: hanifNumber_(item.hanifCost),
-      fiverrFee: hanifNumber_(item.fiverrFee),
-      returnAfterFee: hanifNumber_(item.returnAfterFee),
-      totalLoss: totalLoss,
-      pkrRate: rate,
-      totalLossPkr: Math.round(totalLoss * rate),
-      orderStatus: hanifCleanText_(item.orderStatus || (existing && existing.orderStatus) || ""),
-      hanifPaymentStatus: paymentStatus,
-      paidAmount: paidAmount,
-      paidAt: paidAt,
-      updatedAt: new Date().toISOString()
-    };
-    var row = hanifRowFromRecord_(merged, ss);
-    if (found) {
-      sheet.getRange(found.row, 1, 1, HANIF_HEADERS.length).setValues([row]);
-      updated += 1;
-    } else {
-      appendHanifRow_(sheet, row);
-      created += 1;
-    }
+    var result = upsertHanifItem_(ss, item, false);
+    if (result.created) created += 1;
+    else if (result.updated) updated += 1;
   }
   refreshHanifLedger_(ss);
-  return { ok: true, action: "syncHanifRecords", created: created, updated: updated, pkrRate: rate };
+  return { ok: true, action: "syncHanifRecords", created: created, updated: updated, pkrRate: hanifPkrRate_(ss) };
 }
 
 function updateHanifPayment_(data) {

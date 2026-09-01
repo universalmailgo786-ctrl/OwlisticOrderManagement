@@ -8,6 +8,8 @@
   let selected = {};
   let deps = null;
   let loading = false;
+  let backgroundSyncTimer = null;
+  let backgroundSyncing = false;
 
   const MONTHS = [
     "January", "February", "March", "April", "May", "June",
@@ -293,6 +295,24 @@
     return next;
   }
 
+  function scheduleBackgroundSync(orders) {
+    if (!auth.isSuperAdmin() || !sheet || !sheet.syncRecords) return;
+    clearTimeout(backgroundSyncTimer);
+    backgroundSyncTimer = setTimeout(function () {
+      if (backgroundSyncing) return;
+      backgroundSyncing = true;
+      const source = orders || (store && store.getOrders ? store.getOrders() : []);
+      sheet.listRecords().then(function (result) {
+        const merged = mergeOrders(source, (result && result.records) || []);
+        return sheet.syncRecords(merged);
+      }).catch(function () {
+        /* keep UI responsive if background sync fails */
+      }).then(function () {
+        backgroundSyncing = false;
+      });
+    }, 1200);
+  }
+
   function load(orders) {
     if (!auth.isSuperAdmin()) return Promise.resolve();
     loading = true;
@@ -459,7 +479,11 @@
   function onOrdersLoaded(orders) {
     if (!auth.isSuperAdmin()) return;
     const panel = el("hanif-costing-panel");
-    if (panel && !panel.hidden) load(orders);
+    if (panel && !panel.hidden) {
+      load(orders);
+    } else {
+      scheduleBackgroundSync(orders);
+    }
     const countEl = document.querySelector('[data-tab-count="hanif-costing"]');
     if (countEl) countEl.textContent = String((orders || []).length);
   }

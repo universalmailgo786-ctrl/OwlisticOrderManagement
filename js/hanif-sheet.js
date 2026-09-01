@@ -83,6 +83,12 @@
     });
   }
 
+  function reconcileRecords() {
+    const url = getUrl("reconcileHanifRecords");
+    if (!url) return Promise.resolve({ ok: false, error: "Google Sheet is not connected." });
+    return fetchJson(url, null, 120000);
+  }
+
   function syncRecords(orders) {
     return postPayload({ action: "syncHanifRecords", orders: orders || [] }, 120000);
   }
@@ -155,6 +161,7 @@
   global.OwlisticHanifSheet = {
     listRecords: listRecords,
     syncRecords: syncRecords,
+    reconcileRecords: reconcileRecords,
     updatePayment: updatePayment,
     bulkUpdatePayment: bulkUpdatePayment,
     deleteRecord: deleteRecord,
