@@ -97,6 +97,9 @@
       return renderStatusChip(step.state, mainStatusChipLabel(step));
     }
     const value = "open";
+    const allowComplete = store && typeof store.canCompleteMainRevision === "function"
+      ? store.canCompleteMainRevision(step.round)
+      : true;
     return '<div class="rev-sub-status-wrap" data-status-wrap="main">' +
       '<select class="rev-sub-status-select rev-history-status is-current" data-main-revision-status ' +
         'data-revision-id="' + deps.escapeHtml(step.round.id) + '" ' +
@@ -104,8 +107,9 @@
         'data-previous-value="' + value + '" ' +
         'aria-label="Main revision status">' +
         '<option value="open" selected>Open</option>' +
-        '<option value="completed">Completed</option>' +
+        '<option value="completed"' + (allowComplete ? "" : " disabled") + ">Completed</option>" +
       "</select>" +
+      (allowComplete ? "" : '<span class="rev-sub-status-hint">Complete all sub revisions first</span>') +
       '<span class="rev-sub-status-saving" hidden>Saving...</span>' +
       '<button type="button" class="rev-sub-status-retry" hidden>Save failed — Retry</button>' +
     "</div>";
@@ -503,7 +507,12 @@
     if (!saved) {
       select.value = previousValue;
       setStatusWrapState(wrap, "idle");
-      if (deps.showToast) deps.showToast("Complete previous revisions first.");
+      const round = store.findRevisionRound && store.findRevisionRound(order, revisionId);
+      if (newValue === "completed" && round && store.canCompleteMainRevision && !store.canCompleteMainRevision(round)) {
+        if (deps.showToast) deps.showToast("Complete all sub revisions before marking this main revision completed.");
+      } else if (deps.showToast) {
+        deps.showToast("Complete previous revisions first.");
+      }
       return;
     }
     pendingStatusChange = { type: "main", select: select, snapshot: snapshot, previousValue: previousValue };

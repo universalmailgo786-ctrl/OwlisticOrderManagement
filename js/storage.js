@@ -372,6 +372,22 @@
     return { current: current, completed: completed };
   }
 
+  function allSubRevisionsCompleted(round) {
+    const subs = normalizeSubRevisions((round && round.subRevisions) || [], round && round.number);
+    if (!subs.length) return true;
+    return subs.every(function (sub) {
+      return Boolean(sub.completed || sub.status === "completed");
+    });
+  }
+
+  function canCompleteMainRevision(round) {
+    return allSubRevisionsCompleted(round);
+  }
+
+  function hasIncompleteSubRevisions(round) {
+    return !allSubRevisionsCompleted(round);
+  }
+
   function subRevisionStats(round) {
     const subs = normalizeSubRevisions((round && round.subRevisions) || [], round && round.number);
     const completed = subs.filter(function (item) { return item.completed; }).length;
@@ -1140,6 +1156,7 @@
     if (completed) {
       const previousOpen = rounds.slice(0, index).some(function (round) { return !round.completed; });
       if (previousOpen) return false;
+      if (!allSubRevisionsCompleted(rounds[index])) return false;
     }
     rounds[index].completed = Boolean(completed);
     rounds[index].updatedAt = nowIso();
@@ -1770,6 +1787,9 @@
     setBoardStatus: setBoardStatus,
     setRevisionCompleted: setRevisionCompleted,
     subRevisionStats: subRevisionStats,
+    allSubRevisionsCompleted: allSubRevisionsCompleted,
+    canCompleteMainRevision: canCompleteMainRevision,
+    hasIncompleteSubRevisions: hasIncompleteSubRevisions,
     buildRevisionsData: buildRevisionsData,
     applyRevisionsData: applyRevisionsData,
     addSubRevision: addSubRevision,
@@ -1832,6 +1852,9 @@
   global.OwlisticStore.setBoardStatus = setBoardStatus;
   global.OwlisticStore.setRevisionCompleted = setRevisionCompleted;
   global.OwlisticStore.subRevisionStats = subRevisionStats;
+  global.OwlisticStore.allSubRevisionsCompleted = allSubRevisionsCompleted;
+  global.OwlisticStore.canCompleteMainRevision = canCompleteMainRevision;
+  global.OwlisticStore.hasIncompleteSubRevisions = hasIncompleteSubRevisions;
   global.OwlisticStore.buildRevisionsData = buildRevisionsData;
   global.OwlisticStore.applyRevisionsData = applyRevisionsData;
   global.OwlisticStore.addSubRevision = addSubRevision;

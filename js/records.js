@@ -1431,6 +1431,11 @@
         showToast("Complete Revision " + index + " first.");
         return;
       }
+      const round = rounds[index];
+      if (store.canCompleteMainRevision && !store.canCompleteMainRevision(round)) {
+        showToast("Complete all sub revisions before marking Revision " + (index + 1) + " completed.");
+        return;
+      }
     }
     let saved = false;
     if (typeof store.setRevisionCompleted === "function") {
