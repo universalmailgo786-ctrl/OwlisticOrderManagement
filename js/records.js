@@ -795,6 +795,7 @@
       : status === "Scheduled" ? "is-scheduled"
       : status === "Later" ? "is-later"
       : status === "On Hold" ? "is-hold"
+      : status === "Overdue" ? "is-overdue"
       : status === "Placed" ? "is-placed"
       : "is-unscheduled";
     return '<span class="placement-pill ' + cls + '"><i></i>' + escapeHtml(status) + "</span>";
@@ -810,10 +811,7 @@
     const status = store.placementStatusOf ? store.placementStatusOf(order) : (order.placementStatus || "Unscheduled");
     let primaryLabel = "Schedule";
     let primaryAction = "open";
-    if (status === "Place Today") {
-      primaryLabel = "Mark Placed";
-      primaryAction = "placed";
-    } else if (status !== "Unscheduled") {
+    if (status !== "Unscheduled") {
       primaryLabel = "Edit Schedule";
       primaryAction = "open";
     }
@@ -831,6 +829,15 @@
         '<button type="button" data-schedule-do="placed" data-schedule-order="' + escapeHtml(order.id) + '">Mark Placed</button>' +
       "</div>" +
     "</div>";
+  }
+
+  function scheduleRowClass(order, status, extra) {
+    let cls = "records-row is-" + status;
+    if (extra) cls += " " + extra;
+    if (activeTab === "in-progress" && store.isScheduleOverdue && store.isScheduleOverdue(order)) {
+      cls += " is-schedule-overdue";
+    }
+    return cls;
   }
 
   function scheduleCells(order) {
@@ -1089,7 +1096,7 @@
             mediaCell(revisionRoleHtml(round, "seller"), sellerText, revLabel + " seller", revisionRoleHasFiles(round, "seller"));
         }
       }
-      return '<tr class="records-row is-' + status + '">' +
+      return '<tr class="' + scheduleRowClass(order, status, "") + '">' +
         "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
         "<td>" + withCopy(escapeHtml(order.whatsapp || "—"), order.whatsapp || "", "WhatsApp number") + "</td>" +
         "<td>" + withCopy(escapeHtml(order.name || "—"), order.name || "", "name") + "</td>" +
@@ -1975,6 +1982,15 @@
       order.overallStatus = (store.boardStatusLabel && store.boardStatusLabel(nextTab)) || nextTab;
       order.readyToApprove = nextTab === "completed" || nextTab === "ready-to-approve";
     }
+    if (nextTab === "orders-placed") {
+      order.placementPlaced = true;
+      order.placedAt = order.placedAt || (store.nowIso ? store.nowIso() : new Date().toISOString());
+      order.placementHold = false;
+    } else if (order.placementPlaced) {
+      order.placementPlaced = false;
+      order.placedAt = "";
+    }
+    if (store.normalizeSchedule) store.normalizeSchedule(order);
     store.upsertOrder(order);
     const label = (store.boardStatusLabel && store.boardStatusLabel(nextTab)) || select.options[select.selectedIndex].text;
     setActiveTab(tabOf(order));

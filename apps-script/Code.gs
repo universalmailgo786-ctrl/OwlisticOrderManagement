@@ -934,7 +934,7 @@ function orderFromRow_(row, tabName, files) {
     scheduleUpdatedAt: String(row[30] || "").trim(),
     placedAt: String(row[31] || "").trim(),
     placementHold: /on hold/i.test(String(row[28] || "")),
-    placementPlaced: /^placed$/i.test(String(row[28] || "").trim()),
+    placementPlaced: /^placed$/i.test(String(row[28] || "").trim()) && String(row[31] || "").trim() !== "",
     createdAt: isoFrom_(row[1], row[2]),
     updatedAt: isoFrom_(row[3], row[4]) || isoFrom_(row[1], row[2])
   };
@@ -1425,7 +1425,6 @@ function updateOrderSchedule_(ss, data) {
   found.sheet.getRange(found.row, 31).setValue(String((data.scheduleUpdatedAt != null ? data.scheduleUpdatedAt : data.scheduleupdatedat) || ""));
   found.sheet.getRange(found.row, 32).setValue(String((data.placedAt != null ? data.placedAt : data.placedat) || ""));
   var boardTab = parseBoardStatus_(data.boardStatus || data.status || "");
-  if (!boardTab && /^placed$/i.test(placementStatus)) boardTab = "orders-placed";
   if (boardTab) {
     var statusLabel = String((data.statusLabel != null ? data.statusLabel : data.statuslabel) || "").trim();
     if (!statusLabel) {

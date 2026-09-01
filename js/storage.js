@@ -370,11 +370,17 @@
     if (fromBoard && fromBoard !== "in-progress") return fromBoard;
     const fromOverall = parseBoardStatus(order && order.overallStatus);
     if (fromOverall && fromOverall !== "in-progress") return fromOverall;
-    if (order && order.placementPlaced) return "orders-placed";
     if (fromBoard) return fromBoard;
     if (fromOverall) return fromOverall;
     if (order && order.readyToApprove) return "ready-to-approve";
     return "in-progress";
+  }
+
+  function isExplicitlyPlaced(order) {
+    if (!order) return false;
+    if (parseBoardStatus(order.boardStatus) === "orders-placed") return true;
+    if (parseBoardStatus(order.overallStatus) === "orders-placed") return true;
+    return Boolean(order.placementPlaced) && String(order.placedAt || "").trim() !== "";
   }
 
   function boardStatusLabel(tab) {
@@ -875,21 +881,30 @@
 
   function placementStatusOf(order) {
     if (!order) return "Unscheduled";
-    if (order.placementPlaced) return "Placed";
+    if (isExplicitlyPlaced(order)) return "Placed";
     if (order.placementHold) return "On Hold";
     const date = ymd(order.placeOn);
     if (!date) return "Unscheduled";
     const today = todayYmd();
+    if (date < today) return "Overdue";
     if (date === today) return "Place Today";
     if (date === shiftYmd(today, 1)) return "Scheduled";
     if (date > shiftYmd(today, 1)) return "Later";
     return "Scheduled";
   }
 
+  function isScheduleOverdue(order) {
+    if (!order || isExplicitlyPlaced(order) || order.placementHold) return false;
+    const date = ymd(order.placeOn);
+    if (!date) return false;
+    return date < todayYmd();
+  }
+
   function placementBucket(order) {
     const status = placementStatusOf(order);
     if (status === "On Hold") return "hold";
     if (status === "Placed") return "placed";
+    if (status === "Overdue") return "overdue";
     if (status === "Unscheduled") return "unscheduled";
     const date = ymd(order.placeOn);
     const today = todayYmd();
@@ -939,16 +954,25 @@
     ).getTime();
   }
 
+  function sheetSaysPlaced(order) {
+    return /^placed$/i.test(String((order && order.placementStatus) || "").trim()) &&
+      String((order && order.placedAt) || "").trim() !== "";
+  }
+
   function mergeSchedule(order, previous) {
     if (!previous) {
       if (/on hold/i.test(String(order.placementStatus || ""))) order.placementHold = true;
-      if (/^placed$/i.test(String(order.placementStatus || "").trim())) order.placementPlaced = true;
+      order.placementPlaced = sheetSaysPlaced(order);
+      if (!order.placementPlaced && parseBoardStatus(order.boardStatus) === "orders-placed") {
+        order.placementPlaced = true;
+      }
       return normalizeSchedule(order);
     }
     const incomingStamp = scheduleStampMs(order.scheduleUpdatedAt);
     const previousStamp = scheduleStampMs(previous.scheduleUpdatedAt);
     const incomingHold = Boolean(order.placementHold) || /on hold/i.test(String(order.placementStatus || ""));
-    const incomingPlaced = Boolean(order.placementPlaced) || /^placed$/i.test(String(order.placementStatus || "").trim());
+    const incomingPlaced = sheetSaysPlaced(order) ||
+      (Boolean(order.placementPlaced) && String(order.placedAt || "").trim() !== "");
     const incomingDate = ymd(order.placeOn);
     if (previousStamp > incomingStamp) {
       order.placeOn = previous.placeOn;
@@ -1365,6 +1389,7 @@
     fillOrderAccountProfile: fillOrderAccountProfile,
     applyManualSchedule: applyManualSchedule,
     placementStatusOf: placementStatusOf,
+    isScheduleOverdue: isScheduleOverdue,
     placementBucket: placementBucket,
     formatPlaceOn: formatPlaceOn,
     ymd: ymd,
@@ -1443,6 +1468,7 @@
   global.OwlisticStore.fillOrderAccountProfile = fillOrderAccountProfile;
   global.OwlisticStore.applyManualSchedule = applyManualSchedule;
   global.OwlisticStore.placementStatusOf = placementStatusOf;
+  global.OwlisticStore.isScheduleOverdue = isScheduleOverdue;
   global.OwlisticStore.placementBucket = placementBucket;
   global.OwlisticStore.formatPlaceOn = formatPlaceOn;
 })(window);

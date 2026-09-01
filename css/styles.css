@@ -2501,6 +2501,23 @@ body.modal-open {
   color: #fff;
 }
 
+.placement-pill.is-overdue {
+  background: #f8d7da;
+  color: #842029;
+}
+
+.records-table tbody tr.records-row.is-schedule-overdue td {
+  background: #fff1f1;
+}
+
+.records-table tbody tr.records-row.is-schedule-overdue:hover td {
+  background: #ffe4e4;
+}
+
+.records-table tbody tr.records-row.is-schedule-overdue td:first-child {
+  box-shadow: inset 3px 0 0 #d93025;
+}
+
 .schedule-modal[hidden] {
   display: none;
 }
