@@ -348,9 +348,14 @@
     return JSON.stringify({
       v: 1,
       revisions: rounds.map(function (round) {
+        const buyer = (round.messages || []).find(function (msg) { return revisionMessageRole(msg) === "buyer"; });
+        const seller = (round.messages || []).find(function (msg) { return revisionMessageRole(msg) === "seller"; });
         return {
           id: round.id,
           number: round.number,
+          completed: Boolean(round.completed),
+          buyerRevision: buyer ? String(buyer.text || "").trim() : "",
+          sellerReply: seller ? String(seller.text || "").trim() : "",
           updatedAt: round.updatedAt || round.createdAt || "",
           subRevisions: (round.subRevisions || []).map(function (sub) {
             return {
@@ -397,6 +402,7 @@
       const extra = map[round.id] || map["n:" + round.number] || null;
       if (!extra) return round;
       return Object.assign({}, round, {
+        completed: "completed" in extra ? Boolean(extra.completed) : round.completed,
         updatedAt: extra.updatedAt || round.updatedAt || round.createdAt,
         subRevisions: normalizeSubRevisions(extra.subRevisions || round.subRevisions || [], round.number)
       });
@@ -1280,6 +1286,7 @@
     normalizeSchedule(order);
     order.status = computeStatus(order);
     order.revisions = normalizeRevisions(order.revisions);
+    order.revisionsData = buildRevisionsData(order);
     order.messageThread = messageThreadOf(order);
     if (order.messageThread.length) {
       order.messageText = formatMessageThread(order.messageThread);

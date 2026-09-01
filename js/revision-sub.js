@@ -240,12 +240,20 @@
 
   function syncOrderInBackground(order, options) {
     const sheet = global.OwlisticSheet;
-    if (!sheet || typeof sheet.sync !== "function") return Promise.resolve({ ok: true });
-    return sheet.sync(order, options && options.syncOptions).then(function (result) {
-      if (result && result.ok === false && deps.showToast) {
+    if (!sheet) return Promise.resolve({ ok: true });
+    const uploads = (options && options.syncOptions && options.syncOptions.skipUploads)
+      ? Promise.resolve({ ok: true })
+      : (typeof sheet.sync === "function" ? sheet.sync(order, options && options.syncOptions) : Promise.resolve({ ok: true }));
+    const revisions = typeof sheet.syncRevisionsData === "function"
+      ? sheet.syncRevisionsData(order)
+      : Promise.resolve({ ok: true });
+    return Promise.all([uploads, revisions]).then(function (results) {
+      const revisionResult = results[1] || {};
+      const uploadResult = results[0] || {};
+      if ((revisionResult.ok === false || uploadResult.ok === false) && deps.showToast) {
         deps.showToast("Saved here, but Google Sheet sync failed. Try again.");
       }
-      return result;
+      return revisionResult.ok === false ? revisionResult : uploadResult;
     }).catch(function () {
       if (deps.showToast) deps.showToast("Saved here, but Google Sheet sync failed. Try again.");
       return { ok: false };

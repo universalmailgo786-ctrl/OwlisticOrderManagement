@@ -148,6 +148,9 @@ function doGet(e) {
   if (action === "formatHanifLedger") {
     return json_(setupHanifSheet_(params));
   }
+  if (action === "updateRevisionsData") {
+    return json_(updateRevisionsData_(SpreadsheetApp.openById(SPREADSHEET_ID), params));
+  }
   return json_({ ok: true, service: "Ashar Orders Management System", sheetColumns: HEADERS.length });
 }
 
@@ -225,6 +228,9 @@ function doPost(e) {
     }
     if (data.action === "deleteHanifRecord") {
       return json_(deleteHanifRecord_(data));
+    }
+    if (data.action === "updateRevisionsData") {
+      return json_(updateRevisionsData_(ss, data));
     }
 
     return json_(upsertOrder_(ss, data));
@@ -1212,6 +1218,9 @@ function upsertOrderLocked_(ss, data) {
         row[24] = existingRow[24];
       }
     }
+    if (!String(row[32] || "").trim() && String(existingRow[32] || "").trim()) {
+      row[32] = existingRow[32];
+    }
   }
   var hasSchedule = ("placeOn" in data) || ("placeon" in data) || ("placementStatus" in data) || ("placementstatus" in data) || ("placedAt" in data) || ("placedat" in data);
   if (hasSchedule) {
@@ -1229,6 +1238,7 @@ function upsertOrderLocked_(ss, data) {
     row[27] = placeOnCellValue_(row[27]);
   }
   ensureNameColumns_(target);
+  ensureRevisionsDataColumn_(target);
 
   var existingRich = null;
   var existingText = "";
@@ -1434,11 +1444,55 @@ function ensureScheduleColumns_(sheet) {
   try {
     sheet.getRange(1, 28, 1, HEADERS.length).setValues([HEADERS.slice(27)]);
   } catch (err) {}
-  var widths = [132, 140, 140, 168, 150];
+  var widths = [132, 140, 140, 168, 150, 220];
   var i;
   for (i = 0; i < widths.length; i++) {
     try { sheet.setColumnWidth(28 + i, widths[i]); } catch (err2) {}
   }
+}
+
+function ensureRevisionsDataColumn_(sheet) {
+  if (!sheet) return;
+  ensureScheduleColumns_(sheet);
+  try {
+    if (String(sheet.getRange(1, 33).getValue() || "").trim() !== "Revisions Data") {
+      sheet.getRange(1, 33).setValue("Revisions Data");
+    }
+    sheet.setColumnWidth(33, 220);
+  } catch (err) {}
+}
+
+function updateRevisionsData_(ss, data) {
+  var orderId = String((data && data.orderId) || "").trim();
+  if (!orderId) {
+    return { ok: false, action: "updateRevisionsData", error: "Order ID is required." };
+  }
+  var forced = forcedAccount_(data);
+  var wantedName = tabName_(data.tabName || data.accountName || "");
+  var found = null;
+  if (wantedName) {
+    var sheet = sheetForAccount_(ss, wantedName);
+    if (sheet) found = findOrderOnSheet_(sheet, orderId);
+  }
+  if (!found) found = findOrder_(ss, orderId);
+  if (!found) {
+    return { ok: false, action: "updateRevisionsData", found: false, error: "Order " + orderId + " was not found on the Google Sheet." };
+  }
+  if (forced && !canAccessFound_(found, forced)) {
+    return { ok: false, action: "updateRevisionsData", error: "You can only edit orders for " + forced + "." };
+  }
+  ensureRevisionsDataColumn_(found.sheet);
+  var row = found.row;
+  if (data.revisionCount != null) found.sheet.getRange(row, 19).setValue(String(data.revisionCount));
+  if (data.revisionHistory != null) found.sheet.getRange(row, 20).setValue(String(data.revisionHistory));
+  if (data.currentRevision != null) found.sheet.getRange(row, 21).setValue(String(data.currentRevision));
+  if (data.latestBuyer != null) found.sheet.getRange(row, 22).setValue(String(data.latestBuyer));
+  if (data.latestSeller != null) found.sheet.getRange(row, 23).setValue(String(data.latestSeller));
+  if (data.updatedDate != null) found.sheet.getRange(row, 4).setValue(String(data.updatedDate));
+  if (data.updatedTime != null) found.sheet.getRange(row, 5).setValue(String(data.updatedTime));
+  if (data.revisionsData != null) found.sheet.getRange(row, 33).setValue(String(data.revisionsData));
+  touchHanifForOrder_(ss, found.sheet.getRange(row, 1, 1, HEADERS.length).getValues()[0], found.sheet.getName());
+  return { ok: true, action: "updateRevisionsData", orderId: orderId, tab: found.sheet.getName() };
 }
 
 function updateOrderSchedule_(ss, data) {

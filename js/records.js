@@ -1465,6 +1465,10 @@
       }
     };
     const sheet = window.OwlisticSheet;
+    if (sheet && typeof sheet.syncRevisionsData === "function") {
+      sheet.syncRevisionsData(order).then(finish).catch(finish);
+      return;
+    }
     if (sheet && typeof sheet.sync === "function") {
       sheet.sync(order, { skipUploads: true }).then(finish).catch(finish);
       return;

@@ -347,8 +347,97 @@
         if (files) parts.push("Files: " + files.replace(/\n/g, " ; "));
         return parts.join(" — ");
       });
-      return "Revision " + (round.number || "") + (round.completed ? " [Completed]" : " [Open]") + (messages.length ? ": " + messages.join(" || ") : ": (empty)");
+      let block = "Revision " + (round.number || "") + (round.completed ? " [Completed]" : " [Open]") +
+        (messages.length ? ": " + messages.join(" || ") : ": (empty)");
+      (round.subRevisions || []).forEach(function (sub) {
+        const subStatus = sub.completed ? " [Completed]" : (sub.status === "active" ? " [Active]" : " [Pending]");
+        block += "\n  R" + round.number + " Sub " + (sub.subRevisionNumber || "") + subStatus +
+          " | Buyer: " + String(sub.buyerRevision || "").trim() +
+          " | Seller: " + String(sub.sellerReply || "").trim();
+        const images = (sub.attachments || []).map(function (att) {
+          const name = att.fileName || att.name || "image";
+          const url = att.imageUrl || att.url || "";
+          return url ? name + " | " + url : name;
+        }).filter(Boolean);
+        if (images.length) block += " | Images: " + images.join(" ; ");
+      });
+      return block;
     }).join("\n");
+  }
+
+  function revisionsPayload(order) {
+    const live = liveOrder(order) || order || {};
+    const row = toRow(live);
+    return {
+      revisionsData: callStore("buildRevisionsData", "buildRevisionsData", live) || "",
+      revisionHistory: revisionHistory(live),
+      revisionCount: row[18] || "0",
+      currentRevision: row[19] || "",
+      latestBuyer: row[20] || "",
+      latestSeller: row[21] || "",
+      updatedDate: row[3] || "",
+      updatedTime: row[4] || ""
+    };
+  }
+
+  function postJsonPayload(payload, timeoutMs) {
+    if (!isConfigured()) {
+      return Promise.resolve({ ok: false, error: "Google Sheet is not connected." });
+    }
+    if (global.OwlisticAuth && typeof global.OwlisticAuth.sheetAuth === "function") {
+      payload = global.OwlisticAuth.sheetAuth(payload);
+    }
+    return fetchWithTimeout(getWebAppUrl(), {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+      credentials: "omit",
+      cache: "no-store",
+      redirect: "follow"
+    }, timeoutMs || 90000).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      const data = parseJson(text);
+      return data || { ok: false, error: "Could not read Google Sheet response." };
+    }).catch(function () {
+      return { ok: false, error: "Could not reach Google Sheet." };
+    });
+  }
+
+  function syncRevisionsData(order) {
+    if (!isConfigured() || !order || !order.id) {
+      return Promise.resolve({ skipped: true });
+    }
+    return enqueueOrderWrite(order.id, function () {
+      const latest = liveOrder(order) || order;
+      const payload = revisionsPayload(latest);
+      return postJsonPayload({
+        action: "updateRevisionsData",
+        orderId: latest.id,
+        accountName: accountNameOf(latest),
+        tabName: tabNameOf(accountNameOf(latest)),
+        revisionsData: payload.revisionsData,
+        revisionHistory: payload.revisionHistory,
+        revisionCount: payload.revisionCount,
+        currentRevision: payload.currentRevision,
+        latestBuyer: payload.latestBuyer,
+        latestSeller: payload.latestSeller,
+        updatedDate: payload.updatedDate,
+        updatedTime: payload.updatedTime
+      }).then(function (result) {
+        if (result && result.ok) return result;
+        return postPayload({
+          action: "upsert",
+          orderId: latest.id,
+          accountName: accountNameOf(latest),
+          tabName: tabNameOf(accountNameOf(latest)),
+          row: toRow(latest),
+          uploads: []
+        }).then(function () {
+          return { ok: true, action: "updateRevisionsData", fallback: true };
+        });
+      });
+    });
   }
 
   function toRow(order) {
@@ -395,7 +484,7 @@
       live.scheduledBy || "",
       live.scheduleUpdatedAt || "",
       live.placedAt || "",
-      callStore("buildRevisionsData", "buildRevisionsData", live) || ""
+      callStore("buildRevisionsData", "buildRevisionsData", live) || live.revisionsData || ""
     ];
   }
 
@@ -1673,6 +1762,7 @@
     HEADERS: HEADERS,
     SPREADSHEET_ID: SPREADSHEET_ID,
     sync: sync,
+    syncRevisionsData: syncRevisionsData,
     hasOrder: hasOrder,
     fetchOrder: fetchOrder,
     waitForDriveLinks: waitForDriveLinks,
