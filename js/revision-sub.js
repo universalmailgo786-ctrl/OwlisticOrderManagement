@@ -201,8 +201,14 @@
     }).join("");
   }
 
-  function openModal(mode, order, revisionId, subRevision) {
-    modalState = { mode: mode, orderId: order.id, revisionId: revisionId, subId: subRevision && subRevision.id };
+  function openModal(mode, order, revisionId, subRevision, revisionNumber) {
+    modalState = {
+      mode: mode,
+      orderId: order.id,
+      revisionId: revisionId,
+      revisionNumber: revisionNumber || activeRevisionNumber || 0,
+      subId: subRevision && subRevision.id
+    };
     pendingFiles = (subRevision && subRevision.attachments ? subRevision.attachments.slice() : []);
     const modal = el("rev-sub-modal");
     const title = el("rev-sub-modal-title");
@@ -232,41 +238,43 @@
     document.body.classList.remove("modal-open");
   }
 
+  function syncOrderInBackground(order, options) {
+    const sheet = global.OwlisticSheet;
+    if (!sheet || typeof sheet.sync !== "function") return Promise.resolve({ ok: true });
+    return sheet.sync(order, options && options.syncOptions).then(function (result) {
+      if (result && result.ok === false && deps.showToast) {
+        deps.showToast("Saved here, but Google Sheet sync failed. Try again.");
+      }
+      return result;
+    }).catch(function () {
+      if (deps.showToast) deps.showToast("Saved here, but Google Sheet sync failed. Try again.");
+      return { ok: false };
+    });
+  }
+
   function persistOrder(order, options) {
     order.updatedAt = new Date().toISOString();
     store.upsertOrder(order);
-    const sheet = global.OwlisticSheet;
-    const label = (options && options.loadingLabel) || "Saving revision...";
-    setModalStatus(label);
-    const finish = function (ok, message) {
-      setModalStatus("");
-      if (message && deps.showToast) deps.showToast(message);
-      if (ok) {
-        closeModal();
-        const fresh = store.getOrder(order.id) || order;
-        renderDrawer(fresh);
-        if (deps.render) deps.render();
-      }
-    };
-    if (!sheet || typeof sheet.sync !== "function") {
-      finish(true, options && options.successMessage);
-      return Promise.resolve();
-    }
-    return sheet.sync(order, options && options.syncOptions).then(function () {
-      finish(true, options && options.successMessage);
-    }).catch(function () {
-      finish(false, "Could not save to Google Sheet. Try again.");
-    });
+    const fresh = store.getOrder(order.id) || order;
+    closeModal();
+    renderDrawer(fresh);
+    if (deps.render) deps.render();
+    if (options && options.successMessage && deps.showToast) deps.showToast(options.successMessage);
+    return syncOrderInBackground(fresh, options);
   }
 
   function buildAttachmentsFromPending() {
     return pendingFiles.map(function (file) {
+      const fileName = file.fileName || file.name || "image";
       return {
         id: file.id || ("att_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6)),
+        name: fileName,
         driveFileId: file.driveFileId || file.driveId || "",
-        fileName: file.fileName || file.name || "image",
+        fileName: fileName,
         mimeType: file.mimeType || file.type || "",
+        type: file.mimeType || file.type || "",
         fileSize: file.fileSize || file.size || 0,
+        size: file.fileSize || file.size || 0,
         imageUrl: file.imageUrl || file.url || "",
         thumbnailUrl: file.thumbnailUrl || file.previewUrl || file.imageUrl || "",
         uploadedAt: file.uploadedAt || ""
@@ -274,42 +282,70 @@
     });
   }
 
-  function saveModal() {
-    if (!modalState) return;
-    const order = store.getOrder(modalState.orderId);
-    if (!order) return;
+  function applyModalSave(order) {
     const buyer = (el("rev-sub-buyer") && el("rev-sub-buyer").value) || "";
     const seller = (el("rev-sub-seller") && el("rev-sub-seller").value) || "";
     const status = (el("rev-sub-status") && el("rev-sub-status").value) || "active";
-    const saveBtn = el("rev-sub-save");
     const attachments = buildAttachmentsFromPending();
-    const needsUpload = attachments.some(function (att) {
+    const revisionNumber = modalState && modalState.revisionNumber;
+    let saved = false;
+    if (modalState.mode === "edit-main") {
+      saved = store.setMainRevisionMessages(order, modalState.revisionId, buyer, seller, revisionNumber);
+    } else if (modalState.mode === "edit-sub") {
+      saved = store.updateSubRevision(order, modalState.revisionId, modalState.subId, {
+        buyerRevision: buyer,
+        sellerReply: seller,
+        status: status,
+        attachments: attachments
+      }, revisionNumber);
+    } else {
+      saved = store.addSubRevision(order, modalState.revisionId, {
+        buyerRevision: buyer,
+        sellerReply: seller,
+        status: status,
+        attachments: attachments
+      }, revisionNumber);
+    }
+    return saved;
+  }
+
+  function saveModal() {
+    if (!modalState) return;
+    if (!store || typeof store.getOrder !== "function") {
+      if (deps.showToast) deps.showToast("Order storage is not ready. Refresh the page.");
+      return;
+    }
+    const order = store.getOrder(modalState.orderId);
+    if (!order) {
+      if (deps.showToast) deps.showToast("Order not found. Refresh and try again.");
+      return;
+    }
+    const saveBtn = el("rev-sub-save");
+    if (saveBtn) saveBtn.disabled = true;
+    setModalStatus("Saving revision...");
+    let saved = false;
+    try {
+      saved = applyModalSave(order);
+    } catch (err) {
+      setModalStatus("");
+      if (deps.showToast) deps.showToast("Could not save revision. Refresh and try again.");
+      if (saveBtn) saveBtn.disabled = false;
+      return;
+    }
+    if (!saved) {
+      setModalStatus("");
+      if (deps.showToast) deps.showToast("Could not find the selected revision. Close and reopen revision history.");
+      if (saveBtn) saveBtn.disabled = false;
+      return;
+    }
+    const needsUpload = buildAttachmentsFromPending().some(function (att) {
       return att.id && !att.imageUrl;
     });
-    if (saveBtn) saveBtn.disabled = true;
-    if (needsUpload) setModalStatus("Uploading images...");
-    if (modalState.mode === "edit-main") {
-      store.setMainRevisionMessages(order, modalState.revisionId, buyer, seller);
-    } else if (modalState.mode === "edit-sub") {
-      store.updateSubRevision(order, modalState.revisionId, modalState.subId, {
-        buyerRevision: buyer,
-        sellerReply: seller,
-        status: status,
-        attachments: attachments
-      });
-    } else {
-      store.addSubRevision(order, modalState.revisionId, {
-        buyerRevision: buyer,
-        sellerReply: seller,
-        status: status,
-        attachments: attachments
-      });
-    }
     persistOrder(order, {
-      successMessage: "Revision saved.",
-      loadingLabel: needsUpload ? "Saving revision..." : "Saving revision...",
+      successMessage: needsUpload ? "Revision saved. Uploading images..." : "Revision saved.",
       syncOptions: { skipUploads: false }
     }).finally(function () {
+      setModalStatus("");
       if (saveBtn) saveBtn.disabled = false;
     });
   }
@@ -334,7 +370,7 @@
       if (addBtn) {
         const order = store.getOrder(activeOrderId);
         if (!order) return;
-        openModal("add-sub", order, addBtn.getAttribute("data-add-sub-revision"));
+        openModal("add-sub", order, addBtn.getAttribute("data-add-sub-revision"), null, activeRevisionNumber);
         return;
       }
       const editMain = event.target.closest("[data-edit-main-revision]");
@@ -352,7 +388,7 @@
         const round = store.findRevisionRound(order, revisionId);
         const sub = store.findSubRevisionRound(order, revisionId, subId);
         if (!order || !round || !sub) return;
-        openModal("edit-sub", order, revisionId, sub);
+        openModal("edit-sub", order, revisionId, sub, activeRevisionNumber);
         return;
       }
       const completeSub = event.target.closest("[data-complete-sub]");
@@ -382,6 +418,16 @@
       if (closeModalBtn) closeModal();
     });
 
+    document.addEventListener("click", function (event) {
+      const saveTarget = event.target.closest("#rev-sub-save");
+      if (saveTarget) {
+        event.preventDefault();
+        event.stopPropagation();
+        saveModal();
+        return;
+      }
+    }, true);
+
     const fileInput = el("rev-sub-files");
     if (fileInput) {
       fileInput.addEventListener("change", function () {
@@ -402,7 +448,11 @@
       });
     }
     const saveBtn = el("rev-sub-save");
-    if (saveBtn) saveBtn.addEventListener("click", saveModal);
+    if (saveBtn) saveBtn.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      saveModal();
+    });
     const cancelBtn = el("rev-sub-cancel");
     if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
 

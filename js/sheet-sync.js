@@ -184,8 +184,8 @@
         ((sub && sub.attachments) || []).forEach(function (att) {
           if (!att) return;
           if (att.imageUrl || att.url) return;
-          if (!att.name) att.name = att.fileName || "image";
-          if (!att.type) att.type = att.mimeType || "";
+          if (!att.name) att.name = att.fileName || att.name || "image";
+          if (!att.type) att.type = att.mimeType || att.type || "";
           add(att);
         });
       });

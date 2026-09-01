@@ -418,23 +418,28 @@
     }) || null;
   }
 
-  function touchRevisionRound(order, revisionId, mutator) {
-    if (!order) return order;
+  function touchRevisionRound(order, revisionId, mutator, revisionNumber) {
+    if (!order) return false;
     order.revisions = normalizeRevisions(order.revisions || []);
-    const index = order.revisions.findIndex(function (round) {
+    let index = order.revisions.findIndex(function (round) {
       return String(round.id) === String(revisionId);
     });
-    if (index < 0) return order;
+    if (index < 0 && revisionNumber) {
+      index = order.revisions.findIndex(function (round) {
+        return Number(round.number) === Number(revisionNumber);
+      });
+    }
+    if (index < 0) return false;
     const next = Object.assign({}, order.revisions[index]);
     mutator(next);
     next.updatedAt = nowIso();
     next.subRevisions = normalizeSubRevisions(next.subRevisions || [], next.number);
     order.revisions[index] = next;
     order.updatedAt = nowIso();
-    return order;
+    return true;
   }
 
-  function setMainRevisionMessages(order, revisionId, buyerText, sellerText) {
+  function setMainRevisionMessages(order, revisionId, buyerText, sellerText, revisionNumber) {
     return touchRevisionRound(order, revisionId, function (round) {
       const messages = (round.messages || []).slice();
       const buyer = messages.find(function (msg) { return revisionMessageRole(msg) === "buyer"; });
@@ -444,10 +449,10 @@
       if (seller) seller.text = String(sellerText || "").trim();
       else messages.push({ id: uid("msg"), role: "seller", createdAt: nowIso(), text: String(sellerText || "").trim(), files: [] });
       round.messages = messages;
-    });
+    }, revisionNumber);
   }
 
-  function addSubRevision(order, revisionId, payload) {
+  function addSubRevision(order, revisionId, payload, revisionNumber) {
     return touchRevisionRound(order, revisionId, function (round) {
       const subs = normalizeSubRevisions(round.subRevisions || [], round.number);
       const attachments = ((payload && payload.attachments) || []).map(normalizeSubRevisionAttachment).filter(Boolean);
@@ -464,10 +469,10 @@
         attachments: attachments
       });
       round.subRevisions = subs;
-    });
+    }, revisionNumber);
   }
 
-  function updateSubRevision(order, revisionId, subRevisionId, payload) {
+  function updateSubRevision(order, revisionId, subRevisionId, payload, revisionNumber) {
     return touchRevisionRound(order, revisionId, function (round) {
       round.subRevisions = normalizeSubRevisions(round.subRevisions || [], round.number).map(function (sub) {
         if (String(sub.id) !== String(subRevisionId)) return sub;
@@ -482,7 +487,7 @@
         next.updatedAt = nowIso();
         return next;
       });
-    });
+    }, revisionNumber);
   }
 
   function setSubRevisionCompleted(order, revisionId, subRevisionId, completed) {

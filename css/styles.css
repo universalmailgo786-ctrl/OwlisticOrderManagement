@@ -2540,6 +2540,7 @@ body.modal-open {
 
 .schedule-modal-panel {
   position: relative;
+  z-index: 2;
   width: min(360px, 100%);
   padding: 20px;
   border: 1px solid var(--border);
