@@ -393,30 +393,36 @@
     document.body.classList.toggle("is-hanif-tab", !!show);
   }
 
-  function exportCsv() {
-    const list = filteredRecords();
-    const rows = [[
+  function buildExportRows(list) {
+    const header = [
       "Order ID", "Created Date", "Account", "Client Name", "Business Name",
       "Order Value", "Hanif Cost", "Fiverr Fee", "Return After Fee", "Total Loss",
       "Order Status", "Hanif Payment", "Paid Date"
-    ]];
-    list.forEach(function (record) {
-      rows.push([
+    ];
+    const rows = list.map(function (record) {
+      return [
         record.orderId,
-        record.createdDate,
+        formatDate(record.createdDate),
         record.account,
         record.clientName,
         record.businessName,
-        record.orderValue,
-        record.hanifCost,
-        record.fiverrFee,
-        record.returnAfterFee,
-        record.totalLoss,
+        formatUsd(record.orderValue),
+        formatUsd(record.hanifCost),
+        formatUsd(record.fiverrFee),
+        formatUsd(record.returnAfterFee),
+        formatUsd(record.totalLoss),
         record.orderStatus,
-        record.hanifPaymentStatus,
-        record.paidAt
-      ]);
+        pricing.normalizeHanifPaymentStatus(record.hanifPaymentStatus) === "paid" ? "Paid" : "Unpaid",
+        record.paidAt ? formatDate(record.paidAt) : "—"
+      ];
     });
+    return { header: header, rows: rows };
+  }
+
+  function exportCsv() {
+    const list = filteredRecords();
+    const built = buildExportRows(list);
+    const rows = [built.header].concat(built.rows);
     const csv = rows.map(function (row) {
       return row.map(function (cell) {
         const text = String(cell == null ? "" : cell);
@@ -431,6 +437,127 @@
     URL.revokeObjectURL(link.href);
   }
 
+  function loadScriptOnce(src) {
+    const existing = document.querySelector('script[data-hanif-src="' + src + '"]');
+    if (existing) {
+      return new Promise(function (resolve, reject) {
+        existing.addEventListener("load", resolve, { once: true });
+        existing.addEventListener("error", reject, { once: true });
+      });
+    }
+    return new Promise(function (resolve, reject) {
+      const script = document.createElement("script");
+      script.src = src;
+      script.async = true;
+      script.setAttribute("data-hanif-src", src);
+      script.onload = function () { resolve(); };
+      script.onerror = function () { reject(new Error("Could not load " + src)); };
+      document.head.appendChild(script);
+    });
+  }
+
+  function exportPdf() {
+    const list = filteredRecords();
+    if (!list.length) {
+      if (deps && deps.showToast) deps.showToast("No records to export.");
+      return;
+    }
+    const built = buildExportRows(list);
+    const stats = summarize(list);
+    const pkrRate = pricing.DEFAULT_PKR_RATE || 275;
+    const lossPkr = Math.round(stats.totalLoss * pkrRate);
+    const exportBtn = el("hanif-export-pdf-btn");
+    if (exportBtn) exportBtn.disabled = true;
+
+    Promise.all([
+      loadScriptOnce("https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"),
+      loadScriptOnce("https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js")
+    ]).then(function () {
+      const jsPDF = (global.jspdf && global.jspdf.jsPDF) || global.jsPDF;
+      if (!jsPDF) throw new Error("PDF library unavailable");
+      const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+      const forest = [34, 56, 41];
+      const muted = [92, 101, 96];
+      const margin = 36;
+      let y = 42;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.setTextColor(forest[0], forest[1], forest[2]);
+      doc.text("HANIF COSTING LEDGER", margin, y);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(muted[0], muted[1], muted[2]);
+      y += 18;
+      doc.text("Exported " + new Date().toLocaleString(), margin, y);
+
+      y += 16;
+      const summaryLine = [
+        "Orders: " + stats.count,
+        "Investment: " + formatUsd(stats.totalInvestment),
+        "Hanif Cost: " + formatUsd(stats.totalHanifCost),
+        "Fiverr Fee: " + formatUsd(stats.totalFiverrFee),
+        "Total Loss: " + formatUsd(stats.totalLoss),
+        "Paid: " + formatUsd(stats.totalPaid),
+        "Unpaid: " + formatUsd(stats.totalUnpaid),
+        "Loss PKR: PKR " + lossPkr.toLocaleString()
+      ].join("   |   ");
+      const wrapped = doc.splitTextToSize(summaryLine, doc.internal.pageSize.getWidth() - (margin * 2));
+      doc.text(wrapped, margin, y);
+      y += (wrapped.length * 12) + 10;
+
+      doc.autoTable({
+        startY: y,
+        head: [built.header],
+        body: built.rows,
+        theme: "grid",
+        styles: {
+          font: "helvetica",
+          fontSize: 8,
+          cellPadding: 5,
+          textColor: [23, 33, 28],
+          lineColor: [214, 220, 216],
+          lineWidth: 0.5
+        },
+        headStyles: {
+          fillColor: forest,
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+          halign: "center"
+        },
+        alternateRowStyles: {
+          fillColor: [247, 243, 236]
+        },
+        columnStyles: {
+          0: { cellWidth: 52 },
+          1: { cellWidth: 58 },
+          5: { halign: "right" },
+          6: { halign: "right" },
+          7: { halign: "right" },
+          8: { halign: "right" },
+          9: { halign: "right" }
+        },
+        margin: { left: margin, right: margin }
+      });
+
+      const finalY = doc.lastAutoTable && doc.lastAutoTable.finalY ? doc.lastAutoTable.finalY + 14 : y + 20;
+      doc.setFontSize(9);
+      doc.setTextColor(muted[0], muted[1], muted[2]);
+      doc.text(
+        "Hanif cost is calculated from the order value pricing chart. Exchange rate used: 1 USD = " + pkrRate + " PKR.",
+        margin,
+        finalY
+      );
+      doc.save("hanif-costing.pdf");
+      if (deps && deps.showToast) deps.showToast("PDF downloaded.");
+    }).catch(function () {
+      if (deps && deps.showToast) deps.showToast("Could not generate PDF.");
+    }).then(function () {
+      if (exportBtn) exportBtn.disabled = false;
+    });
+  }
+
   function bindEvents() {
     ["hanif-filter-month", "hanif-filter-year", "hanif-filter-account", "hanif-filter-payment", "hanif-filter-search", "hanif-filter-date"].forEach(function (id) {
       const node = el(id);
@@ -440,6 +567,8 @@
     });
     const exportBtn = el("hanif-export-btn");
     if (exportBtn) exportBtn.addEventListener("click", exportCsv);
+    const exportPdfBtn = el("hanif-export-pdf-btn");
+    if (exportPdfBtn) exportPdfBtn.addEventListener("click", exportPdf);
     const body = el("hanif-records-body");
     if (!body) return;
     body.addEventListener("click", function (event) {
