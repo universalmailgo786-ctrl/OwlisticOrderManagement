@@ -113,6 +113,12 @@
     return true;
   }
 
+  function allRecordsSorted() {
+    return records.slice().sort(function (a, b) {
+      return (b.orderNumber || 0) - (a.orderNumber || 0);
+    });
+  }
+
   function filteredRecords() {
     return records.filter(matchesFilters).sort(function (a, b) {
       return (b.orderNumber || 0) - (a.orderNumber || 0);
@@ -340,6 +346,13 @@
         if (sheetCount >= source.length) return null;
         backgroundSyncing = true;
         return sheet.reconcileRecords();
+      }).then(function (reconciled) {
+        if (!reconciled) return null;
+        return sheet.listRecords();
+      }).then(function (result) {
+        if (result && result.records) {
+          applyLoadedRecords(result.records, source);
+        }
       }).catch(function () {
         /* ignore background reconcile errors */
       }).then(function () {
@@ -348,26 +361,32 @@
     }, 2500);
   }
 
+  function applyLoadedRecords(sheetRecords, orders) {
+    const source = orders || (store && store.getOrders ? store.getOrders() : []);
+    records = mergeOrders(source, sheetRecords || []);
+    populateAccountFilter();
+    populateMonthYearFilters();
+    loading = false;
+    renderTable();
+  }
+
   function load(orders) {
     if (!auth.isSuperAdmin()) return Promise.resolve();
     loading = true;
     renderTable();
     const source = orders || (store && store.getOrders ? store.getOrders() : []);
     return sheet.listRecords().then(function (result) {
-      records = (result && result.records) || [];
-      if (!records.length && source.length && sheet.reconcileRecords) {
+      const sheetRecords = (result && result.records) || [];
+      if (!sheetRecords.length && source.length && sheet.reconcileRecords) {
         return sheet.reconcileRecords().then(function () {
           return sheet.listRecords();
         });
       }
       return result;
     }).then(function (result) {
-      records = (result && result.records) || records;
-      populateAccountFilter();
-      populateMonthYearFilters();
-      loading = false;
-      renderTable();
-      if (!records.length && source.length && sheet.reconcileRecords) {
+      const sheetRecords = (result && result.records) || [];
+      applyLoadedRecords(sheetRecords, source);
+      if (records.length < source.length && sheet.reconcileRecords) {
         scheduleBackgroundSync(source);
       }
     }).catch(function () {
@@ -420,7 +439,11 @@
   }
 
   function exportCsv() {
-    const list = filteredRecords();
+    const list = allRecordsSorted();
+    if (!list.length) {
+      if (deps && deps.showToast) deps.showToast("No records to export.");
+      return;
+    }
     const built = buildExportRows(list);
     const rows = [built.header].concat(built.rows);
     const csv = rows.map(function (row) {
@@ -429,12 +452,13 @@
         return '"' + text.replace(/"/g, '""') + '"';
       }).join(",");
     }).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = "hanif-costing.csv";
+    link.download = "hanif-costing-all-records.csv";
     link.click();
     URL.revokeObjectURL(link.href);
+    if (deps && deps.showToast) deps.showToast("Exported " + list.length + " records to Excel.");
   }
 
   function jsPdfConstructor() {
@@ -500,7 +524,7 @@
   }
 
   function exportPdf() {
-    const list = filteredRecords();
+    const list = allRecordsSorted();
     if (!list.length) {
       if (deps && deps.showToast) deps.showToast("No records to export.");
       return;
@@ -594,8 +618,8 @@
         margin,
         finalY
       );
-      doc.save("hanif-costing.pdf");
-      if (deps && deps.showToast) deps.showToast("PDF downloaded.");
+      doc.save("hanif-costing-all-records.pdf");
+      if (deps && deps.showToast) deps.showToast("PDF downloaded (" + list.length + " records).");
     }).catch(function (err) {
       if (deps && deps.showToast) {
         deps.showToast(err && err.message ? err.message : "Could not generate PDF.");
@@ -713,7 +737,10 @@
       scheduleBackgroundSync(orders);
     }
     const countEl = document.querySelector('[data-tab-count="hanif-costing"]');
-    if (countEl) countEl.textContent = String((orders || []).length);
+    if (countEl) {
+      const total = (orders || []).length;
+      countEl.textContent = String(total);
+    }
   }
 
   function onOrderDeleted(orderId) {
