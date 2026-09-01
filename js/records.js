@@ -1512,26 +1512,30 @@
       render();
       return;
     }
-    countEl.textContent = "Loading…";
-    body.innerHTML =
-      '<tr><td colspan="' + columnCount(0) + '"><div class="empty-state"><strong>Loading orders from Google Sheet</strong></div></td></tr>';
-    const ensure = (window.OwlisticSheet.ensureScheduleColumns && typeof window.OwlisticSheet.ensureScheduleColumns === "function")
-      ? window.OwlisticSheet.ensureScheduleColumns()
-      : Promise.resolve();
-    const preload = Promise.resolve().then(function () {
-      const tasks = [];
-      if (auth.fetchUserProfile) tasks.push(auth.fetchUserProfile());
-      if (window.OwlisticSheet && typeof window.OwlisticSheet.fetchAccounts === "function") {
-        tasks.push(window.OwlisticSheet.fetchAccounts());
-      }
-      return tasks.length ? Promise.all(tasks) : Promise.resolve();
-    });
-    preload.then(function () {
-      return ensure;
-    }).then(function (ensureResult) {
-      refreshSheetUpgradeBanner(ensureResult);
-      return window.OwlisticSheet.fetchOrders();
-    }).then(function (result) {
+    const cachedOrders = auth.visibleOrders();
+    if (cachedOrders.length) {
+      renderAccountFilter();
+      render();
+      countEl.textContent = "Refreshing…";
+    } else {
+      countEl.textContent = "Loading…";
+      body.innerHTML =
+        '<tr><td colspan="' + columnCount(0) + '"><div class="empty-state"><strong>Loading orders from Google Sheet</strong></div></td></tr>';
+    }
+    const preloadTasks = [];
+    if (auth.fetchUserProfile) preloadTasks.push(auth.fetchUserProfile());
+    if (window.OwlisticSheet && typeof window.OwlisticSheet.fetchAccounts === "function") {
+      preloadTasks.push(window.OwlisticSheet.fetchAccounts());
+    }
+    const preload = preloadTasks.length ? Promise.all(preloadTasks) : Promise.resolve();
+    const ordersPromise = window.OwlisticSheet.fetchOrders();
+    if (window.OwlisticSheet.ensureScheduleColumns) {
+      window.OwlisticSheet.ensureScheduleColumns().then(function (ensureResult) {
+        refreshSheetUpgradeBanner(ensureResult);
+      }).catch(function () {});
+    }
+    Promise.all([preload, ordersPromise]).then(function (results) {
+      const result = results[1];
       applySheetOrders(result);
       renderAccountFilter();
       render();

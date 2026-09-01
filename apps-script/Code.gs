@@ -281,38 +281,34 @@ function listOrders_(params) {
   }
   var allowedTabs = allowedTabs_(params, forced);
   if (!allowedTabs.length) {
-    return { ok: true, action: "listOrders", count: 0, orders: [] };
+    return { ok: true, action: "listOrders", count: 0, orders: [], workbookTabs: [], sheetColumns: HEADERS.length };
   }
   var sheets = ss.getSheets();
   var orders = [];
-  for (var i = 0; i < sheets.length; i++) {
+  var workbookTabs = [];
+  var colCount = HEADERS.length;
+  var i;
+  for (i = 0; i < sheets.length; i++) {
     var sheet = sheets[i];
     var name = sheet.getName();
     if (skipOrderWorkbookSheet_(name)) continue;
     if (!sheetMatchesAny_(name, allowedTabs)) continue;
-    if (String(sheet.getRange(1, 1).getValue() || "").trim() !== "Order ID") continue;
-    ensureScheduleColumns_(sheet);
     var last = sheet.getLastRow();
     if (last < 2) continue;
-    var cols = Math.max(sheet.getLastColumn(), 1);
-    var values = sheet.getRange(2, 1, last - 1, cols).getValues();
-    var fileRich = [];
-    try {
-      fileRich = sheet.getRange(2, 15, last - 1, 1).getRichTextValues();
-    } catch (err) {
-      fileRich = [];
-    }
-    for (var r = 0; r < values.length; r++) {
+    if (String(sheet.getRange(1, 1).getValue() || "").trim() !== "Order ID") continue;
+    workbookTabs.push(name);
+    var values = sheet.getRange(2, 1, last - 1, colCount).getValues();
+    var r;
+    for (r = 0; r < values.length; r++) {
       var row = values[r];
-      while (row.length < HEADERS.length) row.push("");
+      while (row.length < colCount) row.push("");
       var id = String(row[0] || "").trim();
       if (!id) continue;
       if (!rowBelongsToAny_(row, name, allowedTabs)) continue;
-      var rich = fileRich[r] && fileRich[r][0];
-      orders.push(orderFromRow_(row, name, filesFromCell_(rich, row[14])));
+      orders.push(orderFromRow_(row, name, parseFiles_(row[14])));
     }
   }
-  return { ok: true, action: "listOrders", count: orders.length, orders: orders, sheetColumns: HEADERS.length };
+  return { ok: true, action: "listOrders", count: orders.length, orders: orders, sheetColumns: HEADERS.length, workbookTabs: workbookTabs };
 }
 
 function allowedTabs_(params, forced) {

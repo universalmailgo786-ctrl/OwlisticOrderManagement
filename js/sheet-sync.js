@@ -50,9 +50,55 @@
     "Placed At"
   ];
   const EXPECTED_SHEET_COLUMNS = HEADERS.length;
+  const CAPS_CACHE_KEY = "owlistic.sheetCapabilities";
+  const WORKBOOK_TABS_KEY = "owlistic.workbookTabs";
   let capabilitiesCache = null;
   let scriptSourceText = "";
   let scriptSourceLoading = null;
+
+  function loadStoredCapabilities() {
+    try {
+      const raw = sessionStorage.getItem(CAPS_CACHE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (!data || data.url !== getWebAppUrl() || !data.scheduleSupported) return null;
+      return data;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function saveStoredCapabilities(caps) {
+    if (!caps || !caps.scheduleSupported) return;
+    try {
+      sessionStorage.setItem(CAPS_CACHE_KEY, JSON.stringify({
+        url: getWebAppUrl(),
+        ok: Boolean(caps.ok),
+        sheetColumns: Number(caps.sheetColumns) || EXPECTED_SHEET_COLUMNS,
+        scheduleSupported: true,
+        expectedColumns: EXPECTED_SHEET_COLUMNS,
+        needsDeploy: false
+      }));
+    } catch (err) {}
+  }
+
+  function rememberWorkbookTabs(tabs) {
+    if (!tabs || !tabs.length) return;
+    try {
+      sessionStorage.setItem(WORKBOOK_TABS_KEY, JSON.stringify(tabs));
+    } catch (err) {}
+  }
+
+  function storedWorkbookTabs() {
+    try {
+      const raw = sessionStorage.getItem(WORKBOOK_TABS_KEY);
+      if (!raw) return [];
+      const tabs = JSON.parse(raw);
+      return Array.isArray(tabs) ? tabs : [];
+    } catch (err) {
+      return [];
+    }
+  }
 
   function callStore(primary, fallback) {
     const fn = (store && store[primary]) || (store && store[fallback]);
@@ -424,16 +470,23 @@
   }
 
   function tryMigrateWebApp() {
+    const stored = capabilitiesCache || loadStoredCapabilities();
+    if (stored && stored.scheduleSupported && stored.url === getWebAppUrl()) {
+      capabilitiesCache = stored;
+      return Promise.resolve(stored);
+    }
     const current = getWebAppUrl();
     return probeWebAppUrl(current).then(function (currentCaps) {
       if (currentCaps && currentCaps.scheduleSupported) {
         capabilitiesCache = currentCaps;
+        saveStoredCapabilities(currentCaps);
         return currentCaps;
       }
       return probeWebAppUrl(NEXT_WEB_APP_URL).then(function (nextCaps) {
         if (nextCaps && nextCaps.scheduleSupported) {
           setWebAppUrl(NEXT_WEB_APP_URL);
           capabilitiesCache = nextCaps;
+          saveStoredCapabilities(nextCaps);
           return nextCaps;
         }
         capabilitiesCache = currentCaps || nextCaps || { ok: false, needsDeploy: true };
@@ -1313,6 +1366,24 @@
 
   function ensureScheduleColumns() {
     if (!isConfigured()) return Promise.resolve({ skipped: true });
+    if (capabilitiesCache && capabilitiesCache.scheduleSupported) {
+      return Promise.resolve({
+        ok: true,
+        action: "ensureScheduleColumns",
+        sheetColumns: capabilitiesCache.sheetColumns || EXPECTED_SHEET_COLUMNS,
+        tabs: storedWorkbookTabs()
+      });
+    }
+    const stored = loadStoredCapabilities();
+    if (stored && stored.scheduleSupported) {
+      capabilitiesCache = stored;
+      return Promise.resolve({
+        ok: true,
+        action: "ensureScheduleColumns",
+        sheetColumns: stored.sheetColumns || EXPECTED_SHEET_COLUMNS,
+        tabs: storedWorkbookTabs()
+      });
+    }
     return tryMigrateWebApp().then(function (caps) {
       if (caps && caps.scheduleSupported) {
         const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
@@ -1329,6 +1400,8 @@
               expectedColumns: EXPECTED_SHEET_COLUMNS,
               needsDeploy: false
             };
+            saveStoredCapabilities(capabilitiesCache);
+            rememberWorkbookTabs(data.tabs || []);
             return data;
           }
           return caps;
@@ -1496,9 +1569,15 @@
 
   function createdAccountTabs() {
     const accounts = (store && typeof store.getAccounts === "function" && store.getAccounts()) || [];
-    return accounts.map(function (account) {
+    const fromAccounts = accounts.map(function (account) {
       return tabNameOf(accountNameOf(account));
     }).filter(Boolean);
+    const merged = {};
+    fromAccounts.concat(storedWorkbookTabs()).forEach(function (name) {
+      const tab = tabNameOf(name);
+      if (tab) merged[tab.toLowerCase()] = tab;
+    });
+    return Object.keys(merged).map(function (key) { return merged[key]; });
   }
 
   function fetchTabNames(session) {
@@ -1564,7 +1643,8 @@
       const orders = (data.orders || []).filter(function (order) {
         return orderOnCreatedAccountTab(order, tabs);
       });
-      return { ok: true, orders: orders, sheetColumns: data.sheetColumns || 0 };
+      if (data.workbookTabs && data.workbookTabs.length) rememberWorkbookTabs(data.workbookTabs);
+      return { ok: true, orders: orders, sheetColumns: data.sheetColumns || 0, workbookTabs: data.workbookTabs || [] };
     }).catch(function () {
       return { ok: false, error: "Could not reach Google Sheet.", orders: [] };
     });
