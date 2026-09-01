@@ -3750,13 +3750,6 @@ body.modal-open {
   outline: 1px solid #ba6d64;
 }
 
-.rev-sub-status-hint {
-  font-size: 10px;
-  color: #8a8178;
-  max-width: 140px;
-  line-height: 1.3;
-}
-
 .rev-sub-footer {
   position: sticky;
   bottom: 0;
