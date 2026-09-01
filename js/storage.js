@@ -1049,16 +1049,23 @@
     return order;
   }
 
-  function setRevisionCompleted(order, revisionId, completed) {
-    if (!order) return order;
+  function setRevisionCompleted(order, revisionId, completed, revisionNumber) {
+    if (!order) return false;
     const rounds = normalizeRevisions(order.revisions || []);
-    const index = rounds.findIndex(function (round) {
+    let index = rounds.findIndex(function (round) {
       return String(round.id) === String(revisionId);
     });
-    if (index < 0) return order;
+    if (index < 0 && revisionNumber) {
+      index = rounds.findIndex(function (round) {
+        return Number(round.number) === Number(revisionNumber);
+      });
+    }
+    if (index < 0) return false;
     rounds[index].completed = Boolean(completed);
+    rounds[index].updatedAt = nowIso();
     order.revisions = rounds;
-    return order;
+    order.updatedAt = nowIso();
+    return true;
   }
 
   function hasOpenRevisions(order) {

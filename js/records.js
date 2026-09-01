@@ -1397,35 +1397,55 @@
     const revisionId = button.getAttribute("data-revision-id");
     const number = button.getAttribute("data-revision-number") || "1";
     pendingComplete = { orderId: orderId, revisionId: revisionId, number: number };
-    if (revCompleteCopy) revCompleteCopy.textContent = "Mark Revision " + number + " as Completed";
+    if (revCompleteCopy) revCompleteCopy.textContent = "Mark Revision " + number + " as Completed?";
     if (!revCompletePop) return;
-    const rect = button.getBoundingClientRect();
     revCompletePop.hidden = false;
+    const inDrawer = button.closest("#rev-history-drawer");
+    if (inDrawer) {
+      revCompletePop.style.left = Math.max(12, (window.innerWidth - 260) / 2) + "px";
+      revCompletePop.style.top = Math.max(12, (window.innerHeight - 140) / 2) + "px";
+      return;
+    }
+    const rect = button.getBoundingClientRect();
     const left = Math.min(Math.max(12, rect.left), window.innerWidth - 280);
     const top = Math.min(rect.bottom + 8, window.innerHeight - 140);
     revCompletePop.style.left = left + "px";
     revCompletePop.style.top = top + "px";
   }
 
-  function applyRevisionCompleted(order, revisionId, completed) {
+  function applyRevisionCompleted(order, revisionId, completed, revisionNumber) {
     const canSee = auth.canSeeOrder;
     if (!order || (typeof canSee === "function" && !canSee.call(auth, order))) return;
+    const rounds = revisionRounds(order);
+    let index = rounds.findIndex(function (round) { return String(round.id) === String(revisionId); });
+    if (index < 0 && revisionNumber) {
+      index = rounds.findIndex(function (round) { return Number(round.number) === Number(revisionNumber); });
+    }
     if (completed) {
-      const rounds = revisionRounds(order);
-      const index = rounds.findIndex(function (round) { return String(round.id) === String(revisionId); });
-      if (index < 0) return;
+      if (index < 0) {
+        showToast("Could not find the revision to complete.");
+        return;
+      }
       const previousOpen = rounds.slice(0, index).some(function (round) { return !round.completed; });
       if (previousOpen) {
         showToast("Complete Revision " + index + " first.");
         return;
       }
     }
+    let saved = false;
     if (typeof store.setRevisionCompleted === "function") {
-      store.setRevisionCompleted(order, revisionId, completed);
+      saved = store.setRevisionCompleted(order, revisionId, completed, revisionNumber);
     } else {
       (order.revisions || []).forEach(function (round) {
-        if (String(round.id) === String(revisionId)) round.completed = completed;
+        if (String(round.id) === String(revisionId) || (revisionNumber && Number(round.number) === Number(revisionNumber))) {
+          round.completed = completed;
+          saved = true;
+        }
       });
+    }
+    if (!saved) {
+      showToast("Could not find the revision to complete.");
+      return;
     }
     store.upsertOrder(order);
     const remaining = revisionRounds(order).filter(function (item) { return !item.completed; }).length;
@@ -2094,6 +2114,13 @@
       closeCompletePop();
       return;
     }
+    const markBtn = event.target.closest("[data-mark-revision]");
+    if (markBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      openCompletePop(markBtn);
+      return;
+    }
     if (event.target.closest("#rev-complete-yes")) {
       event.preventDefault();
       if (!pendingComplete) return;
@@ -2102,7 +2129,7 @@
         closeCompletePop();
         return;
       }
-      applyRevisionCompleted(order, pendingComplete.revisionId, true);
+      applyRevisionCompleted(order, pendingComplete.revisionId, true, pendingComplete.number);
       return;
     }
     if (revCompletePop && !revCompletePop.hidden && !event.target.closest("#rev-complete-pop") && !event.target.closest("[data-mark-revision]")) {
