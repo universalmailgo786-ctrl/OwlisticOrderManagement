@@ -60,11 +60,8 @@
     if (!window.OwlisticSheet) return;
     if (sheetAuthorizeScriptBtn) {
       sheetAuthorizeScriptBtn.addEventListener("click", function () {
-        const url = (typeof window.OwlisticSheet.getNextWebAppUrl === "function"
-          ? window.OwlisticSheet.getNextWebAppUrl()
-          : "") + "?action=ensureScheduleColumns";
-        window.open(url, "_blank", "noopener");
-        showToast("Allow access in the Google tab, then click Check again.");
+        window.open(SHEET_URL, "_blank", "noopener");
+        showToast("In the sheet: Extensions → Apps Script → Deploy → Manage deployments → New version → Deploy.");
       });
     }
     if (sheetRecheckScriptBtn) {
