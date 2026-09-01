@@ -3671,6 +3671,85 @@ body.modal-open {
   font-weight: 700;
 }
 
+.rev-sub-section {
+  margin-top: 12px;
+}
+
+.rev-sub-section-label {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #223829;
+}
+
+.rev-sub-section-label.is-quiet {
+  color: #8a8178;
+}
+
+.rev-sub-completed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rev-sub-card.is-quiet {
+  opacity: 0.82;
+  border-style: dashed;
+}
+
+.rev-sub-status-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rev-sub-status-select {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: #f4e2db;
+  color: #223829;
+}
+
+.rev-sub-status-select.is-current,
+.rev-sub-status-select.rev-history-status.is-current {
+  background: #f4e2db;
+  color: #223829;
+}
+
+.rev-sub-status-select:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.rev-sub-status-saving {
+  font-size: 11px;
+  color: #8a8178;
+}
+
+.rev-sub-status-retry {
+  border: 0;
+  background: transparent;
+  color: #ba6d64;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.rev-sub-status-wrap.is-failed .rev-sub-status-select {
+  outline: 1px solid #ba6d64;
+}
+
 .rev-sub-footer {
   position: sticky;
   bottom: 0;

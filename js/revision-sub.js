@@ -5,8 +5,14 @@
   let activeRevisionNumber = 0;
   let modalState = null;
   let pendingFiles = [];
+  let modalSaving = false;
+  let pendingStatusChange = null;
 
   function el(id) { return document.getElementById(id); }
+
+  function newSubId() {
+    return "sub_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+  }
 
   function formatStamp(value) {
     if (!value) return "—";
@@ -20,15 +26,11 @@
     return "R" + parentNumber + " - Sub Revision " + subNumber;
   }
 
-  function mainStatusLabel(step) {
-    if (!step) return "Pending";
-    if (step.state === "completed") {
-      const stats = store && store.subRevisionStats ? store.subRevisionStats(step.round) : { total: 0, completed: 0 };
-      if (stats.total) return stats.completed + "/" + stats.total + " Completed";
-      return "Completed";
-    }
-    if (step.state === "current") return "Open";
-    return "Pending";
+  function mainStatusChipLabel(step) {
+    if (!step) return "PENDING";
+    if (step.state === "completed") return "COMPLETED";
+    if (step.state === "current") return "OPEN";
+    return "PENDING";
   }
 
   function subStatusLabel(sub) {
@@ -36,6 +38,17 @@
     if (sub.completed || sub.status === "completed") return "Completed";
     if (sub.status === "active") return "Active";
     return "Pending";
+  }
+
+  function partitionSubs(subs) {
+    if (store && typeof store.partitionSubRevisions === "function") {
+      return store.partitionSubRevisions(subs);
+    }
+    const list = (subs || []).slice();
+    const completed = list.filter(function (item) { return item.completed; })
+      .sort(function (a, b) { return (b.subRevisionNumber || 0) - (a.subRevisionNumber || 0); });
+    const current = list.find(function (item) { return !item.completed && item.status === "active"; }) || null;
+    return { current: current, completed: completed };
   }
 
   function attachmentThumb(att) {
@@ -73,15 +86,63 @@
     return "";
   }
 
+  function renderStatusChip(state, label) {
+    return '<span class="rev-history-status is-' + state + '">' + deps.escapeHtml(label) + "</span>";
+  }
+
+  function renderMainStatusControl(step, order) {
+    const canEdit = deps.canEditOrder(order);
+    const isCurrent = step.state === "current";
+    if (!canEdit || !isCurrent) {
+      return renderStatusChip(step.state, mainStatusChipLabel(step));
+    }
+    const value = "open";
+    return '<div class="rev-sub-status-wrap" data-status-wrap="main">' +
+      '<select class="rev-sub-status-select rev-history-status is-current" data-main-revision-status ' +
+        'data-revision-id="' + deps.escapeHtml(step.round.id) + '" ' +
+        'data-revision-number="' + step.number + '" ' +
+        'data-previous-value="' + value + '" ' +
+        'aria-label="Main revision status">' +
+        '<option value="open" selected>Open</option>' +
+        '<option value="completed">Completed</option>' +
+      "</select>" +
+      '<span class="rev-sub-status-saving" hidden>Saving...</span>' +
+      '<button type="button" class="rev-sub-status-retry" hidden>Save failed — Retry</button>' +
+    "</div>";
+  }
+
+  function renderSubStatusControl(sub, step, order, editable) {
+    const label = subStatusLabel(sub);
+    const state = sub.completed ? "completed" : (sub.status === "active" ? "current" : "pending");
+    if (!editable || sub.completed) {
+      return renderStatusChip(state, label.toUpperCase());
+    }
+    const value = sub.status || "active";
+    return '<div class="rev-sub-status-wrap" data-status-wrap="sub">' +
+      '<select class="rev-sub-status-select rev-history-status is-' + state + '" data-sub-revision-status ' +
+        'data-revision-id="' + deps.escapeHtml(step.round.id) + '" ' +
+        'data-sub-id="' + deps.escapeHtml(sub.id) + '" ' +
+        'data-revision-number="' + step.number + '" ' +
+        'data-previous-value="' + deps.escapeHtml(value) + '" ' +
+        'aria-label="Sub revision status">' +
+        '<option value="active"' + (value === "active" ? " selected" : "") + ">Active</option>" +
+        '<option value="pending"' + (value === "pending" ? " selected" : "") + ">Pending</option>" +
+        '<option value="completed"' + (value === "completed" ? " selected" : "") + ">Completed</option>" +
+      "</select>" +
+      '<span class="rev-sub-status-saving" hidden>Saving...</span>' +
+      '<button type="button" class="rev-sub-status-retry" hidden>Save failed — Retry</button>' +
+    "</div>";
+  }
+
   function renderMainCard(step, order) {
     const round = step.round;
     const buyer = mainRevisionText(round, "buyer");
     const seller = mainRevisionText(round, "seller");
-  const canEdit = deps.canEditOrder(order);
+    const canEdit = deps.canEditOrder(order);
     return '<article class="rev-sub-main-card">' +
       '<header class="rev-sub-card-head">' +
         "<h4>Main Revision " + step.number + "</h4>" +
-        '<span class="rev-history-status is-' + step.state + '">' + mainStatusLabel(step) + "</span>" +
+        renderMainStatusControl(step, order) +
       "</header>" +
       '<p class="rev-sub-line"><span>Buyer Revision</span> ' + deps.escapeHtml(buyer || "—") + "</p>" +
       '<p class="rev-sub-line"><span>Seller Reply</span> ' + deps.escapeHtml(seller || "—") + "</p>" +
@@ -92,15 +153,15 @@
     "</article>";
   }
 
-  function renderSubCard(sub, step, order) {
+  function renderSubCardBody(sub, step, order, options) {
+    const opts = options || {};
     const canEdit = deps.canEditOrder(order);
-    const completeBtn = canEdit && !sub.completed
-      ? '<button type="button" class="submit-btn rev-sub-complete-btn" data-complete-sub="' + deps.escapeHtml(step.round.id) + '" data-sub-id="' + deps.escapeHtml(sub.id) + '">✓ Complete Sub Revision</button>'
-      : (sub.completed ? '<span class="rev-sub-done">✓ Completed</span>' : "");
-    return '<article class="rev-sub-card' + (sub.completed ? " is-completed" : "") + '">' +
+    const editableStatus = Boolean(opts.editableStatus);
+    const quiet = Boolean(opts.quiet);
+    return '<article class="rev-sub-card' + (sub.completed || quiet ? " is-completed" : "") + (quiet ? " is-quiet" : "") + '">' +
       '<header class="rev-sub-card-head">' +
         "<h4>" + deps.escapeHtml(subLabel(step.number, sub.subRevisionNumber)) + "</h4>" +
-        '<span class="rev-history-status is-' + (sub.completed ? "completed" : (sub.status === "active" ? "current" : "pending")) + '">' + subStatusLabel(sub) + "</span>" +
+        renderSubStatusControl(sub, step, order, editableStatus) +
       "</header>" +
       '<p class="rev-sub-line"><span>Buyer Revision</span> ' + deps.escapeHtml(sub.buyerRevision || "—") + "</p>" +
       '<p class="rev-sub-line"><span>Seller Reply</span> ' + deps.escapeHtml(sub.sellerReply || "—") + "</p>" +
@@ -108,38 +169,74 @@
       '<p class="rev-sub-meta">Updated: ' + deps.escapeHtml(formatStamp(sub.updatedAt || sub.createdAt)) + "</p>" +
       '<div class="rev-sub-actions">' +
         (canEdit ? '<button type="button" class="ghost-btn rev-sub-edit-btn" data-edit-sub-revision="' + deps.escapeHtml(step.round.id) + '" data-sub-id="' + deps.escapeHtml(sub.id) + '">Edit</button>' : "") +
-        completeBtn +
       "</div>" +
     "</article>";
+  }
+
+  function renderCurrentSubSection(current, step, order) {
+    if (!current) return "";
+    return '<div class="rev-sub-section">' +
+      '<p class="rev-sub-section-label">Current Sub Revision</p>' +
+      renderSubCardBody(current, step, order, { editableStatus: true }) +
+    "</div>";
+  }
+
+  function renderCompletedSubSection(completed, step, order) {
+    if (!completed.length) return "";
+    return '<div class="rev-sub-section is-completed-section">' +
+      '<p class="rev-sub-section-label is-quiet">Completed Sub Revisions</p>' +
+      '<div class="rev-sub-completed-list">' +
+        completed.map(function (sub) {
+          return renderSubCardBody(sub, step, order, { editableStatus: false, quiet: true });
+        }).join("") +
+      "</div>" +
+    "</div>";
+  }
+
+  function renderHistoricalSubs(step, order) {
+    const subs = (step.round.subRevisions || []).slice().sort(function (a, b) {
+      return (b.subRevisionNumber || 0) - (a.subRevisionNumber || 0);
+    });
+    if (!subs.length) return "";
+    return '<div class="rev-sub-section is-completed-section">' +
+      '<p class="rev-sub-section-label is-quiet">Sub Revisions</p>' +
+      '<div class="rev-sub-completed-list">' +
+        subs.map(function (sub) {
+          return renderSubCardBody(sub, step, order, { editableStatus: false, quiet: true });
+        }).join("") +
+      "</div>" +
+    "</div>";
   }
 
   function renderDrawerBody(order, steps) {
     const selected = steps.find(function (step) { return step.number === activeRevisionNumber; }) || steps[0];
     if (!selected) return '<p class="live-chat-empty">No revisions on this order yet.</p>';
-    const subs = (selected.round.subRevisions || []).slice();
     const canEdit = deps.canEditOrder(order);
     const isCurrent = selected.state === "current";
+    const partition = partitionSubs(selected.round.subRevisions || []);
+    let subHtml = "";
+    if (isCurrent) {
+      subHtml += renderCurrentSubSection(partition.current, selected, order);
+      if (canEdit) {
+        subHtml += '<button type="button" class="ghost-btn rev-sub-add-btn" data-add-sub-revision="' + deps.escapeHtml(selected.round.id) + '">+ Add Sub Revision</button>';
+      }
+      subHtml += renderCompletedSubSection(partition.completed, selected, order);
+    } else {
+      subHtml += renderHistoricalSubs(selected, order);
+    }
     return '<div class="rev-sub-tabs" role="tablist">' +
       steps.map(function (step) {
         const active = step.number === selected.number ? " is-active" : "";
         return '<button type="button" class="rev-sub-tab' + active + '" data-rev-tab="' + step.number + '" role="tab">' +
           "Revision " + step.number +
-          '<span class="rev-sub-tab-badge is-' + step.state + '">' + mainStatusLabel(step) + "</span>" +
+          '<span class="rev-sub-tab-badge is-' + step.state + '">' + mainStatusChipLabel(step) + "</span>" +
         "</button>";
       }).join("") +
     "</div>" +
     '<div class="rev-sub-stack">' +
       renderMainCard(selected, order) +
-      '<div class="rev-sub-tree">' +
-        subs.map(function (sub) { return renderSubCard(sub, selected, order); }).join("") +
-      "</div>" +
-      (canEdit && isCurrent
-        ? '<button type="button" class="ghost-btn rev-sub-add-btn" data-add-sub-revision="' + deps.escapeHtml(selected.round.id) + '">+ Add Sub Revision</button>'
-        : "") +
-    "</div>" +
-  (canEdit && isCurrent
-    ? '<footer class="rev-sub-footer"><button type="button" class="submit-btn" data-mark-revision="' + deps.escapeHtml(order.id) + '" data-revision-id="' + deps.escapeHtml(selected.round.id) + '" data-revision-number="' + selected.number + '">✓ Mark Revision ' + selected.number + " Completed</button></footer>"
-    : "");
+      '<div class="rev-sub-tree">' + subHtml + "</div>" +
+    "</div>";
   }
 
   function renderDrawer(order) {
@@ -202,12 +299,14 @@
   }
 
   function openModal(mode, order, revisionId, subRevision, revisionNumber) {
+    const pendingSubId = mode === "add-sub" ? newSubId() : "";
     modalState = {
       mode: mode,
       orderId: order.id,
       revisionId: revisionId,
       revisionNumber: revisionNumber || activeRevisionNumber || 0,
-      subId: subRevision && subRevision.id
+      subId: subRevision && subRevision.id,
+      pendingSubId: pendingSubId
     };
     pendingFiles = (subRevision && subRevision.attachments ? subRevision.attachments.slice() : []);
     const modal = el("rev-sub-modal");
@@ -220,7 +319,9 @@
     if (buyer) buyer.value = mode === "edit-main" ? mainRevisionText(deps.findRevisionRound(order, revisionId), "buyer") : (subRevision && subRevision.buyerRevision) || "";
     if (seller) seller.value = mode === "edit-main" ? mainRevisionText(deps.findRevisionRound(order, revisionId), "seller") : (subRevision && subRevision.sellerReply) || "";
     if (status) status.value = (subRevision && subRevision.status) || "active";
-    status && status.closest("label") && (status.closest("label").hidden = mode === "edit-main");
+    if (status && status.closest("label")) {
+      status.closest("label").hidden = mode === "edit-main" || mode === "add-sub";
+    }
     renderModalPreview();
     setModalStatus("");
     modal.hidden = false;
@@ -230,6 +331,7 @@
   function closeModal() {
     modalState = null;
     pendingFiles = [];
+    modalSaving = false;
     const modal = el("rev-sub-modal");
     if (modal) modal.hidden = true;
     setModalStatus("");
@@ -264,7 +366,7 @@
     order.updatedAt = new Date().toISOString();
     store.upsertOrder(order);
     const fresh = store.getOrder(order.id) || order;
-    closeModal();
+    if (!(options && options.skipCloseModal)) closeModal();
     renderDrawer(fresh);
     if (deps.render) deps.render();
     if (options && options.successMessage && deps.showToast) deps.showToast(options.successMessage);
@@ -303,14 +405,16 @@
       saved = store.updateSubRevision(order, modalState.revisionId, modalState.subId, {
         buyerRevision: buyer,
         sellerReply: seller,
-        status: status,
         attachments: attachments
       }, revisionNumber);
+      if (saved && typeof store.setSubRevisionStatus === "function") {
+        saved = store.setSubRevisionStatus(order, modalState.revisionId, modalState.subId, status, revisionNumber);
+      }
     } else {
       saved = store.addSubRevision(order, modalState.revisionId, {
+        id: modalState.pendingSubId,
         buyerRevision: buyer,
         sellerReply: seller,
-        status: status,
         attachments: attachments
       }, revisionNumber);
     }
@@ -318,7 +422,7 @@
   }
 
   function saveModal() {
-    if (!modalState) return;
+    if (!modalState || modalSaving) return;
     if (!store || typeof store.getOrder !== "function") {
       if (deps.showToast) deps.showToast("Order storage is not ready. Refresh the page.");
       return;
@@ -329,6 +433,7 @@
       return;
     }
     const saveBtn = el("rev-sub-save");
+    modalSaving = true;
     if (saveBtn) saveBtn.disabled = true;
     setModalStatus("Saving revision...");
     let saved = false;
@@ -338,12 +443,14 @@
       setModalStatus("");
       if (deps.showToast) deps.showToast("Could not save revision. Refresh and try again.");
       if (saveBtn) saveBtn.disabled = false;
+      modalSaving = false;
       return;
     }
     if (!saved) {
       setModalStatus("");
       if (deps.showToast) deps.showToast("Could not find the selected revision. Close and reopen revision history.");
       if (saveBtn) saveBtn.disabled = false;
+      modalSaving = false;
       return;
     }
     const needsUpload = buildAttachmentsFromPending().some(function (att) {
@@ -355,14 +462,112 @@
     }).finally(function () {
       setModalStatus("");
       if (saveBtn) saveBtn.disabled = false;
+      modalSaving = false;
     });
   }
 
-  function completeSubRevision(revisionId, subId) {
+  function setStatusWrapState(wrap, state) {
+    if (!wrap) return;
+    const select = wrap.querySelector("select");
+    const saving = wrap.querySelector(".rev-sub-status-saving");
+    const retry = wrap.querySelector(".rev-sub-status-retry");
+    if (select) select.disabled = state === "saving";
+    if (saving) saving.hidden = state !== "saving";
+    if (retry) retry.hidden = state !== "failed";
+    wrap.classList.toggle("is-saving", state === "saving");
+    wrap.classList.toggle("is-failed", state === "failed");
+  }
+
+  function rollbackOrder(snapshot) {
+    if (!snapshot) return;
+    store.upsertOrder(snapshot);
+  }
+
+  function handleMainStatusChange(select, retrying) {
     const order = store.getOrder(activeOrderId);
-    if (!order) return;
-    store.setSubRevisionCompleted(order, revisionId, subId, true);
-    persistOrder(order, { successMessage: "Sub revision completed.", syncOptions: { skipUploads: true } });
+    if (!order || !select) return;
+    const revisionId = select.getAttribute("data-revision-id");
+    const revisionNumber = Number(select.getAttribute("data-revision-number")) || 0;
+    const previousValue = select.getAttribute("data-previous-value") || "open";
+    const newValue = select.value;
+    if (!retrying && newValue === previousValue) return;
+    const snapshot = JSON.parse(JSON.stringify(order));
+    const wrap = select.closest(".rev-sub-status-wrap");
+    setStatusWrapState(wrap, "saving");
+    let saved = false;
+    if (typeof store.setMainRevisionStatus === "function") {
+      saved = store.setMainRevisionStatus(order, revisionId, newValue, revisionNumber);
+    } else {
+      saved = store.setRevisionCompleted(order, revisionId, newValue === "completed", revisionNumber);
+    }
+    if (!saved) {
+      select.value = previousValue;
+      setStatusWrapState(wrap, "idle");
+      if (deps.showToast) deps.showToast("Complete previous revisions first.");
+      return;
+    }
+    pendingStatusChange = { type: "main", select: select, snapshot: snapshot, previousValue: previousValue };
+    store.upsertOrder(order);
+    syncOrderInBackground(order, { syncOptions: { skipUploads: true } }).then(function (result) {
+      if (result && result.ok === false) {
+        rollbackOrder(snapshot);
+        select.value = previousValue;
+        setStatusWrapState(wrap, "failed");
+        return;
+      }
+      select.setAttribute("data-previous-value", newValue);
+      setStatusWrapState(wrap, "idle");
+      pendingStatusChange = null;
+      const fresh = store.getOrder(activeOrderId);
+      if (fresh) {
+        if (newValue === "completed") {
+          const steps = deps.revisionStepStates(deps.revisionRounds(fresh));
+          const next = steps.find(function (step) { return step.state === "current"; });
+          if (next) activeRevisionNumber = next.number;
+        }
+        renderDrawer(fresh);
+        if (deps.render) deps.render();
+      }
+    });
+  }
+
+  function handleSubStatusChange(select, retrying) {
+    const order = store.getOrder(activeOrderId);
+    if (!order || !select) return;
+    const revisionId = select.getAttribute("data-revision-id");
+    const subId = select.getAttribute("data-sub-id");
+    const revisionNumber = Number(select.getAttribute("data-revision-number")) || 0;
+    const previousValue = select.getAttribute("data-previous-value") || "active";
+    const newValue = select.value;
+    if (!retrying && newValue === previousValue) return;
+    const snapshot = JSON.parse(JSON.stringify(order));
+    const wrap = select.closest(".rev-sub-status-wrap");
+    setStatusWrapState(wrap, "saving");
+    const saved = store.setSubRevisionStatus(order, revisionId, subId, newValue, revisionNumber);
+    if (!saved) {
+      select.value = previousValue;
+      setStatusWrapState(wrap, "idle");
+      if (deps.showToast) deps.showToast("Could not update sub revision status.");
+      return;
+    }
+    pendingStatusChange = { type: "sub", select: select, snapshot: snapshot, previousValue: previousValue };
+    store.upsertOrder(order);
+    syncOrderInBackground(order, { syncOptions: { skipUploads: true } }).then(function (result) {
+      if (result && result.ok === false) {
+        rollbackOrder(snapshot);
+        select.value = previousValue;
+        setStatusWrapState(wrap, "failed");
+        return;
+      }
+      select.setAttribute("data-previous-value", newValue);
+      setStatusWrapState(wrap, "idle");
+      pendingStatusChange = null;
+      const fresh = store.getOrder(activeOrderId);
+      if (fresh) {
+        renderDrawer(fresh);
+        if (deps.render) deps.render();
+      }
+    });
   }
 
   function bindEvents() {
@@ -376,6 +581,7 @@
       }
       const addBtn = event.target.closest("[data-add-sub-revision]");
       if (addBtn) {
+        if (modalSaving) return;
         const order = store.getOrder(activeOrderId);
         if (!order) return;
         openModal("add-sub", order, addBtn.getAttribute("data-add-sub-revision"), null, activeRevisionNumber);
@@ -399,9 +605,14 @@
         openModal("edit-sub", order, revisionId, sub, activeRevisionNumber);
         return;
       }
-      const completeSub = event.target.closest("[data-complete-sub]");
-      if (completeSub) {
-        completeSubRevision(completeSub.getAttribute("data-complete-sub"), completeSub.getAttribute("data-sub-id"));
+      const retryBtn = event.target.closest(".rev-sub-status-retry");
+      if (retryBtn && pendingStatusChange && pendingStatusChange.select) {
+        const select = pendingStatusChange.select;
+        if (pendingStatusChange.type === "main") {
+          handleMainStatusChange(select, true);
+        } else {
+          handleSubStatusChange(select, true);
+        }
         return;
       }
       const preview = event.target.closest("[data-preview-attachment]");
@@ -424,6 +635,18 @@
       }
       const closeModalBtn = event.target.closest("[data-close-rev-sub-modal]");
       if (closeModalBtn) closeModal();
+    });
+
+    document.addEventListener("change", function (event) {
+      const mainSelect = event.target.closest("[data-main-revision-status]");
+      if (mainSelect) {
+        handleMainStatusChange(mainSelect, false);
+        return;
+      }
+      const subSelect = event.target.closest("[data-sub-revision-status]");
+      if (subSelect) {
+        handleSubStatusChange(subSelect, false);
+      }
     });
 
     document.addEventListener("click", function (event) {

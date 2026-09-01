@@ -312,14 +312,14 @@
 
   function normalizeSubRevisions(list, parentNumber) {
     const out = [];
-    (list || []).forEach(function (item, index) {
+    (list || []).forEach(function (item) {
       if (!item) return;
       const completed = Boolean(item.completed || String(item.status || "").toLowerCase() === "completed");
       const status = normalizeSubStatus(item.status, completed);
       const attachments = (item.attachments || item.files || []).map(normalizeSubRevisionAttachment).filter(Boolean);
       out.push({
         id: item.id || uid("sub"),
-        subRevisionNumber: Number(item.subRevisionNumber || index + 1),
+        subRevisionNumber: Number(item.subRevisionNumber || 0),
         parentRevisionNumber: Number(parentNumber || item.parentRevisionNumber || 0),
         buyerRevision: String(item.buyerRevision || item.buyerMessage || "").trim(),
         sellerReply: String(item.sellerReply || item.sellerMessage || "").trim(),
@@ -331,10 +331,45 @@
       });
     });
     out.sort(function (a, b) { return (a.subRevisionNumber || 0) - (b.subRevisionNumber || 0); });
+    let maxNum = 0;
     out.forEach(function (item, index) {
-      item.subRevisionNumber = index + 1;
+      if (!item.subRevisionNumber) {
+        item.subRevisionNumber = maxNum + 1;
+      }
+      maxNum = Math.max(maxNum, item.subRevisionNumber);
     });
     return out;
+  }
+
+  function nextSubRevisionNumber(subs) {
+    const list = normalizeSubRevisions(subs || [], 0);
+    return list.reduce(function (max, item) {
+      return Math.max(max, item.subRevisionNumber || 0);
+    }, 0) + 1;
+  }
+
+  function promoteNextSubRevision(subs) {
+    const list = subs || [];
+    if (list.some(function (item) { return !item.completed && item.status === "active"; })) {
+      return list;
+    }
+    const next = list
+      .filter(function (item) { return !item.completed; })
+      .sort(function (a, b) { return (a.subRevisionNumber || 0) - (b.subRevisionNumber || 0); })[0];
+    if (next) {
+      next.status = "active";
+      next.completed = false;
+      next.updatedAt = nowIso();
+    }
+    return list;
+  }
+
+  function partitionSubRevisions(subs) {
+    const list = normalizeSubRevisions(subs || [], 0);
+    const completed = list.filter(function (item) { return item.completed; })
+      .sort(function (a, b) { return (b.subRevisionNumber || 0) - (a.subRevisionNumber || 0); });
+    const current = list.find(function (item) { return !item.completed && item.status === "active"; }) || null;
+    return { current: current, completed: completed };
   }
 
   function subRevisionStats(round) {
@@ -461,14 +496,21 @@
   function addSubRevision(order, revisionId, payload, revisionNumber) {
     return touchRevisionRound(order, revisionId, function (round) {
       const subs = normalizeSubRevisions(round.subRevisions || [], round.number);
+      const newId = (payload && payload.id) || uid("sub");
+      if (subs.some(function (item) { return String(item.id) === String(newId); })) {
+        return;
+      }
       const attachments = ((payload && payload.attachments) || []).map(normalizeSubRevisionAttachment).filter(Boolean);
+      const hasActive = subs.some(function (item) {
+        return !item.completed && item.status === "active";
+      });
       subs.push({
-        id: (payload && payload.id) || uid("sub"),
-        subRevisionNumber: subs.length + 1,
+        id: newId,
+        subRevisionNumber: nextSubRevisionNumber(subs),
         parentRevisionNumber: round.number,
         buyerRevision: String((payload && payload.buyerRevision) || "").trim(),
         sellerReply: String((payload && payload.sellerReply) || "").trim(),
-        status: normalizeSubStatus((payload && payload.status) || "active", false),
+        status: normalizeSubStatus((payload && payload.status) || (hasActive ? "pending" : "active"), false),
         completed: false,
         createdAt: nowIso(),
         updatedAt: nowIso(),
@@ -488,19 +530,47 @@
         if (payload && payload.attachments) {
           next.attachments = payload.attachments.map(normalizeSubRevisionAttachment).filter(Boolean);
         }
-        next.completed = Boolean(payload && "completed" in payload ? payload.completed : next.completed);
-        next.status = normalizeSubStatus(payload && payload.status, next.completed);
+        if (payload && payload.status) {
+          next.completed = normalizeSubStatus(payload.status, next.completed) === "completed";
+          next.status = normalizeSubStatus(payload.status, next.completed);
+        }
         next.updatedAt = nowIso();
         return next;
       });
     }, revisionNumber);
   }
 
-  function setSubRevisionCompleted(order, revisionId, subRevisionId, completed) {
-    return updateSubRevision(order, revisionId, subRevisionId, {
-      completed: Boolean(completed),
-      status: completed ? "completed" : "active"
-    });
+  function setSubRevisionStatus(order, revisionId, subRevisionId, status, revisionNumber) {
+    return touchRevisionRound(order, revisionId, function (round) {
+      let subs = normalizeSubRevisions(round.subRevisions || [], round.number).map(function (sub) {
+        if (String(sub.id) !== String(subRevisionId)) return sub;
+        const completed = String(status || "").toLowerCase() === "completed";
+        return Object.assign({}, sub, {
+          status: normalizeSubStatus(status, completed),
+          completed: completed,
+          updatedAt: nowIso()
+        });
+      });
+      if (String(status || "").toLowerCase() === "completed") {
+        subs = promoteNextSubRevision(subs);
+      }
+      round.subRevisions = normalizeSubRevisions(subs, round.number);
+    }, revisionNumber);
+  }
+
+  function setMainRevisionStatus(order, revisionId, status, revisionNumber) {
+    const raw = String(status || "").trim().toLowerCase();
+    if (raw === "completed") {
+      return setRevisionCompleted(order, revisionId, true, revisionNumber);
+    }
+    if (raw === "open") {
+      return setRevisionCompleted(order, revisionId, false, revisionNumber);
+    }
+    return false;
+  }
+
+  function setSubRevisionCompleted(order, revisionId, subRevisionId, completed, revisionNumber) {
+    return setSubRevisionStatus(order, revisionId, subRevisionId, completed ? "completed" : "active", revisionNumber);
   }
 
   function pairRevisionMessages(messages) {
@@ -1067,6 +1137,10 @@
       });
     }
     if (index < 0) return false;
+    if (completed) {
+      const previousOpen = rounds.slice(0, index).some(function (round) { return !round.completed; });
+      if (previousOpen) return false;
+    }
     rounds[index].completed = Boolean(completed);
     rounds[index].updatedAt = nowIso();
     order.revisions = rounds;
@@ -1701,6 +1775,9 @@
     addSubRevision: addSubRevision,
     updateSubRevision: updateSubRevision,
     setSubRevisionCompleted: setSubRevisionCompleted,
+    setSubRevisionStatus: setSubRevisionStatus,
+    setMainRevisionStatus: setMainRevisionStatus,
+    partitionSubRevisions: partitionSubRevisions,
     setMainRevisionMessages: setMainRevisionMessages,
     findRevisionRound: findRevisionRound,
     findSubRevisionRound: findSubRevisionRound,
@@ -1760,6 +1837,9 @@
   global.OwlisticStore.addSubRevision = addSubRevision;
   global.OwlisticStore.updateSubRevision = updateSubRevision;
   global.OwlisticStore.setSubRevisionCompleted = setSubRevisionCompleted;
+  global.OwlisticStore.setSubRevisionStatus = setSubRevisionStatus;
+  global.OwlisticStore.setMainRevisionStatus = setMainRevisionStatus;
+  global.OwlisticStore.partitionSubRevisions = partitionSubRevisions;
   global.OwlisticStore.setMainRevisionMessages = setMainRevisionMessages;
   global.OwlisticStore.findRevisionRound = findRevisionRound;
   global.OwlisticStore.findSubRevisionRound = findSubRevisionRound;
