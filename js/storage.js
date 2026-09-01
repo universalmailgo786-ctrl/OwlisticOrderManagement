@@ -1012,6 +1012,7 @@
     if (order.messageThread.length) {
       order.messageText = formatMessageThread(order.messageThread);
     }
+    fillOrderAccountProfile(order, existing);
     if (!order.id) {
       order.id = nextOrderId();
       order.createdAt = stamp;
@@ -1070,6 +1071,37 @@
       name: wanted,
       personName: wanted
     });
+  }
+
+  function fillEmptyOrderProfile(order, source) {
+    if (!order || !source) return;
+    if (!String(order.whatsapp || "").trim() && String(source.whatsapp || "").trim()) {
+      order.whatsapp = source.whatsapp;
+    }
+    if (!String(order.name || "").trim() && String(source.personName || source.name || "").trim()) {
+      order.name = source.personName || source.name;
+    }
+    if (!String(order.fiverrId || "").trim() && String(source.fiverrId || "").trim()) {
+      order.fiverrId = source.fiverrId;
+    }
+    if (!String(order.fiverrGigUrl || "").trim() && String(source.fiverrGigUrl || "").trim()) {
+      order.fiverrGigUrl = source.fiverrGigUrl;
+    }
+    if (!String(order.paymentStatus || "").trim() && String(source.paymentStatus || "").trim()) {
+      order.paymentStatus = source.paymentStatus;
+    }
+  }
+
+  function fillOrderAccountProfile(order, previous) {
+    if (!order) return order;
+    fillEmptyOrderProfile(order, previous);
+    fillEmptyOrderProfile(order, accountForName(order.accountName || order.tabName || ""));
+    const auth = global.OwlisticAuth;
+    const session = auth && auth.getSession && auth.getSession();
+    if (session && auth.sameAccount && auth.sameAccount(session.account, order.accountName || order.tabName)) {
+      fillEmptyOrderProfile(order, session);
+    }
+    return order;
   }
 
   function mergeRequirementFiles(previous, incoming) {
@@ -1193,7 +1225,7 @@
         (order.boardStatus && boardStatusLabel(order.boardStatus)) ||
         "";
       order.status = computeStatus(order);
-      return mergeSchedule(order, null);
+      return mergeSchedule(fillOrderAccountProfile(order, null), null);
     }
     const incomingRevisions = order.revisions || [];
     const looksLikeSheetStub = incomingRevisions.length && incomingRevisions.every(function (item) {
@@ -1245,7 +1277,7 @@
         "";
     }
     order.status = computeStatus(order);
-    return mergeSchedule(order, previous);
+    return mergeSchedule(fillOrderAccountProfile(order, previous), previous);
   }
 
   function importOrders(incoming) {
@@ -1330,6 +1362,7 @@
     getOrders: getOrders,
     getOrder: getOrder,
     upsertOrder: upsertOrder,
+    fillOrderAccountProfile: fillOrderAccountProfile,
     applyManualSchedule: applyManualSchedule,
     placementStatusOf: placementStatusOf,
     placementBucket: placementBucket,
@@ -1407,6 +1440,7 @@
   global.OwlisticStore.boardStatusOf = boardStatusOf;
   global.OwlisticStore.boardStatusLabel = boardStatusLabel;
   global.OwlisticStore.upsertOrder = upsertOrder;
+  global.OwlisticStore.fillOrderAccountProfile = fillOrderAccountProfile;
   global.OwlisticStore.applyManualSchedule = applyManualSchedule;
   global.OwlisticStore.placementStatusOf = placementStatusOf;
   global.OwlisticStore.placementBucket = placementBucket;

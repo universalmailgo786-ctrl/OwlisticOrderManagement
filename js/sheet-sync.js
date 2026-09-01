@@ -297,6 +297,7 @@
 
   function toRow(order) {
     const live = liveOrder(order) || order || {};
+    const filled = callStore("fillOrderAccountProfile", "fillOrderAccountProfile", live) || live;
     const rounds = callStore("normalizeRevisions", "normalizeRevisions", live.revisions || []) || [];
     const current = callStore("currentRevision", "currentRevision", live);
     const tab = callStore("boardStatusOf", "boardStatusOf", live) || "";
@@ -312,8 +313,8 @@
       formatDate(live.updatedAt || live.updatedAt),
       formatTime(live.updatedAt || live.updatedAt),
       accountNameOf(live),
-      live.whatsapp || "",
-      live.name || "",
+      filled.whatsapp || "",
+      filled.name || "",
       live.orderValue || live.orderValue || "",
       paymentLabel(live),
       live.searchKeyword || live.searchKeyword || "",
@@ -321,8 +322,8 @@
       live.messageText || callStore("formatMessageThread", "formatMessageThread", live.messageThread || []) || "",
       live.directRequirements || live.directRequirements || "",
       fileRefs(live.requirementFiles || live.requirementFiles),
-      live.fiverrId || live.fiverrId || "",
-      live.fiverrGigUrl || live.fiverrGigUrl || "",
+      filled.fiverrId || filled.fiverrId || "",
+      filled.fiverrGigUrl || filled.fiverrGigUrl || "",
       live.reviewText || live.reviewText || "",
       rounds.length ? String(rounds.length) : "0",
       revisionHistory(live),

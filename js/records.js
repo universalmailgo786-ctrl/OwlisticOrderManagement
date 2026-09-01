@@ -1457,8 +1457,21 @@
   function applySheetOrders(result) {
     if (!result || result.skipped) return;
     const list = result.orders || [];
+    const sparseIds = {};
+    list.forEach(function (order) {
+      if (order && order.id && !String(order.fiverrId || "").trim()) {
+        sparseIds[order.id] = true;
+      }
+    });
     if (result.ok && typeof store.replaceOrders === "function") {
       store.replaceOrders(list);
+      if (window.OwlisticSheet && typeof window.OwlisticSheet.sync === "function") {
+        store.getOrders().forEach(function (order) {
+          if (sparseIds[order.id] && String(order.fiverrId || "").trim()) {
+            window.OwlisticSheet.sync(order, { skipUploads: true }).catch(function () {});
+          }
+        });
+      }
       return;
     }
     if (list.length && typeof store.importOrders === "function") {
@@ -1477,7 +1490,17 @@
     const ensure = (window.OwlisticSheet.ensureScheduleColumns && typeof window.OwlisticSheet.ensureScheduleColumns === "function")
       ? window.OwlisticSheet.ensureScheduleColumns()
       : Promise.resolve();
-    ensure.then(function (ensureResult) {
+    const preload = Promise.resolve().then(function () {
+      const tasks = [];
+      if (auth.fetchUserProfile) tasks.push(auth.fetchUserProfile());
+      if (window.OwlisticSheet && typeof window.OwlisticSheet.fetchAccounts === "function") {
+        tasks.push(window.OwlisticSheet.fetchAccounts());
+      }
+      return tasks.length ? Promise.all(tasks) : Promise.resolve();
+    });
+    preload.then(function () {
+      return ensure;
+    }).then(function (ensureResult) {
       refreshSheetUpgradeBanner(ensureResult);
       return window.OwlisticSheet.fetchOrders();
     }).then(function (result) {
