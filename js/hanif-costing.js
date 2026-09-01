@@ -442,6 +442,7 @@
     deps = options || {};
     bindEvents();
     populateMonthYearFilters();
+    showPanel(false);
     renderTable();
   }
 

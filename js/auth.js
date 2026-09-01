@@ -255,6 +255,7 @@
     }
     if (logoutBtn) logoutBtn.addEventListener("click", logout);
     document.querySelectorAll(".admin-only").forEach(function (el) {
+      if (el.id === "hanif-costing-panel") return;
       el.hidden = !isSuperAdmin(session);
     });
   }

@@ -4032,7 +4032,11 @@ body.modal-open {
   font-size: 12px;
 }
 
-.hanif-costing-panel {
+.hanif-costing-panel[hidden] {
+  display: none !important;
+}
+
+.hanif-costing-panel:not([hidden]) {
   display: grid;
   gap: 18px;
 }
