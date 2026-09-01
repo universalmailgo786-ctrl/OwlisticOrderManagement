@@ -113,7 +113,6 @@
     if (!pricing || !order || !order.id) return null;
     const prev = existing || {};
     const financials = pricing.buildFinancials(order.orderValue, prev.pkrRate);
-    if (!financials.orderValue) return null;
     const paymentStatus = pricing.normalizeHanifPaymentStatus(prev.hanifPaymentStatus);
     const paidAmount = paymentStatus === "paid"
       ? pricing.parseMoney(prev.paidAmount || financials.hanifCost)

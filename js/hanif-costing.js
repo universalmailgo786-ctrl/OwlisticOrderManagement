@@ -474,12 +474,7 @@
     const panel = el("hanif-costing-panel");
     if (panel && !panel.hidden) load(orders);
     const countEl = document.querySelector('[data-tab-count="hanif-costing"]');
-    if (countEl) {
-      const withValue = (orders || []).filter(function (order) {
-        return pricing.parseMoney(order.orderValue) > 0;
-      });
-      countEl.textContent = String(withValue.length);
-    }
+    if (countEl) countEl.textContent = String((orders || []).length);
   }
 
   function onOrderDeleted(orderId) {

@@ -45,7 +45,6 @@ function orderNumberFromId(orderId) {
 
 function recordFromOrder(order) {
   const financials = buildFinancials(order.orderValue);
-  if (!financials.orderValue) return null;
   return {
     orderId: order.id,
     createdDate: order.createdAt || "",
@@ -75,11 +74,14 @@ async function main() {
   console.log("setupHanifSheet:", setup);
 
   const accounts = await fetchJson(`${WEB_APP_URL}?action=listAccounts&role=superadmin`);
-  const tabs = [...new Set((accounts.accounts || []).map((a) => a.account).filter(Boolean))];
+  const schedule = await fetchJson(`${WEB_APP_URL}?action=ensureScheduleColumns&role=superadmin`);
+  const tabsFromAccounts = [...new Set((accounts.accounts || []).map((a) => a.account).filter(Boolean))];
+  const tabsFromSheets = schedule.tabs || [];
+  const tabs = [...new Set([...tabsFromAccounts, ...tabsFromSheets])];
   const ordersData = await fetchJson(
     `${WEB_APP_URL}?action=listOrders&role=superadmin&tabs=${encodeURIComponent(tabs.join(","))}`
   );
-  const orders = (ordersData.orders || []).map(recordFromOrder).filter(Boolean);
+  const orders = (ordersData.orders || []).map(recordFromOrder);
   console.log("orders to sync:", orders.length, orders.map((o) => o.orderId).join(", "));
 
   const sync = await fetchJson(WEB_APP_URL, {
