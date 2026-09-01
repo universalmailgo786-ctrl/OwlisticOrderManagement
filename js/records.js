@@ -1464,17 +1464,26 @@
   function applySheetOrders(result) {
     if (!result || result.skipped) return;
     const list = result.orders || [];
-    const sparseIds = {};
+    const repairBefore = {};
     list.forEach(function (order) {
-      if (order && order.id && !String(order.fiverrId || "").trim()) {
-        sparseIds[order.id] = true;
-      }
+      if (!order || !order.id) return;
+      repairBefore[order.id] = {
+        fiverrId: order.fiverrId || "",
+        fiverrGigUrl: order.fiverrGigUrl || "",
+        whatsapp: order.whatsapp || "",
+        name: order.name || "",
+        paymentStatus: order.paymentStatus || ""
+      };
     });
     if (result.ok && typeof store.replaceOrders === "function") {
       store.replaceOrders(list);
       if (window.OwlisticSheet && typeof window.OwlisticSheet.sync === "function") {
         store.getOrders().forEach(function (order) {
-          if (sparseIds[order.id] && String(order.fiverrId || "").trim()) {
+          const before = repairBefore[order.id];
+          const needsRepair = store.orderNeedsProfileRepair
+            ? store.orderNeedsProfileRepair(before, order)
+            : (!String(before.fiverrId || "").trim() && String(order.fiverrId || "").trim());
+          if (needsRepair) {
             window.OwlisticSheet.sync(order, { skipUploads: true }).catch(function () {});
           }
         });

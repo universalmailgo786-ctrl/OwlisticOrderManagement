@@ -1097,6 +1097,21 @@
     });
   }
 
+  function normalizePaymentStatus(value) {
+    const text = String(value || "").trim().toLowerCase();
+    if (text === "paid") return "paid";
+    if (text === "unpaid") return "unpaid";
+    return "";
+  }
+
+  function shouldBackfillPayment(orderValue, sourceValue) {
+    const orderPayment = normalizePaymentStatus(orderValue);
+    const sourcePayment = normalizePaymentStatus(sourceValue);
+    if (!sourcePayment) return false;
+    if (!orderPayment) return true;
+    return orderPayment === "unpaid" && sourcePayment === "paid";
+  }
+
   function fillEmptyOrderProfile(order, source) {
     if (!order || !source) return;
     if (!String(order.whatsapp || "").trim() && String(source.whatsapp || "").trim()) {
@@ -1111,9 +1126,22 @@
     if (!String(order.fiverrGigUrl || "").trim() && String(source.fiverrGigUrl || "").trim()) {
       order.fiverrGigUrl = source.fiverrGigUrl;
     }
-    if (!String(order.paymentStatus || "").trim() && String(source.paymentStatus || "").trim()) {
-      order.paymentStatus = source.paymentStatus;
+    if (shouldBackfillPayment(order.paymentStatus, source.paymentStatus)) {
+      order.paymentStatus = normalizePaymentStatus(source.paymentStatus);
     }
+  }
+
+  function orderNeedsProfileRepair(before, after) {
+    if (!before || !after) return false;
+    if (!String(before.fiverrId || "").trim() && String(after.fiverrId || "").trim()) return true;
+    if (!String(before.fiverrGigUrl || "").trim() && String(after.fiverrGigUrl || "").trim()) return true;
+    if (!String(before.whatsapp || "").trim() && String(after.whatsapp || "").trim()) return true;
+    if (!String(before.name || "").trim() && String(after.name || "").trim()) return true;
+    if (normalizePaymentStatus(before.paymentStatus) !== normalizePaymentStatus(after.paymentStatus) &&
+        shouldBackfillPayment(before.paymentStatus, after.paymentStatus)) {
+      return true;
+    }
+    return false;
   }
 
   function fillOrderAccountProfile(order, previous) {
@@ -1387,6 +1415,7 @@
     getOrder: getOrder,
     upsertOrder: upsertOrder,
     fillOrderAccountProfile: fillOrderAccountProfile,
+    orderNeedsProfileRepair: orderNeedsProfileRepair,
     applyManualSchedule: applyManualSchedule,
     placementStatusOf: placementStatusOf,
     isScheduleOverdue: isScheduleOverdue,
@@ -1466,6 +1495,7 @@
   global.OwlisticStore.boardStatusLabel = boardStatusLabel;
   global.OwlisticStore.upsertOrder = upsertOrder;
   global.OwlisticStore.fillOrderAccountProfile = fillOrderAccountProfile;
+  global.OwlisticStore.orderNeedsProfileRepair = orderNeedsProfileRepair;
   global.OwlisticStore.applyManualSchedule = applyManualSchedule;
   global.OwlisticStore.placementStatusOf = placementStatusOf;
   global.OwlisticStore.isScheduleOverdue = isScheduleOverdue;

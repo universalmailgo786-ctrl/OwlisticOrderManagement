@@ -1172,8 +1172,14 @@
       id: existingId || undefined,
       accountId: account && account.id ? account.id : "",
       accountName: accountName,
-      whatsapp: document.getElementById("whatsapp").value.trim(),
-      name: document.getElementById("name").value.trim(),
+      whatsapp: document.getElementById("whatsapp").value.trim()
+        || (account && account.whatsapp)
+        || (session && session.whatsapp)
+        || "",
+      name: document.getElementById("name").value.trim()
+        || (account && account.personName)
+        || (session && (session.personName || session.name))
+        || "",
       businessName: existing && existing.businessName ? existing.businessName : "",
       clientName: existing && existing.clientName ? existing.clientName : "",
       boardStatus: existing && existing.boardStatus
@@ -1183,7 +1189,10 @@
         (existing && existing.boardStatus) || (boardStatusSelect && boardStatusSelect.value) || "in-progress"
       )) || (existing && existing.overallStatus) || "",
       orderValue: document.getElementById("orderValue").value,
-      paymentStatus: selectedPayment("paymentStatus"),
+      paymentStatus: selectedPayment("paymentStatus")
+        || (account && account.paymentStatus)
+        || (session && session.paymentStatus)
+        || "",
       searchKeyword: document.getElementById("searchKeyword").value.trim(),
       orderTypeCustom: document.getElementById("order-custom").checked,
       orderTypeDirect: document.getElementById("order-direct").checked,
@@ -1191,8 +1200,14 @@
       messageText: (store.formatMessageThread ? store.formatMessageThread(threadMessages) : "") || document.getElementById("messageText").value,
       directRequirements: document.getElementById("directRequirements").value,
       requirementFiles: requirementFiles,
-      fiverrId: document.getElementById("fiverrId").value.trim(),
-      fiverrGigUrl: document.getElementById("fiverrGigUrl").value.trim(),
+      fiverrId: document.getElementById("fiverrId").value.trim()
+        || (account && account.fiverrId)
+        || (session && session.fiverrId)
+        || "",
+      fiverrGigUrl: document.getElementById("fiverrGigUrl").value.trim()
+        || (account && account.fiverrGigUrl)
+        || (session && session.fiverrGigUrl)
+        || "",
       reviewText: document.getElementById("reviewText").value,
       revisions: revisions,
       readyToApprove: existing

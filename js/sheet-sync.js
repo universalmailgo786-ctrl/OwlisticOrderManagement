@@ -316,7 +316,7 @@
       filled.whatsapp || "",
       filled.name || "",
       live.orderValue || live.orderValue || "",
-      paymentLabel(live),
+      paymentLabel(filled),
       live.searchKeyword || live.searchKeyword || "",
       typeLabel,
       live.messageText || callStore("formatMessageThread", "formatMessageThread", live.messageThread || []) || "",
