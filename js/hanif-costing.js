@@ -319,12 +319,17 @@
   function showPanel(show) {
     const panel = el("hanif-costing-panel");
     const recordsPanel = el("records-main-panel");
+    const pageHeader = el("records-page-header");
+    const upgradeBanner = el("sheet-upgrade-banner");
     const scheduleSummary = el("schedule-summary");
     const scheduleFilterRow = el("schedule-filter-row");
     if (panel) panel.hidden = !show;
     if (recordsPanel) recordsPanel.hidden = show;
+    if (pageHeader) pageHeader.hidden = show;
+    if (upgradeBanner && show) upgradeBanner.hidden = true;
     if (scheduleSummary) scheduleSummary.hidden = show || scheduleSummary.hidden;
     if (scheduleFilterRow) scheduleFilterRow.hidden = show || scheduleFilterRow.hidden;
+    document.body.classList.toggle("is-hanif-tab", !!show);
   }
 
   function exportCsv() {

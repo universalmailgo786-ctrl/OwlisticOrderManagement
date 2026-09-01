@@ -4037,6 +4037,10 @@ body.modal-open {
   gap: 18px;
 }
 
+body.is-hanif-tab .records-tabs {
+  margin-bottom: 0;
+}
+
 .hanif-header {
   display: flex;
   align-items: flex-start;
