@@ -3713,6 +3713,12 @@ body.modal-open {
   gap: 10px;
 }
 
+.rev-sub-pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .rev-sub-card.is-quiet {
   opacity: 0.82;
   border-style: dashed;

@@ -48,7 +48,10 @@
     const completed = list.filter(function (item) { return item.completed; })
       .sort(function (a, b) { return (b.subRevisionNumber || 0) - (a.subRevisionNumber || 0); });
     const current = list.find(function (item) { return !item.completed && item.status === "active"; }) || null;
-    return { current: current, completed: completed };
+    const pending = list.filter(function (item) {
+      return !item.completed && item.status !== "active";
+    }).sort(function (a, b) { return (a.subRevisionNumber || 0) - (b.subRevisionNumber || 0); });
+    return { current: current, pending: pending, completed: completed };
   }
 
   function attachmentThumb(att) {
@@ -189,6 +192,7 @@
     let subHtml = "";
     if (isCurrent) {
       subHtml += renderCurrentSubSection(partition.current, step, order);
+      subHtml += renderPendingSubSection(partition.pending, step, order);
       if (canEdit) {
         subHtml += '<button type="button" class="ghost-btn rev-sub-add-btn" data-add-sub-revision="' + deps.escapeHtml(step.round.id) + '">+ Add Sub Revision</button>';
       }
@@ -211,6 +215,18 @@
     return '<div class="rev-sub-section">' +
       '<p class="rev-sub-section-label">Current Sub Revision</p>' +
       renderSubCardBody(current, step, order, { editableStatus: true }) +
+    "</div>";
+  }
+
+  function renderPendingSubSection(pending, step, order) {
+    if (!pending.length) return "";
+    return '<div class="rev-sub-section is-pending-section">' +
+      '<p class="rev-sub-section-label is-quiet">Upcoming Sub Revisions</p>' +
+      '<div class="rev-sub-pending-list">' +
+        pending.map(function (sub) {
+          return renderSubCardBody(sub, step, order, { editableStatus: false, quiet: true });
+        }).join("") +
+      "</div>" +
     "</div>";
   }
 
@@ -484,8 +500,25 @@
     const needsUpload = buildAttachmentsFromPending().some(function (att) {
       return att.id && !att.imageUrl;
     });
+    let successMessage = needsUpload ? "Revision saved. Uploading images..." : "Revision saved.";
+    if (modalState.mode === "add-sub") {
+      let round = store.findRevisionRound(order, modalState.revisionId);
+      if (!round && modalState.revisionNumber && store.normalizeRevisions) {
+        round = store.normalizeRevisions(order.revisions || []).find(function (item) {
+          return Number(item.number) === Number(modalState.revisionNumber);
+        }) || null;
+      }
+      const added = round && (round.subRevisions || []).find(function (sub) {
+        return String(sub.id) === String(modalState.pendingSubId);
+      });
+      if (added && added.status === "pending") {
+        successMessage = "Sub Revision " + added.subRevisionNumber + " saved. It will become active when the current sub revision is completed.";
+      } else if (added) {
+        successMessage = "Sub Revision " + added.subRevisionNumber + " saved.";
+      }
+    }
     persistOrder(order, {
-      successMessage: needsUpload ? "Revision saved. Uploading images..." : "Revision saved.",
+      successMessage: successMessage,
       syncOptions: { skipUploads: false }
     }).finally(function () {
       setModalStatus("");

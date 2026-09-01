@@ -349,7 +349,7 @@
   }
 
   function promoteNextSubRevision(subs) {
-    const list = subs || [];
+    const list = (subs || []).map(function (item) { return Object.assign({}, item); });
     if (list.some(function (item) { return !item.completed && item.status === "active"; })) {
       return list;
     }
@@ -369,7 +369,10 @@
     const completed = list.filter(function (item) { return item.completed; })
       .sort(function (a, b) { return (b.subRevisionNumber || 0) - (a.subRevisionNumber || 0); });
     const current = list.find(function (item) { return !item.completed && item.status === "active"; }) || null;
-    return { current: current, completed: completed };
+    const pending = list.filter(function (item) {
+      return !item.completed && item.status !== "active";
+    }).sort(function (a, b) { return (a.subRevisionNumber || 0) - (b.subRevisionNumber || 0); });
+    return { current: current, pending: pending, completed: completed };
   }
 
   function subRevisionStats(round) {
@@ -436,15 +439,17 @@
     order.revisions = normalizeRevisions(order.revisions || []).map(function (round) {
       const extra = map[round.id] || map["n:" + round.number] || null;
       if (!extra) return round;
-      const mergedSubs = (extra.subRevisions || round.subRevisions || []).filter(function (sub) {
+      const mergedSubs = (extra.subRevisions || []).filter(function (sub) {
         if (!sub) return false;
         const parent = Number(sub.parentRevisionNumber || round.number);
         return parent === Number(round.number);
       });
+      const localSubs = normalizeSubRevisions(round.subRevisions || [], round.number);
+      const sheetSubs = normalizeSubRevisions(mergedSubs, round.number);
       return Object.assign({}, round, {
         completed: "completed" in extra ? Boolean(extra.completed) : round.completed,
         updatedAt: extra.updatedAt || round.updatedAt || round.createdAt,
-        subRevisions: normalizeSubRevisions(mergedSubs.length ? mergedSubs : (round.subRevisions || []), round.number)
+        subRevisions: normalizeSubRevisions(overlaySubRevisions(localSubs, sheetSubs), round.number)
       });
     });
     return order;
@@ -1034,13 +1039,23 @@
     if (!prev.length) return next;
     if (!next.length) return prev;
     const map = {};
-    next.forEach(function (item) { map[item.id] = item; });
-    return prev.map(function (item) {
-      const match = map[item.id];
-      if (!match) return item;
-      return Object.assign({}, item, match, {
-        attachments: (match.attachments && match.attachments.length) ? match.attachments : item.attachments
+    prev.forEach(function (item) { map[item.id] = item; });
+    next.forEach(function (item) {
+      if (!map[item.id]) {
+        map[item.id] = item;
+        return;
+      }
+      const existing = map[item.id];
+      const existingUpdated = Date.parse(existing.updatedAt || existing.createdAt || "") || 0;
+      const incomingUpdated = Date.parse(item.updatedAt || item.createdAt || "") || 0;
+      const winner = incomingUpdated >= existingUpdated ? item : existing;
+      const loser = winner === item ? existing : item;
+      map[item.id] = Object.assign({}, loser, winner, {
+        attachments: (winner.attachments && winner.attachments.length) ? winner.attachments : loser.attachments
       });
+    });
+    return Object.keys(map).map(function (id) { return map[id]; }).sort(function (a, b) {
+      return (a.subRevisionNumber || 0) - (b.subRevisionNumber || 0);
     });
   }
 
