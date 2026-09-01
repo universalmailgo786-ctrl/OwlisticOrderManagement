@@ -125,7 +125,7 @@
       orderId: order.id,
       createdDate: order.createdAt || prev.createdDate || "",
       orderNumber: pricing.orderNumberFromId(order.id),
-      account: [order.accountName || order.tabName, order.fiverrId].filter(Boolean).join(" · "),
+      account: [order.accountName || order.tabName, order.fiverrId].filter(Boolean).join(" \u00B7 "),
       fiverrId: order.fiverrId || "",
       clientName: order.clientName || "",
       businessName: order.businessName || "",
