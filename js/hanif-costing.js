@@ -69,16 +69,23 @@
   }
 
   function recordCreatedParts(record) {
-    const text = String(record.createdDate || "");
+    const text = String(record.createdDate || "").trim();
+    if (!text) return { year: "", month: "" };
     const date = new Date(text);
-    if (isNaN(date.getTime())) return { year: "", month: "" };
-    return { year: String(date.getFullYear()), month: String(date.getMonth() + 1) };
+    if (!isNaN(date.getTime())) {
+      return { year: String(date.getFullYear()), month: String(date.getMonth() + 1) };
+    }
+    const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return { year: iso[1], month: String(parseInt(iso[2], 10)) };
+    const slash = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (slash) return { year: slash[3], month: String(parseInt(slash[2], 10)) };
+    return { year: "", month: "" };
   }
 
   function matchesFilters(record) {
     const filters = getFilters();
     const parts = recordCreatedParts(record);
-    if (filters.year && parts.year !== filters.year) return false;
+    if (filters.year && parts.year && parts.year !== filters.year) return false;
     if (filters.month && parts.month !== filters.month) return false;
     if (filters.account) {
       const account = String(record.account || "").toLowerCase();
@@ -173,12 +180,13 @@
       if (parts.year) years[parts.year] = true;
     });
     const yearValues = Object.keys(years).sort().reverse();
-    if (!yearValues.length) yearValues.push(String(new Date().getFullYear()));
     const prevYear = yearEl.value;
-    yearEl.innerHTML = yearValues.map(function (year) {
+    yearEl.innerHTML = '<option value="">All Years</option>' + yearValues.map(function (year) {
       return '<option value="' + year + '">' + year + "</option>";
     }).join("");
-    yearEl.value = prevYear && years[prevYear] ? prevYear : yearValues[0];
+    if (prevYear && (prevYear === "" || years[prevYear])) yearEl.value = prevYear;
+    else if (yearValues.indexOf(String(new Date().getFullYear())) >= 0) yearEl.value = String(new Date().getFullYear());
+    else yearEl.value = "";
     const prevMonth = monthEl.value;
     monthEl.innerHTML = '<option value="">All Months</option>' + MONTHS.map(function (name, index) {
       return '<option value="' + String(index + 1) + '">' + name + "</option>";
@@ -226,7 +234,14 @@
     if (!body) return;
     const list = filteredRecords();
     renderSummary(list);
-    if (count) count.textContent = list.length + (list.length === 1 ? " record" : " records");
+    if (count) {
+      if (loading) count.textContent = "Loading records…";
+      else count.textContent = list.length + (list.length === 1 ? " record" : " records");
+    }
+    if (loading && !records.length) {
+      body.innerHTML = '<tr><td colspan="13"><div class="empty-state"><strong>Loading Hanif costing records…</strong><p>Fetching data from Google Sheet.</p></div></td></tr>';
+      return;
+    }
     if (!list.length) {
       body.innerHTML = '<tr><td colspan="13"><div class="empty-state"><strong>No Hanif costing records</strong><p>Try another filter or wait for orders to sync.</p></div></td></tr>';
       return;
@@ -258,10 +273,15 @@
   }
 
   function savePayment(record) {
-    if (!sheet || !record) return Promise.resolve();
+    if (!sheet || !record) return Promise.resolve({ ok: false });
     record.updatedAt = new Date().toISOString();
-    return sheet.updatePayment(record).then(function () {
-      if (deps && deps.showToast) deps.showToast("Payment status saved for " + record.orderId);
+    return sheet.updatePayment(record).then(function (result) {
+      if (result && result.ok) {
+        if (deps && deps.showToast) deps.showToast("Payment status saved for " + record.orderId);
+      } else if (deps && deps.showToast) {
+        deps.showToast((result && result.error) || "Could not save payment status.");
+      }
+      return result || { ok: false };
     });
   }
 
@@ -270,6 +290,11 @@
     if (!record) return;
     const nextStatus = pricing.normalizeHanifPaymentStatus(status);
     if (pricing.normalizeHanifPaymentStatus(record.hanifPaymentStatus) === nextStatus) return;
+    const previous = {
+      hanifPaymentStatus: record.hanifPaymentStatus,
+      paidAmount: record.paidAmount,
+      paidAt: record.paidAt
+    };
     const wasPaid = pricing.normalizeHanifPaymentStatus(record.hanifPaymentStatus) === "paid";
     record.hanifPaymentStatus = nextStatus;
     if (nextStatus === "paid") {
@@ -279,7 +304,15 @@
       record.paidAmount = 0;
       record.paidAt = "";
     }
-    savePayment(record).then(renderTable);
+    renderTable();
+    savePayment(record).then(function (result) {
+      if (!result || !result.ok) {
+        record.hanifPaymentStatus = previous.hanifPaymentStatus;
+        record.paidAmount = previous.paidAmount;
+        record.paidAt = previous.paidAt;
+        renderTable();
+      }
+    });
   }
 
   function mergeOrders(orders, existingRecords) {
@@ -296,39 +329,47 @@
   }
 
   function scheduleBackgroundSync(orders) {
-    if (!auth.isSuperAdmin() || !sheet || !sheet.syncRecords) return;
+    if (!auth.isSuperAdmin() || !sheet || !sheet.reconcileRecords) return;
+    const source = orders || (store && store.getOrders ? store.getOrders() : []);
+    if (!source.length) return;
     clearTimeout(backgroundSyncTimer);
     backgroundSyncTimer = setTimeout(function () {
       if (backgroundSyncing) return;
-      backgroundSyncing = true;
-      const source = orders || (store && store.getOrders ? store.getOrders() : []);
       sheet.listRecords().then(function (result) {
-        const merged = mergeOrders(source, (result && result.records) || []);
-        return sheet.syncRecords(merged);
+        const sheetCount = ((result && result.records) || []).length;
+        if (sheetCount >= source.length) return null;
+        backgroundSyncing = true;
+        return sheet.reconcileRecords();
       }).catch(function () {
-        /* keep UI responsive if background sync fails */
+        /* ignore background reconcile errors */
       }).then(function () {
         backgroundSyncing = false;
       });
-    }, 1200);
+    }, 2500);
   }
 
   function load(orders) {
     if (!auth.isSuperAdmin()) return Promise.resolve();
     loading = true;
     renderTable();
+    const source = orders || (store && store.getOrders ? store.getOrders() : []);
     return sheet.listRecords().then(function (result) {
-      const existing = result.records || [];
-      const merged = mergeOrders(orders || (store && store.getOrders ? store.getOrders() : []), existing);
-      return sheet.syncRecords(merged).then(function () {
-        return sheet.listRecords();
-      });
-    }).then(function (result) {
       records = (result && result.records) || [];
+      if (!records.length && source.length && sheet.reconcileRecords) {
+        return sheet.reconcileRecords().then(function () {
+          return sheet.listRecords();
+        });
+      }
+      return result;
+    }).then(function (result) {
+      records = (result && result.records) || records;
       populateAccountFilter();
       populateMonthYearFilters();
       loading = false;
       renderTable();
+      if (!records.length && source.length && sheet.reconcileRecords) {
+        scheduleBackgroundSync(source);
+      }
     }).catch(function () {
       loading = false;
       if (deps && deps.showToast) deps.showToast("Could not load Hanif costing records.");
@@ -436,7 +477,11 @@
       }
       const label = status === "paid" ? "Paid" : "Unpaid";
       if (!window.confirm("Mark " + ids.length + " selected order(s) as " + label + "?")) return;
-      sheet.bulkUpdatePayment(ids, status).then(function () {
+      sheet.bulkUpdatePayment(ids, status).then(function (result) {
+        if (!result || !result.ok) {
+          if (deps && deps.showToast) deps.showToast((result && result.error) || "Could not update payment statuses.");
+          return;
+        }
         ids.forEach(function (orderId) {
           const record = findRecord(orderId);
           if (!record) return;
@@ -461,7 +506,11 @@
     if (!auth.isSuperAdmin()) return;
     deps = options || {};
     bindEvents();
-    populateMonthYearFilters();
+    const yearEl = el("hanif-filter-year");
+    if (yearEl && !yearEl.options.length) {
+      yearEl.innerHTML = '<option value="">All Years</option><option value="' + String(new Date().getFullYear()) + '">' + String(new Date().getFullYear()) + "</option>";
+      yearEl.value = String(new Date().getFullYear());
+    }
     showPanel(false);
     renderTable();
   }

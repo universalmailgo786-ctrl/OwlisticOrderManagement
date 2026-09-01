@@ -421,6 +421,11 @@ function refreshHanifLedger_(ss) {
   formatHanifDataSheet_(sheet);
 }
 
+function updateHanifTotalsOnly_(sheet) {
+  if (!sheet) return;
+  updateHanifTotalsRow_(sheet);
+}
+
 function upsertHanifItem_(ss, item, refreshLedger) {
   if (!ss) ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = resolveHanifDataSheet_(ss);

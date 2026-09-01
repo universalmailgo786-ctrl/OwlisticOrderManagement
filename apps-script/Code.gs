@@ -135,6 +135,15 @@ function doGet(e) {
   if (action === "reconcileHanifRecords") {
     return json_(reconcileHanifRecordsAction_(params));
   }
+  if (action === "updateHanifPayment") {
+    return json_(updateHanifPayment_(params));
+  }
+  if (action === "bulkUpdateHanifPayment") {
+    return json_(bulkUpdateHanifPayment_(params));
+  }
+  if (action === "deleteHanifRecord") {
+    return json_(deleteHanifRecord_(params));
+  }
   if (action === "formatHanifLedger") {
     return json_(setupHanifSheet_(params));
   }
@@ -2671,14 +2680,18 @@ function updateHanifPayment_(data) {
   existing.updatedAt = new Date().toISOString();
   existing.totalLossPkr = Math.round(existing.totalLoss * hanifPkrRate_(ss));
   sheet.getRange(found.row, 1, 1, HANIF_HEADERS.length).setValues([hanifRowFromRecord_(existing, ss)]);
-  refreshHanifLedger_(ss);
+  updateHanifTotalsOnly_(sheet);
   return { ok: true, action: "updateHanifPayment", orderId: orderId, record: existing };
 }
 
 function bulkUpdateHanifPayment_(data) {
   var denied = requireSuperAdmin_(data);
   if (denied) return denied;
-  var ids = (data && data.orderIds) || [];
+  var ids = [];
+  if (data && data.orderIds) {
+    if (Object.prototype.toString.call(data.orderIds) === "[object Array]") ids = data.orderIds;
+    else ids = String(data.orderIds || "").split(",");
+  }
   var status = hanifPaymentStatus_(data.hanifPaymentStatus).toLowerCase();
   var count = 0;
   var i;
@@ -2706,6 +2719,6 @@ function deleteHanifRecord_(data) {
   var found = findHanifRow_(sheet, orderId);
   if (!found) return { ok: true, action: "deleteHanifRecord", deleted: false };
   sheet.deleteRow(found.row);
-  refreshHanifLedger_(ss);
+  updateHanifTotalsOnly_(sheet);
   return { ok: true, action: "deleteHanifRecord", deleted: true, orderId: orderId };
 }

@@ -75,9 +75,9 @@
   function listRecords() {
     const url = getUrl("listHanifRecords");
     if (!url) return Promise.resolve({ ok: false, records: [], error: "Google Sheet is not connected." });
-    return fetchJson(url).then(function (data) {
+    return fetchJson(url, null, 45000).then(function (data) {
       if (!data || !data.ok) return { ok: false, records: [], error: (data && data.error) || "Could not load Hanif records." };
-      return { ok: true, records: data.records || [] };
+      return { ok: true, records: data.records || [], pkrRate: data.pkrRate };
     }).catch(function () {
       return { ok: false, records: [], error: "Could not reach Google Sheet." };
     });
@@ -94,25 +94,41 @@
   }
 
   function updatePayment(record) {
-    return postPayload({
-      action: "updateHanifPayment",
+    const url = getUrl("updateHanifPayment", {
       orderId: record.orderId,
       hanifPaymentStatus: record.hanifPaymentStatus,
       paidAmount: record.paidAmount,
       paidAt: record.paidAt || ""
     });
+    if (!url) return Promise.resolve({ ok: false, error: "Google Sheet is not connected." });
+    return fetchJson(url, null, 45000).then(function (data) {
+      if (!data || !data.ok) return { ok: false, error: (data && data.error) || "Could not save payment status." };
+      return data;
+    }).catch(function () {
+      return { ok: false, error: "Could not reach Google Sheet." };
+    });
   }
 
   function bulkUpdatePayment(orderIds, status) {
-    return postPayload({
-      action: "bulkUpdateHanifPayment",
-      orderIds: orderIds || [],
+    const url = getUrl("bulkUpdateHanifPayment", {
+      orderIds: (orderIds || []).join(","),
       hanifPaymentStatus: status
+    });
+    if (!url) return Promise.resolve({ ok: false, error: "Google Sheet is not connected." });
+    return fetchJson(url, null, 90000).then(function (data) {
+      if (!data || !data.ok) return { ok: false, error: (data && data.error) || "Could not save payment statuses." };
+      return data;
+    }).catch(function () {
+      return { ok: false, error: "Could not reach Google Sheet." };
     });
   }
 
   function deleteRecord(orderId) {
-    return postPayload({ action: "deleteHanifRecord", orderId: orderId });
+    const url = getUrl("deleteHanifRecord", { orderId: orderId });
+    if (!url) return Promise.resolve({ ok: false, error: "Google Sheet is not connected." });
+    return fetchJson(url, null, 45000).catch(function () {
+      return postPayload({ action: "deleteHanifRecord", orderId: orderId });
+    });
   }
 
   function recordFromOrder(order, existing) {
