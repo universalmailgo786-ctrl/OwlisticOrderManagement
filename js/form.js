@@ -1565,13 +1565,33 @@
     retryMissingDriveUploads();
   }
 
+  function pushAccountProfileToSheet(account, extras) {
+    const sheet = window.OwlisticSheet;
+    if (!sheet || typeof sheet.upsertAccountProfile !== "function" || !account) {
+      return Promise.resolve(null);
+    }
+    const payload = Object.assign({
+      username: account.username || "",
+      account: account.name,
+      personName: account.personName || "",
+      displayName: account.personName || account.name || "",
+      whatsapp: account.whatsapp || "",
+      fiverrId: account.fiverrId || "",
+      fiverrGigUrl: account.fiverrGigUrl || "",
+      paymentStatus: account.paymentStatus || ""
+    }, extras || {});
+    return sheet.upsertAccountProfile(payload);
+  }
+
   function syncSavedAccountProfiles() {
     if (!isAdmin()) return;
     const sheet = window.OwlisticSheet;
-    if (!sheet || typeof sheet.upsertUser !== "function") return;
+    if (!sheet) return;
     store.getAccounts().forEach(function (account) {
-      if (!account || !account.username) return;
-      if (!(account.whatsapp || account.personName || account.fiverrId || account.fiverrGigUrl || account.paymentStatus)) return;
+      if (!account || !account.name) return;
+      if (!(account.username || account.whatsapp || account.personName || account.fiverrId || account.fiverrGigUrl || account.paymentStatus)) return;
+      pushAccountProfileToSheet(account).catch(function () {});
+      if (!account.username || typeof sheet.upsertUser !== "function") return;
       sheet.upsertUser({
         username: account.username,
         password: "",
@@ -1804,8 +1824,11 @@
     fillAccountEditor(saved);
     renderAccountList();
     syncAccountTabs("Account saved. Sheet tab created.");
-    if ((username || saved.username) && window.OwlisticSheet && typeof window.OwlisticSheet.upsertUser === "function") {
-      window.OwlisticSheet.upsertUser({
+    const profilePromise = pushAccountProfileToSheet(saved, {
+      username: username || saved.username || ""
+    });
+    const loginPromise = (username || saved.username) && window.OwlisticSheet && typeof window.OwlisticSheet.upsertUser === "function"
+      ? window.OwlisticSheet.upsertUser({
         username: username || saved.username,
         password: password,
         account: saved.name,
@@ -1815,21 +1838,25 @@
         fiverrId: saved.fiverrId || "",
         fiverrGigUrl: saved.fiverrGigUrl || "",
         paymentStatus: saved.paymentStatus || ""
-      }).then(function (result) {
-        if (result && result.ok === false) {
-          showToast(result.error || "Account saved locally, but login user was not stored in the sheet.");
-          return loadAccountsFromSheet();
-        }
-        if (result && result.created) {
-          showToast("Account and login user saved to the sheet.");
-        }
+      })
+      : Promise.resolve(null);
+    Promise.all([profilePromise, loginPromise]).then(function (results) {
+      const profileResult = results[0];
+      const loginResult = results[1];
+      if ((profileResult && profileResult.ok === false) || (loginResult && loginResult.ok === false)) {
+        showToast((loginResult && loginResult.error) || (profileResult && profileResult.error) || "Account saved locally, but the Google Sheet was not fully updated.");
         return loadAccountsFromSheet();
-      }).catch(function () {
-        showToast("Account saved locally, but login user was not stored in the sheet.");
-      });
-    } else {
+      }
+      if (loginResult && loginResult.created) {
+        showToast("Account and login user saved to the sheet.");
+      } else if (profileResult && profileResult.ok) {
+        showToast("Account profile saved to the Accounts sheet.");
+      }
+      return loadAccountsFromSheet();
+    }).catch(function () {
+      showToast("Account saved locally, but the Google Sheet was not fully updated.");
       loadAccountsFromSheet();
-    }
+    });
   });
 
   document.getElementById("check-prices").addEventListener("click", openPriceModal);

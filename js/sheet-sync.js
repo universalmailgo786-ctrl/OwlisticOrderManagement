@@ -926,6 +926,27 @@
     });
   }
 
+  function upsertAccountProfile(profile) {
+    if (!profile) {
+      return Promise.resolve({ skipped: true, empty: true });
+    }
+    const account = tabNameOf(profile.account || profile.name || profile.accountName || "");
+    if (!account && !profile.username) {
+      return Promise.resolve({ skipped: true, empty: true });
+    }
+    return postJsonPayload({
+      action: "upsertAccountProfile",
+      username: String(profile.username || "").trim(),
+      account: account,
+      displayName: String(profile.displayName || profile.personName || profile.name || account || "").trim(),
+      personName: String(profile.personName || profile.displayName || "").trim(),
+      whatsapp: String(profile.whatsapp || "").trim(),
+      fiverrId: String(profile.fiverrId || "").trim(),
+      fiverrGigUrl: String(profile.fiverrGigUrl || "").trim(),
+      paymentStatus: String(profile.paymentStatus || "").trim()
+    });
+  }
+
   function delay(ms) {
     return new Promise(function (resolve) {
       window.setTimeout(resolve, ms);
@@ -1786,6 +1807,7 @@
     removeOrder: removeOrder,
     ensureTabs: ensureTabs,
     upsertUser: upsertUser,
+    upsertAccountProfile: upsertAccountProfile,
     fetchAccounts: fetchAccounts,
     fetchAccountProfile: fetchAccountProfile,
     ACCOUNTS_SHEET_ID: ACCOUNTS_SHEET_ID,

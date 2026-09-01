@@ -2052,6 +2052,15 @@ function login_(username, password) {
       if (fromAccounts.fiverrGigUrl) profile.fiverrGigUrl = fromAccounts.fiverrGigUrl;
       if (fromAccounts.paymentStatus) profile.paymentStatus = fromAccounts.paymentStatus;
     }
+    syncAccountProfileToDirectory_({
+      username: String(row[0] || "").trim(),
+      account: account,
+      personName: profile.personName,
+      whatsapp: profile.whatsapp,
+      fiverrId: profile.fiverrId,
+      fiverrGigUrl: profile.fiverrGigUrl,
+      paymentStatus: profile.paymentStatus
+    });
     return {
       ok: true,
       username: String(row[0] || "").trim(),
@@ -2196,6 +2205,15 @@ function getUserProfile_(params) {
       if (fromAccounts.fiverrGigUrl) profile.fiverrGigUrl = fromAccounts.fiverrGigUrl;
       if (fromAccounts.paymentStatus) profile.paymentStatus = fromAccounts.paymentStatus;
     }
+    syncAccountProfileToDirectory_({
+      username: String(row[0] || "").trim(),
+      account: tabName_(row[3] || ""),
+      personName: profile.personName,
+      whatsapp: profile.whatsapp,
+      fiverrId: profile.fiverrId,
+      fiverrGigUrl: profile.fiverrGigUrl,
+      paymentStatus: profile.paymentStatus
+    });
     return {
       ok: true,
       action: "getUserProfile",
@@ -2252,19 +2270,33 @@ function upsertUser_(data) {
   }
   if (found) {
     var existing = padUserRow_(sheet.getRange(found, 1, 1, Math.max(sheet.getLastColumn(), USER_HEADERS.length)).getValues()[0]);
+    var savedWhatsapp = whatsapp || existing[6] || "";
+    var savedFiverrId = fiverrId || existing[7] || "";
+    var savedFiverrGigUrl = fiverrGigUrl || existing[8] || "";
+    var savedPaymentStatus = paymentStatus || existing[9] || "";
+    var savedDisplayName = displayName || existing[4] || username;
     sheet.getRange(found, 1, 1, USER_HEADERS.length).setValues([[
       username,
       password ? password : existing[1],
       "user",
       account,
-      displayName || existing[4] || username,
+      savedDisplayName,
       active,
-      whatsapp || existing[6] || "",
-      fiverrId || existing[7] || "",
-      fiverrGigUrl || existing[8] || "",
-      paymentStatus || existing[9] || ""
+      savedWhatsapp,
+      savedFiverrId,
+      savedFiverrGigUrl,
+      savedPaymentStatus
     ]]);
-    upsertAccountProfile_(data);
+    syncAccountProfileToDirectory_({
+      username: username,
+      account: account,
+      displayName: savedDisplayName,
+      personName: savedDisplayName,
+      whatsapp: savedWhatsapp,
+      fiverrId: savedFiverrId,
+      fiverrGigUrl: savedFiverrGigUrl,
+      paymentStatus: savedPaymentStatus
+    });
     ensureOrderTabForAccount_(account);
     return { ok: true, action: "upsertUser", username: username, account: account, updated: true };
   }
@@ -2280,7 +2312,16 @@ function upsertUser_(data) {
     fiverrGigUrl,
     paymentStatus
   ]]);
-  upsertAccountProfile_(data);
+  syncAccountProfileToDirectory_({
+    username: username,
+    account: account,
+    displayName: displayName || username,
+    personName: displayName || username,
+    whatsapp: whatsapp,
+    fiverrId: fiverrId,
+    fiverrGigUrl: fiverrGigUrl,
+    paymentStatus: paymentStatus
+  });
   ensureOrderTabForAccount_(account);
   return { ok: true, action: "upsertUser", username: username, account: account, created: true };
 }
@@ -2372,12 +2413,40 @@ function usersDirectorySheet_(ss) {
     var name = String(sheets[i].getName() || "").trim().toLowerCase();
     if (name === "users" || name === "directory") return sheets[i];
   }
+  for (i = 0; i < sheets.length; i++) {
+    var header = String(sheets[i].getRange(1, 1).getValue() || "").trim().toLowerCase();
+    if (header === "username") {
+      if (sheets[i].getName() !== "Users") sheets[i].setName("Users");
+      return sheets[i];
+    }
+  }
   var first = sheets[0];
   if (first && /^(sheet1|untitled)$/i.test(String(first.getName() || "").trim())) {
     first.setName("Users");
     return first;
   }
   return ss.insertSheet("Users", 0);
+}
+
+function syncAccountProfileToDirectory_(data) {
+  if (!data) return null;
+  var username = String((data && data.username) || "").trim();
+  var account = tabName_((data && (data.account || data.name || data.tabName)) || "");
+  if (!username && !account) return null;
+  try {
+    return upsertAccountProfile_({
+      username: username,
+      account: account,
+      displayName: String((data && (data.displayName || data.personName || data.name)) || "").trim(),
+      personName: String((data && (data.personName || data.displayName || data.name)) || "").trim(),
+      whatsapp: String((data && data.whatsapp) || "").trim(),
+      fiverrId: String((data && data.fiverrId) || "").trim(),
+      fiverrGigUrl: String((data && data.fiverrGigUrl) || "").trim(),
+      paymentStatus: String((data && data.paymentStatus) || "").trim()
+    });
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
 }
 
 function writeProfileTab_(ss, profile) {
