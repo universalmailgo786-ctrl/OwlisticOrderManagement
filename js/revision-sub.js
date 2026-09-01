@@ -605,7 +605,6 @@
     }
     const label = subLabel(revisionNumber || round.number || 0, sub.subRevisionNumber);
     if (!window.confirm("Delete " + label + "? This will also remove it from the Google Sheet.")) return;
-    const snapshot = JSON.parse(JSON.stringify(order));
     if (typeof store.deleteSubRevision !== "function") {
       if (deps.showToast) deps.showToast("Delete is not available. Refresh the page.");
       return;
@@ -617,16 +616,15 @@
     }
     store.upsertOrder(order);
     syncOrderInBackground(order, { syncOptions: { skipUploads: true } }).then(function (result) {
-      if (result && result.ok === false) {
-        rollbackOrder(snapshot);
-        if (deps.showToast) deps.showToast("Deleted locally, but Google Sheet sync failed. Try again.");
-        return;
-      }
       const fresh = store.getOrder(activeOrderId);
       if (fresh) {
         renderDrawer(fresh);
-        if (deps.render) deps.render();
       }
+      if (result && result.ok === false) {
+        if (deps.showToast) deps.showToast(label + " deleted here, but Google Sheet sync failed. Refresh later or try again.");
+        return;
+      }
+      if (deps.render) deps.render();
       if (deps.showToast) deps.showToast(label + " deleted.");
     });
   }

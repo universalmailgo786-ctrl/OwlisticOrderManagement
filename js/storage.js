@@ -449,7 +449,7 @@
       return Object.assign({}, round, {
         completed: "completed" in extra ? Boolean(extra.completed) : round.completed,
         updatedAt: extra.updatedAt || round.updatedAt || round.createdAt,
-        subRevisions: normalizeSubRevisions(overlaySubRevisions(localSubs, sheetSubs), round.number)
+        subRevisions: normalizeSubRevisions(overlaySubRevisions(localSubs, sheetSubs, "incoming"), round.number)
       });
     });
     return order;
@@ -1049,14 +1049,41 @@
       });
       return Object.assign({}, round, {
         messages: messages,
-        subRevisions: overlaySubRevisions(round.subRevisions || [], (match && match.subRevisions) || [])
+        subRevisions: overlaySubRevisions(
+          round.subRevisions || [],
+          (match && match.subRevisions) || [],
+          match && (Date.parse(match.updatedAt || match.createdAt || "") || 0) >= (Date.parse(round.updatedAt || round.createdAt || "") || 0)
+            ? "incoming"
+            : "union"
+        )
       });
     });
   }
 
-  function overlaySubRevisions(previous, incoming) {
+  function overlaySubRevisions(previous, incoming, mode) {
     const prev = normalizeSubRevisions(previous || [], 0);
     const next = normalizeSubRevisions(incoming || [], 0);
+    if (mode === "incoming") {
+      if (!next.length) return [];
+      const map = {};
+      prev.forEach(function (item) { map[item.id] = item; });
+      return next.map(function (item) {
+        const existing = map[item.id];
+        if (!existing) return item;
+        const existingUpdated = Date.parse(existing.updatedAt || existing.createdAt || "") || 0;
+        const incomingUpdated = Date.parse(item.updatedAt || item.createdAt || "") || 0;
+        const winner = incomingUpdated >= existingUpdated ? item : existing;
+        const loser = winner === item ? existing : item;
+        return Object.assign({}, loser, winner, {
+          attachments: (winner.attachments && winner.attachments.length) ? winner.attachments : loser.attachments
+        });
+      }).sort(function (a, b) {
+        return (a.subRevisionNumber || 0) - (b.subRevisionNumber || 0);
+      });
+    }
+    if (mode === "previous") {
+      return prev;
+    }
     if (!prev.length) return next;
     if (!next.length) return prev;
     const map = {};
@@ -1660,7 +1687,12 @@
     const previousIsLocal = (previous.revisions || []).some(function (item) {
       return String(item.id || "").indexOf("rev_sheet") !== 0;
     });
-    if (previous.revisions && previous.revisions.length && (!incomingRevisions.length || (looksLikeSheetStub && previousIsLocal))) {
+    const incomingUpdated = Date.parse(order.updatedAt || "") || 0;
+    const previousUpdated = Date.parse(previous.updatedAt || "") || 0;
+    if (previousUpdated > incomingUpdated && previous.revisions && previous.revisions.length) {
+      order.revisions = normalizeRevisions(previous.revisions);
+      order.revisionsData = previous.revisionsData || buildRevisionsData(order);
+    } else if (previous.revisions && previous.revisions.length && (!incomingRevisions.length || (looksLikeSheetStub && previousIsLocal))) {
       order.revisions = overlayRevisionFiles(previous.revisions, incomingRevisions);
     } else if (previous.revisions && previous.revisions.length) {
       order.revisions = overlayRevisionFiles(order.revisions, previous.revisions);
@@ -1690,9 +1722,9 @@
     }
     const incomingStatus = parseBoardStatus(order.boardStatus) || parseBoardStatus(order.overallStatus);
     const previousStatus = parseBoardStatus(previous.boardStatus) || parseBoardStatus(previous.overallStatus);
-    const incomingUpdated = Date.parse(order.updatedAt || "") || 0;
-    const previousUpdated = Date.parse(previous.updatedAt || "") || 0;
-    if (previousUpdated > incomingUpdated && previousStatus) {
+    const incomingUpdatedAt = Date.parse(order.updatedAt || "") || 0;
+    const previousUpdatedAt = Date.parse(previous.updatedAt || "") || 0;
+    if (previousUpdatedAt > incomingUpdatedAt && previousStatus) {
       order.boardStatus = previous.boardStatus || previousStatus;
       order.overallStatus = previous.overallStatus || boardStatusLabel(previousStatus);
     } else {
