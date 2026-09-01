@@ -184,29 +184,19 @@
     if (prevMonth) monthEl.value = prevMonth;
   }
 
-  function paymentPill(record) {
-    const paid = pricing.normalizeHanifPaymentStatus(record.hanifPaymentStatus) === "paid";
-    return '<span class="hanif-payment-pill ' + (paid ? "is-paid" : "is-unpaid") + '">' +
-      (paid ? "Paid" : "Unpaid") + "</span>";
-  }
-
   function paymentControls(record) {
     const paid = pricing.normalizeHanifPaymentStatus(record.hanifPaymentStatus) === "paid";
+    const id = escapeHtml(record.orderId);
     const warning = sheet.costChangedAfterPaid(record)
-      ? '<p class="hanif-cost-warning">Cost changed after payment was marked Paid.</p>'
+      ? '<span class="hanif-cost-warning" title="Hanif cost changed after this was marked Paid">Cost changed</span>'
       : "";
-    return warning +
-      '<div class="hanif-payment-edit">' +
-        '<select class="hanif-payment-select" data-hanif-payment="' + escapeHtml(record.orderId) + '">' +
-          '<option value="unpaid"' + (paid ? "" : " selected") + ">Unpaid</option>" +
-          '<option value="paid"' + (paid ? " selected" : "") + ">Paid</option>" +
-        "</select>" +
-        '<label class="hanif-paid-amount">Paid Amount' +
-          '<input type="number" min="0" step="0.01" class="hanif-paid-input" data-hanif-paid="' + escapeHtml(record.orderId) + '" value="' +
-          escapeHtml(String(paid ? pricing.parseMoney(record.paidAmount || record.hanifCost) : 0)) + '" />' +
-        "</label>" +
-        '<span class="hanif-paid-at">' + (paid && record.paidAt ? formatDateTime(record.paidAt) : "—") + "</span>" +
-      "</div>";
+    return '<div class="hanif-payment-cell">' +
+      '<div class="hanif-payment-toggle" role="group" aria-label="Hanif payment status">' +
+        '<button type="button" class="hanif-pay-btn' + (paid ? "" : " is-active is-unpaid") + '" data-hanif-payment="' + id + '" data-status="unpaid">Unpaid</button>' +
+        '<button type="button" class="hanif-pay-btn' + (paid ? " is-active is-paid" : "") + '" data-hanif-payment="' + id + '" data-status="paid">Paid</button>' +
+      "</div>" +
+      warning +
+    "</div>";
   }
 
   function renderSummary(list) {
@@ -236,7 +226,7 @@
     renderSummary(list);
     if (count) count.textContent = list.length + (list.length === 1 ? " record" : " records");
     if (!list.length) {
-      body.innerHTML = '<tr><td colspan="14"><div class="empty-state"><strong>No Hanif costing records</strong><p>Try another filter or add orders with an order value.</p></div></td></tr>';
+      body.innerHTML = '<tr><td colspan="13"><div class="empty-state"><strong>No Hanif costing records</strong><p>Try another filter or wait for orders to sync.</p></div></td></tr>';
       return;
     }
     body.innerHTML = list.map(function (record) {
@@ -256,8 +246,7 @@
         '<td class="hanif-money">' + formatUsd(record.returnAfterFee) + "</td>" +
         '<td class="hanif-money is-loss">' + formatUsd(record.totalLoss) + "</td>" +
         "<td>" + escapeHtml(record.orderStatus || "—") + "</td>" +
-        "<td>" + paymentPill(record) + paymentControls(record) + "</td>" +
-        '<td class="hanif-money">' + formatUsd(record.paidAmount) + "</td>" +
+        "<td>" + paymentControls(record) + "</td>" +
       "</tr>";
     }).join("");
   }
@@ -274,17 +263,19 @@
     });
   }
 
-  function applyPaymentChange(orderId, status, paidAmount) {
+  function applyPaymentChange(orderId, status) {
     const record = findRecord(orderId);
     if (!record) return;
     const nextStatus = pricing.normalizeHanifPaymentStatus(status);
+    if (pricing.normalizeHanifPaymentStatus(record.hanifPaymentStatus) === nextStatus) return;
     const wasPaid = pricing.normalizeHanifPaymentStatus(record.hanifPaymentStatus) === "paid";
     record.hanifPaymentStatus = nextStatus;
     if (nextStatus === "paid") {
-      record.paidAmount = pricing.parseMoney(paidAmount || record.hanifCost);
+      record.paidAmount = pricing.parseMoney(record.hanifCost);
       if (!wasPaid || !record.paidAt) record.paidAt = new Date().toISOString();
     } else {
       record.paidAmount = 0;
+      record.paidAt = "";
     }
     savePayment(record).then(renderTable);
   }
@@ -341,7 +332,7 @@
     const rows = [[
       "Order ID", "Created Date", "Account", "Client Name", "Business Name",
       "Order Value", "Hanif Cost", "Fiverr Fee", "Return After Fee", "Total Loss",
-      "Order Status", "Payment Status", "Paid Amount", "Paid Date"
+      "Order Status", "Hanif Payment", "Paid Date"
     ]];
     list.forEach(function (record) {
       rows.push([
@@ -357,7 +348,6 @@
         record.totalLoss,
         record.orderStatus,
         record.hanifPaymentStatus,
-        record.paidAmount,
         record.paidAt
       ]);
     });
@@ -386,22 +376,13 @@
     if (exportBtn) exportBtn.addEventListener("click", exportCsv);
     const body = el("hanif-records-body");
     if (!body) return;
+    body.addEventListener("click", function (event) {
+      const payBtn = event.target.closest("[data-hanif-payment]");
+      if (payBtn) {
+        applyPaymentChange(payBtn.getAttribute("data-hanif-payment"), payBtn.getAttribute("data-status"));
+      }
+    });
     body.addEventListener("change", function (event) {
-      const paymentSelect = event.target.closest("[data-hanif-payment]");
-      if (paymentSelect) {
-        const orderId = paymentSelect.getAttribute("data-hanif-payment");
-        const paidInput = body.querySelector('[data-hanif-paid="' + orderId + '"]');
-        applyPaymentChange(orderId, paymentSelect.value, paidInput ? paidInput.value : "");
-        return;
-      }
-      const paidInput = event.target.closest("[data-hanif-paid]");
-      if (paidInput) {
-        const orderId = paidInput.getAttribute("data-hanif-paid");
-        const paymentSelect = body.querySelector('[data-hanif-payment="' + orderId + '"]');
-        if (paymentSelect && paymentSelect.value === "paid") {
-          applyPaymentChange(orderId, "paid", paidInput.value);
-        }
-      }
       const checkbox = event.target.closest("[data-hanif-select]");
       if (checkbox) {
         const orderId = checkbox.getAttribute("data-hanif-select");
