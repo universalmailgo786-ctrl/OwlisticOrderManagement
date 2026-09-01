@@ -173,6 +173,39 @@
     "</article>";
   }
 
+  function subsForRound(round) {
+    const parentNumber = Number(round && round.number) || 0;
+    return (round && round.subRevisions || []).filter(function (sub) {
+      if (!sub) return false;
+      const parent = Number(sub.parentRevisionNumber || parentNumber);
+      return parent === parentNumber;
+    });
+  }
+
+  function renderSubSectionsForStep(step, order) {
+    const canEdit = deps.canEditOrder(order);
+    const isCurrent = step.state === "current";
+    const partition = partitionSubs(subsForRound(step.round));
+    let subHtml = "";
+    if (isCurrent) {
+      subHtml += renderCurrentSubSection(partition.current, step, order);
+      if (canEdit) {
+        subHtml += '<button type="button" class="ghost-btn rev-sub-add-btn" data-add-sub-revision="' + deps.escapeHtml(step.round.id) + '">+ Add Sub Revision</button>';
+      }
+      subHtml += renderCompletedSubSection(partition.completed, step, order);
+      return subHtml;
+    }
+    return renderHistoricalSubs(step, order);
+  }
+
+  function renderRevisionBlock(step, order) {
+    const activeClass = step.number === activeRevisionNumber ? " is-active-block" : "";
+    return '<section class="rev-sub-block' + activeClass + '" data-rev-block="' + step.number + '">' +
+      renderMainCard(step, order) +
+      '<div class="rev-sub-tree">' + renderSubSectionsForStep(step, order) + "</div>" +
+    "</section>";
+  }
+
   function renderCurrentSubSection(current, step, order) {
     if (!current) return "";
     return '<div class="rev-sub-section">' +
@@ -194,7 +227,7 @@
   }
 
   function renderHistoricalSubs(step, order) {
-    const subs = (step.round.subRevisions || []).slice().sort(function (a, b) {
+    const subs = subsForRound(step.round).slice().sort(function (a, b) {
       return (b.subRevisionNumber || 0) - (a.subRevisionNumber || 0);
     });
     if (!subs.length) return "";
@@ -211,31 +244,18 @@
   function renderDrawerBody(order, steps) {
     const selected = steps.find(function (step) { return step.number === activeRevisionNumber; }) || steps[0];
     if (!selected) return '<p class="live-chat-empty">No revisions on this order yet.</p>';
-    const canEdit = deps.canEditOrder(order);
-    const isCurrent = selected.state === "current";
-    const partition = partitionSubs(selected.round.subRevisions || []);
-    let subHtml = "";
-    if (isCurrent) {
-      subHtml += renderCurrentSubSection(partition.current, selected, order);
-      if (canEdit) {
-        subHtml += '<button type="button" class="ghost-btn rev-sub-add-btn" data-add-sub-revision="' + deps.escapeHtml(selected.round.id) + '">+ Add Sub Revision</button>';
-      }
-      subHtml += renderCompletedSubSection(partition.completed, selected, order);
-    } else {
-      subHtml += renderHistoricalSubs(selected, order);
-    }
+    if (!activeRevisionNumber && selected) activeRevisionNumber = selected.number;
     return '<div class="rev-sub-tabs" role="tablist">' +
       steps.map(function (step) {
-        const active = step.number === selected.number ? " is-active" : "";
+        const active = step.number === activeRevisionNumber ? " is-active" : "";
         return '<button type="button" class="rev-sub-tab' + active + '" data-rev-tab="' + step.number + '" role="tab">' +
           "Revision " + step.number +
           '<span class="rev-sub-tab-badge is-' + step.state + '">' + mainStatusChipLabel(step) + "</span>" +
         "</button>";
       }).join("") +
     "</div>" +
-    '<div class="rev-sub-stack">' +
-      renderMainCard(selected, order) +
-      '<div class="rev-sub-tree">' + subHtml + "</div>" +
+    '<div class="rev-sub-stack rev-sub-all-stack">' +
+      steps.map(function (step) { return renderRevisionBlock(step, order); }).join("") +
     "</div>";
   }
 
@@ -576,7 +596,11 @@
       if (tab) {
         activeRevisionNumber = Number(tab.getAttribute("data-rev-tab")) || 0;
         const order = store.getOrder(activeOrderId);
-        if (order) renderDrawer(order);
+        if (order) {
+          renderDrawer(order);
+          const block = document.querySelector('[data-rev-block="' + activeRevisionNumber + '"]');
+          if (block) block.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
         return;
       }
       const addBtn = event.target.closest("[data-add-sub-revision]");

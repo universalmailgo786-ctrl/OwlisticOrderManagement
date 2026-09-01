@@ -436,10 +436,15 @@
     order.revisions = normalizeRevisions(order.revisions || []).map(function (round) {
       const extra = map[round.id] || map["n:" + round.number] || null;
       if (!extra) return round;
+      const mergedSubs = (extra.subRevisions || round.subRevisions || []).filter(function (sub) {
+        if (!sub) return false;
+        const parent = Number(sub.parentRevisionNumber || round.number);
+        return parent === Number(round.number);
+      });
       return Object.assign({}, round, {
         completed: "completed" in extra ? Boolean(extra.completed) : round.completed,
         updatedAt: extra.updatedAt || round.updatedAt || round.createdAt,
-        subRevisions: normalizeSubRevisions(extra.subRevisions || round.subRevisions || [], round.number)
+        subRevisions: normalizeSubRevisions(mergedSubs.length ? mergedSubs : (round.subRevisions || []), round.number)
       });
     });
     return order;

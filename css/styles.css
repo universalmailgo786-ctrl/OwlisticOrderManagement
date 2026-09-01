@@ -3584,6 +3584,25 @@ body.modal-open {
   gap: 12px;
 }
 
+.rev-sub-all-stack {
+  gap: 20px;
+}
+
+.rev-sub-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rev-sub-block:not(.is-active-block) .rev-sub-main-card,
+.rev-sub-block:not(.is-active-block) .rev-sub-tree {
+  opacity: 0.92;
+}
+
+.rev-sub-block.is-active-block .rev-sub-main-card {
+  box-shadow: 0 0 0 3px rgba(34, 56, 41, 0.08);
+}
+
 .rev-sub-tree {
   display: flex;
   flex-direction: column;
