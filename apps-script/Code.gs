@@ -129,6 +129,9 @@ function doGet(e) {
   if (action === "listHanifRecords") {
     return json_(listHanifRecords_(params));
   }
+  if (action === "setupHanifSheet") {
+    return json_(setupHanifSheet_(params));
+  }
   return json_({ ok: true, service: "Ashar Orders Management System", sheetColumns: HEADERS.length });
 }
 
@@ -245,8 +248,13 @@ function formatWorkbook_(ss) {
   var sheets = ss.getSheets();
   var names = [];
   for (var i = 0; i < sheets.length; i++) {
+    var sheetName = sheets[i].getName();
+    if (skipOrderWorkbookSheet_(sheetName)) {
+      names.push(sheetName);
+      continue;
+    }
     styleSheet_(ss, sheets[i]);
-    names.push(sheets[i].getName());
+    names.push(sheetName);
   }
   return { ok: true, action: "formatWorkbook", tabs: names };
 }
@@ -280,7 +288,7 @@ function listOrders_(params) {
   for (var i = 0; i < sheets.length; i++) {
     var sheet = sheets[i];
     var name = sheet.getName();
-    if (name === "Users") continue;
+    if (skipOrderWorkbookSheet_(name)) continue;
     if (!sheetMatchesAny_(name, allowedTabs)) continue;
     if (String(sheet.getRange(1, 1).getValue() || "").trim() !== "Order ID") continue;
     ensureScheduleColumns_(sheet);
@@ -1064,7 +1072,7 @@ function nextGlobalOrderId_(ss) {
   for (s = 0; s < sheets.length; s++) {
     var sheet = sheets[s];
     var name = sheet.getName();
-    if (name === "Users") continue;
+    if (skipOrderWorkbookSheet_(name)) continue;
     if (String(sheet.getRange(1, 1).getValue() || "").trim() !== "Order ID") continue;
     var last = sheet.getLastRow();
     if (last < 2) continue;
@@ -1095,7 +1103,7 @@ function findDuplicateRecord_(ss, row, tabName, excludeOrderId) {
   for (var s = 0; s < sheets.length; s++) {
     var sheet = sheets[s];
     var name = sheet.getName();
-    if (name === "Users") continue;
+    if (skipOrderWorkbookSheet_(name)) continue;
     if (tabName && !sheetMatchesAccount_(name, tabName)) continue;
     if (String(sheet.getRange(1, 1).getValue() || "").trim() !== "Order ID") continue;
     var last = sheet.getLastRow();
@@ -1383,7 +1391,7 @@ function ensureAllScheduleColumns_(ss) {
   var i;
   for (i = 0; i < sheets.length; i++) {
     var sheet = sheets[i];
-    if (sheet.getName() === "Users") continue;
+    if (sheet.getName() === "Users" || isHanifSheet_(sheet.getName())) continue;
     if (String(sheet.getRange(1, 1).getValue() || "").trim() !== "Order ID") continue;
     ensureScheduleColumns_(sheet);
     tabs.push(sheet.getName());
@@ -1590,7 +1598,7 @@ function sheetForAccount_(ss, account) {
   var prefix = null;
   for (var i = 0; i < sheets.length; i++) {
     var name = sheets[i].getName();
-    if (name === "Users") continue;
+    if (skipOrderWorkbookSheet_(name)) continue;
     if (accountKey_(name) === accountKey_(account)) {
       exact = sheets[i];
       break;
@@ -2458,7 +2466,9 @@ function setupAccounts() {
   return setupAccountProfiles_();
 }
 
-var HANIF_SPREADSHEET_ID = "1f2OI55mabLnrnhwFmqkyXnQXVXLjrqI38NNGu0pmOQY";
+var HANIF_SHEET_NAME = "Hanif Costing";
+var LEGACY_HANIF_SPREADSHEET_ID = "1f2OI55mabLnrnhwFmqkyXnQXVXLjrqI38NNGu0pmOQY";
+var HANIF_MIGRATED_PROP = "HANIF_TAB_MIGRATED";
 var HANIF_HEADERS = [
   "Unique Order ID",
   "Created Date",
@@ -2480,6 +2490,14 @@ var HANIF_HEADERS = [
   "Last Updated"
 ];
 
+function isHanifSheet_(name) {
+  return String(name || "").trim().toLowerCase() === HANIF_SHEET_NAME.toLowerCase();
+}
+
+function skipOrderWorkbookSheet_(name) {
+  return String(name || "").trim() === "Users" || isHanifSheet_(name);
+}
+
 function requireSuperAdmin_(data) {
   if (isRestrictedUser_(data)) {
     return { ok: false, error: "Only Super Admin can access Hanif Costing." };
@@ -2487,23 +2505,73 @@ function requireSuperAdmin_(data) {
   return null;
 }
 
-function hanifSpreadsheet_() {
-  return SpreadsheetApp.openById(HANIF_SPREADSHEET_ID);
+function hanifSheet_(ss) {
+  if (!ss) ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(HANIF_SHEET_NAME);
+  if (!sheet) sheet = ss.insertSheet(HANIF_SHEET_NAME);
+  ensureHanifSheet_(sheet);
+  maybeMigrateLegacyHanifSheet_(sheet);
+  return sheet;
 }
 
-function hanifSheet_() {
-  var ss = hanifSpreadsheet_();
-  var sheet = ss.getSheets()[0];
-  ensureHanifSheet_(sheet);
-  return sheet;
+function setupHanifSheet_(params) {
+  var denied = requireSuperAdmin_(params);
+  if (denied) return denied;
+  var sheet = hanifSheet_(SpreadsheetApp.openById(SPREADSHEET_ID));
+  return {
+    ok: true,
+    action: "setupHanifSheet",
+    sheetName: sheet.getName(),
+    columns: HANIF_HEADERS.length,
+    rows: Math.max(sheet.getLastRow() - 1, 0)
+  };
 }
 
 function ensureHanifSheet_(sheet) {
   if (!sheet) sheet = hanifSheet_();
   sheet.getRange(1, 1, 1, HANIF_HEADERS.length).setValues([HANIF_HEADERS]);
+  sheet.setFrozenRows(1);
+  sheet.setFrozenColumns(1);
+  try {
+    sheet.setHiddenGridlines(true);
+  } catch (err) {}
+  var header = sheet.getRange(1, 1, 1, HANIF_HEADERS.length);
+  header.setFontFamily("Google Sans");
+  header.setFontWeight("bold");
+  header.setFontSize(10);
+  header.setFontColor("#ffffff");
+  header.setBackground(FOREST);
+  header.setHorizontalAlignment("center");
+  header.setVerticalAlignment("middle");
+  header.setWrap(true);
+  sheet.setRowHeight(1, 46);
   var widths = [120, 120, 100, 180, 150, 150, 110, 110, 100, 150, 110, 90, 120, 150, 140, 120, 150, 150];
   var i;
   for (i = 0; i < widths.length; i++) sheet.setColumnWidth(i + 1, widths[i]);
+}
+
+function maybeMigrateLegacyHanifSheet_(sheet) {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty(HANIF_MIGRATED_PROP) === "1") return;
+  if (sheet.getLastRow() >= 2) {
+    props.setProperty(HANIF_MIGRATED_PROP, "1");
+    return;
+  }
+  try {
+    var legacy = SpreadsheetApp.openById(LEGACY_HANIF_SPREADSHEET_ID);
+    var legacySheet = legacy.getSheets()[0];
+    var legacyLast = legacySheet.getLastRow();
+    if (legacyLast >= 2) {
+      var values = legacySheet.getRange(2, 1, legacyLast - 1, HANIF_HEADERS.length).getValues();
+      var rows = [];
+      var i;
+      for (i = 0; i < values.length; i++) {
+        if (String(values[i][0] || "").trim()) rows.push(values[i]);
+      }
+      if (rows.length) sheet.getRange(2, 1, rows.length, HANIF_HEADERS.length).setValues(rows);
+    }
+  } catch (err) {}
+  props.setProperty(HANIF_MIGRATED_PROP, "1");
 }
 
 function hanifNumber_(value) {
