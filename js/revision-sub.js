@@ -242,20 +242,23 @@
   }
 
   function renderDrawerBody(order, steps) {
-    const selected = steps.find(function (step) { return step.number === activeRevisionNumber; }) || steps[0];
+    const currentStep = steps.find(function (step) { return step.state === "current"; }) || null;
+    if (!activeRevisionNumber && currentStep) activeRevisionNumber = currentStep.number;
+    const selected = steps.find(function (step) { return step.number === activeRevisionNumber; }) ||
+      currentStep ||
+      steps[steps.length - 1];
     if (!selected) return '<p class="live-chat-empty">No revisions on this order yet.</p>';
-    if (!activeRevisionNumber && selected) activeRevisionNumber = selected.number;
     return '<div class="rev-sub-tabs" role="tablist">' +
       steps.map(function (step) {
-        const active = step.number === activeRevisionNumber ? " is-active" : "";
+        const active = step.number === selected.number ? " is-active" : "";
         return '<button type="button" class="rev-sub-tab' + active + '" data-rev-tab="' + step.number + '" role="tab">' +
           "Revision " + step.number +
           '<span class="rev-sub-tab-badge is-' + step.state + '">' + mainStatusChipLabel(step) + "</span>" +
         "</button>";
       }).join("") +
     "</div>" +
-    '<div class="rev-sub-stack rev-sub-all-stack">' +
-      steps.map(function (step) { return renderRevisionBlock(step, order); }).join("") +
+    '<div class="rev-sub-stack">' +
+      renderRevisionBlock(selected, order) +
     "</div>";
   }
 
@@ -601,11 +604,7 @@
       if (tab) {
         activeRevisionNumber = Number(tab.getAttribute("data-rev-tab")) || 0;
         const order = store.getOrder(activeOrderId);
-        if (order) {
-          renderDrawer(order);
-          const block = document.querySelector('[data-rev-block="' + activeRevisionNumber + '"]');
-          if (block) block.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
+        if (order) renderDrawer(order);
         return;
       }
       const addBtn = event.target.closest("[data-add-sub-revision]");
