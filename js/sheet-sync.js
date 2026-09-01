@@ -3,9 +3,11 @@
   const SPREADSHEET_ID = "1nZuMePQFJA9lCQ6C48d9MUC3Fwn00ao6Kilap5rbFfQ";
   const ACCOUNTS_SHEET_ID = "19hiEAgjNTcfDwEU1NsKJ2as90thmaIMzAXpHBWXKRrc";
   const LEGACY_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbytKcOqCtxVNXpPWmD6hQ7inpefem-MIf2ThOQEmCqKKgDLQVk1IlHIfIXstFznpwwM/exec";
-  const NEXT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx-XBKX5WcoBIHgHss2uQ_RXRodMLoCO8qjBbDql32XO2RdfFSsBphKBUHgkf0SUdC7/exec";
-  const DEFAULT_WEB_APP_URL = LEGACY_WEB_APP_URL;
+  const NEXT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwlWvSU1b8SJ42_3xdrrl1w7GhUiezAjBN85w9MvD-uFc-jg8m6OGJdGJRLm-fLIdl2/exec";
+  const DEFAULT_WEB_APP_URL = NEXT_WEB_APP_URL;
   const STALE_WEB_APP_URLS = [
+    LEGACY_WEB_APP_URL,
+    "https://script.google.com/macros/s/AKfycbx-XBKX5WcoBIHgHss2uQ_RXRodMLoCO8qjBbDql32XO2RdfFSsBphKBUHgkf0SUdC7/exec",
     "https://script.google.com/macros/s/AKfycbxc9UyzIdr73zkuzHH-8R2tWxOmr3Rc88ApfrVA2RnKObATD3J8PSCJuwtF9FahSmIq/exec",
     "https://script.google.com/macros/s/AKfycbyLFBc8mr5QL_Hz3wpIfelJfyv_SbDUfbu1plPvzmUbClJzXF_MuHbPijOwzl9wPLuELw/exec",
     "https://script.google.com/macros/s/AKfycbw_Mkm_RUYAHrep4XFmwN4R7hSg8BYT7Pkz1-Kdhco-mIUTzFpI7qdTPFvi_BBcheDN/exec",
