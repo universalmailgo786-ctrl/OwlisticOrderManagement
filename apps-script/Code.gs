@@ -1955,8 +1955,7 @@ function json_(obj) {
 
 function setupUsersSheet_() {
   var ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
-  var sheet = ss.getSheets()[0];
-  if (sheet.getName() === "Sheet1") sheet.setName("Users");
+  var sheet = usersLoginSheet_(ss);
   var cols = USER_HEADERS.length;
   var first = String(sheet.getRange(1, 1).getValue() || "").trim().toLowerCase();
   if (first !== "username") {
@@ -2016,13 +2015,13 @@ function login_(username, password) {
     return { ok: false, error: "Enter username and password." };
   }
   var ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
-  var sheet = ss.getSheets()[0];
+  var sheet = usersLoginSheet_(ss);
   var last = Math.max(sheet.getLastRow(), 1);
   if (last < 2) {
     return { ok: false, error: "No users in the login sheet yet." };
   }
   var cols = Math.max(sheet.getLastColumn(), USER_HEADERS.length);
-  var values = sheet.getRange(2, 1, last - 1, cols).getValues();
+  var values = sheet.getRange(2, 1, last, cols).getValues();
   for (var i = 0; i < values.length; i++) {
     var row = padUserRow_(values[i]);
     var name = String(row[0] || "").trim().toLowerCase();
@@ -2068,9 +2067,32 @@ function login_(username, password) {
   return { ok: false, error: "Wrong username or password." };
 }
 
+function usersLoginSheet_(ss) {
+  if (!ss) ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
+  var sheets = ss.getSheets();
+  var i;
+  for (i = 0; i < sheets.length; i++) {
+    var name = String(sheets[i].getName() || "").trim().toLowerCase();
+    if (name === "users") return sheets[i];
+  }
+  var first = sheets[0];
+  if (first) {
+    var header = String(first.getRange(1, 1).getValue() || "").trim().toLowerCase();
+    if (header === "username") {
+      if (first.getName() !== "Users") first.setName("Users");
+      return first;
+    }
+    if (/^(sheet1|untitled)$/i.test(String(first.getName() || "").trim())) {
+      first.setName("Users");
+      return first;
+    }
+  }
+  return ss.insertSheet("Users", 0);
+}
+
 function setupUsersSheetIfNeeded_() {
   var ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
-  var sheet = ss.getSheets()[0];
+  var sheet = usersLoginSheet_(ss);
   var first = String(sheet.getRange(1, 1).getValue() || "").trim().toLowerCase();
   if (first !== "username") setupUsersSheet_();
   ensureUserProfileColumns_(sheet);
@@ -2078,7 +2100,7 @@ function setupUsersSheetIfNeeded_() {
 
 function ensureUserProfileColumns_(sheet) {
   if (!sheet) {
-    sheet = SpreadsheetApp.openById(USERS_SPREADSHEET_ID).getSheets()[0];
+    sheet = usersLoginSheet_(SpreadsheetApp.openById(USERS_SPREADSHEET_ID));
   }
   sheet.getRange(1, 1, 1, USER_HEADERS.length).setValues([USER_HEADERS]);
   var widths = [140, 140, 120, 160, 180, 90, 160, 150, 220, 130];
@@ -2113,13 +2135,13 @@ function getUserProfile_(params) {
     return { ok: false, action: "getUserProfile", error: "Username is required." };
   }
   var ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
-  var sheet = ss.getSheets()[0];
+  var sheet = usersLoginSheet_(ss);
   var last = Math.max(sheet.getLastRow(), 1);
   if (last < 2) {
     return { ok: false, action: "getUserProfile", error: "No users in the login sheet yet." };
   }
   var cols = Math.max(sheet.getLastColumn(), USER_HEADERS.length);
-  var values = sheet.getRange(2, 1, last - 1, cols).getValues();
+  var values = sheet.getRange(2, 1, last, cols).getValues();
   var i;
   for (i = 0; i < values.length; i++) {
     var row = padUserRow_(values[i]);
@@ -2185,11 +2207,11 @@ function upsertUser_(data) {
     return { ok: false, error: "Account is required for a user login." };
   }
   var ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
-  var sheet = ss.getSheets()[0];
+  var sheet = usersLoginSheet_(ss);
   var last = Math.max(sheet.getLastRow(), 1);
   var found = 0;
   if (last >= 2) {
-    var names = sheet.getRange(2, 1, last - 1, 1).getValues();
+    var names = sheet.getRange(2, 1, last, 1).getValues();
     var wanted = username.toLowerCase();
     for (var i = 0; i < names.length; i++) {
       if (String(names[i][0] || "").trim().toLowerCase() === wanted) {

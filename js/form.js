@@ -1738,6 +1738,16 @@
     }
     const username = document.getElementById("account-username").value.trim();
     const password = document.getElementById("account-username-password").value;
+    const editId = document.getElementById("account-edit-id").value;
+    const existingAccount = editId ? store.getAccount(editId) : null;
+    if (username && !password) {
+      const hadUsername = existingAccount && existingAccount.username;
+      if (!hadUsername || String(existingAccount.username).trim().toLowerCase() !== username.toLowerCase()) {
+        showToast("Set a login password for this new user.");
+        document.getElementById("account-username-password").focus();
+        return;
+      }
+    }
     const payload = {
       id: document.getElementById("account-edit-id").value || undefined,
       name: name,
@@ -1767,11 +1777,15 @@
         paymentStatus: saved.paymentStatus || ""
       }).then(function (result) {
         if (result && result.ok === false) {
-          showToast(result.error || "Account saved. Login user was not stored.");
+          showToast(result.error || "Account saved locally, but login user was not stored in the sheet.");
+          return loadAccountsFromSheet();
+        }
+        if (result && result.created) {
+          showToast("Account and login user saved to the sheet.");
         }
         return loadAccountsFromSheet();
       }).catch(function () {
-        showToast("Account saved. Login user was not stored.");
+        showToast("Account saved locally, but login user was not stored in the sheet.");
       });
     } else {
       loadAccountsFromSheet();

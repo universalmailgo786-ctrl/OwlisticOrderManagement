@@ -911,7 +911,7 @@
     if (!user || !user.username) {
       return Promise.resolve({ skipped: true, empty: true });
     }
-    return postPayload({
+    return postJsonPayload({
       action: "upsertUser",
       username: String(user.username || "").trim(),
       password: String(user.password || ""),
