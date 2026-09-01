@@ -499,7 +499,8 @@
   }
 
   function addSubRevision(order, revisionId, payload, revisionNumber) {
-    return touchRevisionRound(order, revisionId, function (round) {
+    var added = false;
+    var ok = touchRevisionRound(order, revisionId, function (round) {
       const subs = normalizeSubRevisions(round.subRevisions || [], round.number);
       const newId = (payload && payload.id) || uid("sub");
       if (subs.some(function (item) { return String(item.id) === String(newId); })) {
@@ -522,7 +523,9 @@
         attachments: attachments
       });
       round.subRevisions = subs;
+      added = true;
     }, revisionNumber);
+    return ok && added;
   }
 
   function updateSubRevision(order, revisionId, subRevisionId, payload, revisionNumber) {

@@ -344,6 +344,9 @@
     }
     renderModalPreview();
     setModalStatus("");
+    const saveBtn = el("rev-sub-save");
+    if (saveBtn) saveBtn.disabled = false;
+    modalSaving = false;
     modal.hidden = false;
     document.body.classList.add("modal-open");
   }
@@ -352,6 +355,8 @@
     modalState = null;
     pendingFiles = [];
     modalSaving = false;
+    const saveBtn = el("rev-sub-save");
+    if (saveBtn) saveBtn.disabled = false;
     const modal = el("rev-sub-modal");
     if (modal) modal.hidden = true;
     setModalStatus("");
