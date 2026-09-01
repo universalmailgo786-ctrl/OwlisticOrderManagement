@@ -47,7 +47,8 @@
     "Placement Status",
     "Scheduled By",
     "Schedule Updated At",
-    "Placed At"
+    "Placed At",
+    "Revisions Data"
   ];
   const EXPECTED_SHEET_COLUMNS = HEADERS.length;
   const CAPS_CACHE_KEY = "owlistic.sheetCapabilities";
@@ -178,6 +179,15 @@
     ((order && order.revisions) || []).forEach(function (round) {
       ((round && round.messages) || []).forEach(function (message) {
         add(message && message.files);
+      });
+      ((round && round.subRevisions) || []).forEach(function (sub) {
+        ((sub && sub.attachments) || []).forEach(function (att) {
+          if (!att) return;
+          if (att.imageUrl || att.url) return;
+          if (!att.name) att.name = att.fileName || "image";
+          if (!att.type) att.type = att.mimeType || "";
+          add(att);
+        });
       });
     });
     return files;
@@ -384,7 +394,8 @@
       live.placementStatus || callStore("placementStatusOf", "placementStatusOf", live) || "Unscheduled",
       live.scheduledBy || "",
       live.scheduleUpdatedAt || "",
-      live.placedAt || ""
+      live.placedAt || "",
+      callStore("buildRevisionsData", "buildRevisionsData", live) || ""
     ];
   }
 
@@ -1093,15 +1104,23 @@
   function stampUploadedFile(file, result) {
     if (!file || !result || !result.url) return file;
     file.url = result.url;
-    if (result.id) file.driveId = result.id;
-    if (result.previewUrl) file.previewUrl = result.previewUrl;
+    file.imageUrl = result.url;
+    if (result.previewUrl) {
+      file.previewUrl = result.previewUrl;
+      file.thumbnailUrl = result.previewUrl;
+    }
+    if (result.id) {
+      file.driveId = result.id;
+      file.driveFileId = result.id;
+    }
+    if (!file.uploadedAt) file.uploadedAt = new Date().toISOString();
     if (file.id) sentFileIds[file.id] = true;
     return file;
   }
 
   function filesNeedingDrive(order) {
     return orderUploadFiles(order).filter(function (file) {
-      return file && !file.url && (file.id || file.pendingBlob);
+      return file && !(file.url || file.imageUrl) && (file.id || file.pendingBlob);
     });
   }
 

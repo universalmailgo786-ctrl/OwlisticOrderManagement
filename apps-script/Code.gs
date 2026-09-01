@@ -54,7 +54,8 @@ var HEADERS = [
   "Placement Status",
   "Scheduled By",
   "Schedule Updated At",
-  "Placed At"
+  "Placed At",
+  "Revisions Data"
 ];
 
 var FOREST = "#223829";
@@ -70,7 +71,7 @@ var GOLD = "#f4ead0";
 var GOLD_TEXT = "#6b5420";
 var SKY = "#e4eef4";
 var SKY_TEXT = "#1f4f66";
-var COL_WIDTHS = [118, 122, 108, 140, 128, 150, 150, 150, 108, 132, 140, 150, 240, 220, 220, 140, 200, 200, 92, 260, 140, 220, 220, 168, 168, 160, 160, 132, 140, 140, 168, 150];
+var COL_WIDTHS = [118, 122, 108, 140, 128, 150, 150, 150, 108, 132, 140, 150, 240, 220, 220, 140, 200, 200, 92, 260, 140, 220, 220, 168, 168, 160, 160, 132, 140, 140, 168, 150, 220];
 var FILES_FOLDER_ID = "1feJrckxiyjHzCe9Rz_w-L879BWjpExdB";
 var TAB_COLORS = ["#9baa86", "#c4a574", "#4e91b1", "#e98a5f", "#708b55", "#8b6b4a"];
 var FORMAT_ROWS = 300;
@@ -972,6 +973,7 @@ function orderFromRow_(row, tabName, files) {
     placedAt: String(row[31] || "").trim(),
     placementHold: /on hold/i.test(String(row[28] || "")),
     placementPlaced: /^placed$/i.test(String(row[28] || "").trim()) && String(row[31] || "").trim() !== "",
+    revisionsData: String(row[32] || "").trim(),
     createdAt: isoFrom_(row[1], row[2]),
     updatedAt: isoFrom_(row[3], row[4]) || isoFrom_(row[1], row[2])
   };

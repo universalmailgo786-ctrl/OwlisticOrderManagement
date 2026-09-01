@@ -3512,6 +3512,250 @@ body.modal-open {
   font-style: italic;
 }
 
+.rev-latest-subcount,
+.rev-latest-meta {
+  margin: 0 0 6px;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.rev-history-panel {
+  width: min(520px, 100%);
+}
+
+.rev-sub-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.rev-sub-tab {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 108px;
+  padding: 10px 12px;
+  border: 1px solid #eadfd4;
+  border-radius: 14px;
+  background: #fff;
+  color: #223829;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.rev-sub-tab.is-active {
+  border-color: #223829;
+  box-shadow: 0 0 0 3px rgba(34, 56, 41, 0.08);
+}
+
+.rev-sub-tab-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.rev-sub-tab-badge.is-completed {
+  background: rgba(34, 56, 41, 0.1);
+  color: #223829;
+}
+
+.rev-sub-tab-badge.is-current,
+.rev-sub-tab-badge.is-open {
+  background: rgba(186, 109, 100, 0.14);
+  color: #9a4f47;
+}
+
+.rev-sub-tab-badge.is-pending {
+  background: rgba(97, 100, 102, 0.12);
+  color: #616466;
+}
+
+.rev-sub-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rev-sub-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-left: 12px;
+  padding-left: 14px;
+  border-left: 2px dashed #d6cfc7;
+}
+
+.rev-sub-main-card,
+.rev-sub-card {
+  padding: 12px 14px;
+  border: 1px solid #eadfd4;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.rev-sub-card.is-completed {
+  opacity: 0.96;
+}
+
+.rev-sub-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.rev-sub-card-head h4 {
+  margin: 0;
+  color: #9a4f47;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.rev-sub-main-card .rev-sub-card-head h4 {
+  color: #223829;
+}
+
+.rev-sub-line {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.rev-sub-line span {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rev-sub-meta {
+  margin: 8px 0 0;
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
+.rev-sub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.rev-sub-add-btn {
+  align-self: flex-start;
+}
+
+.rev-sub-complete-btn {
+  padding: 7px 12px;
+  font-size: 12px;
+}
+
+.rev-sub-done {
+  color: #223829;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rev-sub-footer {
+  position: sticky;
+  bottom: 0;
+  margin-top: 16px;
+  padding-top: 12px;
+  background: linear-gradient(180deg, rgba(247, 243, 238, 0), rgba(247, 243, 238, 0.96) 24%);
+}
+
+.rev-sub-footer .submit-btn {
+  width: 100%;
+}
+
+.rev-sub-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+
+.rev-sub-thumb {
+  padding: 0;
+  border: 1px solid #eadfd4;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.rev-sub-thumb img {
+  display: block;
+  width: 52px;
+  height: 52px;
+  object-fit: cover;
+}
+
+.rev-sub-modal-panel textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+}
+
+.rev-sub-modal-status {
+  margin: 0 0 10px;
+  color: #9a4f47;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rev-sub-file-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.rev-sub-file-chip {
+  position: relative;
+  margin: 0;
+  width: 64px;
+  height: 64px;
+  border: 1px solid #eadfd4;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.rev-sub-file-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rev-sub-file-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(34, 56, 41, 0.82);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
 .chat-drawer[hidden],
 .chat-lightbox[hidden] {
   display: none;

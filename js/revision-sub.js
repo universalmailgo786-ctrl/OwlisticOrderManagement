@@ -1,0 +1,426 @@
+(function (global) {
+  const store = global.OwlisticStore;
+  let deps = {};
+  let activeOrderId = "";
+  let activeRevisionNumber = 0;
+  let modalState = null;
+  let pendingFiles = [];
+
+  function el(id) { return document.getElementById(id); }
+
+  function formatStamp(value) {
+    if (!value) return "—";
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return String(value);
+    return date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) +
+      ", " + date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+
+  function subLabel(parentNumber, subNumber) {
+    return "R" + parentNumber + " - Sub Revision " + subNumber;
+  }
+
+  function mainStatusLabel(step) {
+    if (!step) return "Pending";
+    if (step.state === "completed") {
+      const stats = store && store.subRevisionStats ? store.subRevisionStats(step.round) : { total: 0, completed: 0 };
+      if (stats.total) return stats.completed + "/" + stats.total + " Completed";
+      return "Completed";
+    }
+    if (step.state === "current") return "Open";
+    return "Pending";
+  }
+
+  function subStatusLabel(sub) {
+    if (!sub) return "Pending";
+    if (sub.completed || sub.status === "completed") return "Completed";
+    if (sub.status === "active") return "Active";
+    return "Pending";
+  }
+
+  function attachmentThumb(att) {
+    const src = att.thumbnailUrl || att.imageUrl || att.url || att.previewUrl || "";
+    const name = att.fileName || att.name || "image";
+    if (!src && att.id) {
+      return '<button type="button" class="rev-sub-thumb" data-preview-attachment="' + deps.escapeHtml(att.id) + '" title="' + deps.escapeHtml(name) + '">' +
+        '<img src="" alt="' + deps.escapeHtml(name) + '" class="chat-thumb" data-local-file-id="' + deps.escapeHtml(att.id) + '" loading="lazy" />' +
+      "</button>";
+    }
+    if (!src) return "";
+    return '<button type="button" class="rev-sub-thumb" data-preview-attachment="' + deps.escapeHtml(att.id || name) + '" title="' + deps.escapeHtml(name) + '">' +
+      '<img src="' + deps.escapeHtml(src) + '" alt="' + deps.escapeHtml(name) + '" class="chat-thumb" loading="lazy" />' +
+    "</button>";
+  }
+
+  function attachmentsRow(attachments, revisionId, subId) {
+    const list = (attachments || []).filter(function (att) {
+      return att && (att.imageUrl || att.url || att.thumbnailUrl || att.id);
+    });
+    if (!list.length) return "";
+    return '<div class="rev-sub-attachments" data-revision-id="' + deps.escapeHtml(revisionId) + '" data-sub-id="' + deps.escapeHtml(subId) + '">' +
+      list.map(function (att) { return attachmentThumb(att); }).join("") +
+    "</div>";
+  }
+
+  function mainRevisionText(round, role) {
+    const wanted = role === "seller" ? "seller" : "buyer";
+    const messages = (round && round.messages) || [];
+    for (let i = 0; i < messages.length; i += 1) {
+      const msg = messages[i];
+      const msgRole = msg && (msg.role === "seller" || msg.kind === "seller") ? "seller" : "buyer";
+      if (msgRole === wanted && String(msg.text || "").trim()) return String(msg.text).trim();
+    }
+    return "";
+  }
+
+  function renderMainCard(step, order) {
+    const round = step.round;
+    const buyer = mainRevisionText(round, "buyer");
+    const seller = mainRevisionText(round, "seller");
+  const canEdit = deps.canEditOrder(order);
+    return '<article class="rev-sub-main-card">' +
+      '<header class="rev-sub-card-head">' +
+        "<h4>Main Revision " + step.number + "</h4>" +
+        '<span class="rev-history-status is-' + step.state + '">' + mainStatusLabel(step) + "</span>" +
+      "</header>" +
+      '<p class="rev-sub-line"><span>Buyer Revision</span> ' + deps.escapeHtml(buyer || "—") + "</p>" +
+      '<p class="rev-sub-line"><span>Seller Reply</span> ' + deps.escapeHtml(seller || "—") + "</p>" +
+      '<p class="rev-sub-meta">Updated: ' + deps.escapeHtml(formatStamp(round.updatedAt || round.createdAt)) + "</p>" +
+      (canEdit
+        ? '<button type="button" class="ghost-btn rev-sub-edit-btn" data-edit-main-revision="' + deps.escapeHtml(round.id) + '">Edit</button>'
+        : "") +
+    "</article>";
+  }
+
+  function renderSubCard(sub, step, order) {
+    const canEdit = deps.canEditOrder(order);
+    const completeBtn = canEdit && !sub.completed
+      ? '<button type="button" class="submit-btn rev-sub-complete-btn" data-complete-sub="' + deps.escapeHtml(step.round.id) + '" data-sub-id="' + deps.escapeHtml(sub.id) + '">✓ Complete Sub Revision</button>'
+      : (sub.completed ? '<span class="rev-sub-done">✓ Completed</span>' : "");
+    return '<article class="rev-sub-card' + (sub.completed ? " is-completed" : "") + '">' +
+      '<header class="rev-sub-card-head">' +
+        "<h4>" + deps.escapeHtml(subLabel(step.number, sub.subRevisionNumber)) + "</h4>" +
+        '<span class="rev-history-status is-' + (sub.completed ? "completed" : (sub.status === "active" ? "current" : "pending")) + '">' + subStatusLabel(sub) + "</span>" +
+      "</header>" +
+      '<p class="rev-sub-line"><span>Buyer Revision</span> ' + deps.escapeHtml(sub.buyerRevision || "—") + "</p>" +
+      '<p class="rev-sub-line"><span>Seller Reply</span> ' + deps.escapeHtml(sub.sellerReply || "—") + "</p>" +
+      attachmentsRow(sub.attachments, step.round.id, sub.id) +
+      '<p class="rev-sub-meta">Updated: ' + deps.escapeHtml(formatStamp(sub.updatedAt || sub.createdAt)) + "</p>" +
+      '<div class="rev-sub-actions">' +
+        (canEdit ? '<button type="button" class="ghost-btn rev-sub-edit-btn" data-edit-sub-revision="' + deps.escapeHtml(step.round.id) + '" data-sub-id="' + deps.escapeHtml(sub.id) + '">Edit</button>' : "") +
+        completeBtn +
+      "</div>" +
+    "</article>";
+  }
+
+  function renderDrawerBody(order, steps) {
+    const selected = steps.find(function (step) { return step.number === activeRevisionNumber; }) || steps[0];
+    if (!selected) return '<p class="live-chat-empty">No revisions on this order yet.</p>';
+    const subs = (selected.round.subRevisions || []).slice();
+    const canEdit = deps.canEditOrder(order);
+    const isCurrent = selected.state === "current";
+    return '<div class="rev-sub-tabs" role="tablist">' +
+      steps.map(function (step) {
+        const active = step.number === selected.number ? " is-active" : "";
+        return '<button type="button" class="rev-sub-tab' + active + '" data-rev-tab="' + step.number + '" role="tab">' +
+          "Revision " + step.number +
+          '<span class="rev-sub-tab-badge is-' + step.state + '">' + mainStatusLabel(step) + "</span>" +
+        "</button>";
+      }).join("") +
+    "</div>" +
+    '<div class="rev-sub-stack">' +
+      renderMainCard(selected, order) +
+      '<div class="rev-sub-tree">' +
+        subs.map(function (sub) { return renderSubCard(sub, selected, order); }).join("") +
+      "</div>" +
+      (canEdit && isCurrent
+        ? '<button type="button" class="ghost-btn rev-sub-add-btn" data-add-sub-revision="' + deps.escapeHtml(selected.round.id) + '">+ Add Sub Revision</button>'
+        : "") +
+    "</div>" +
+  (canEdit && isCurrent
+    ? '<footer class="rev-sub-footer"><button type="button" class="submit-btn" data-mark-revision="' + deps.escapeHtml(order.id) + '" data-revision-id="' + deps.escapeHtml(selected.round.id) + '" data-revision-number="' + selected.number + '">✓ Mark Revision ' + selected.number + " Completed</button></footer>"
+    : "");
+  }
+
+  function renderDrawer(order) {
+    const drawer = el("rev-history-drawer");
+    const body = el("rev-history-body");
+    const title = el("rev-history-title");
+    const sub = el("rev-history-sub");
+    if (!order || !drawer || !body) return;
+    const steps = deps.revisionStepStates(deps.revisionRounds(order));
+    if (!activeRevisionNumber && steps.length) {
+      const current = steps.find(function (step) { return step.state === "current"; });
+      activeRevisionNumber = current ? current.number : steps[steps.length - 1].number;
+    }
+    if (title) title.textContent = order.id;
+    if (sub) {
+      const who = order.clientName || order.name || "Client";
+      sub.textContent = who + " · " + steps.length + (steps.length === 1 ? " revision" : " revisions");
+    }
+    body.innerHTML = renderDrawerBody(order, steps);
+    drawer.hidden = false;
+    document.body.classList.add("modal-open");
+    if (deps.hydrateLocalThumbs) deps.hydrateLocalThumbs(body);
+  }
+
+  function openDrawer(orderId) {
+    activeOrderId = orderId;
+    const order = store.getOrder(orderId);
+    if (!order) return;
+    activeRevisionNumber = 0;
+    deps.closeChat && deps.closeChat();
+    deps.closeCompletePop && deps.closeCompletePop();
+    renderDrawer(order);
+  }
+
+  function closeDrawer() {
+    activeOrderId = "";
+    const drawer = el("rev-history-drawer");
+    if (drawer) drawer.hidden = true;
+    if (!el("chat-drawer") || el("chat-drawer").hidden) document.body.classList.remove("modal-open");
+  }
+
+  function setModalStatus(text) {
+    const node = el("rev-sub-modal-status");
+    if (node) {
+      node.textContent = text || "";
+      node.hidden = !text;
+    }
+  }
+
+  function renderModalPreview() {
+    const preview = el("rev-sub-file-preview");
+    if (!preview) return;
+    preview.innerHTML = pendingFiles.map(function (file, index) {
+      const src = file.previewUrl || file.url || (file.pendingBlob ? URL.createObjectURL(file.pendingBlob) : "");
+      return '<figure class="rev-sub-file-chip">' +
+        (src ? '<img src="' + deps.escapeHtml(src) + '" alt="" />' : "<span>IMG</span>") +
+        '<button type="button" class="rev-sub-file-remove" data-remove-pending="' + index + '" aria-label="Remove image">×</button>' +
+      "</figure>";
+    }).join("");
+  }
+
+  function openModal(mode, order, revisionId, subRevision) {
+    modalState = { mode: mode, orderId: order.id, revisionId: revisionId, subId: subRevision && subRevision.id };
+    pendingFiles = (subRevision && subRevision.attachments ? subRevision.attachments.slice() : []);
+    const modal = el("rev-sub-modal");
+    const title = el("rev-sub-modal-title");
+    const buyer = el("rev-sub-buyer");
+    const seller = el("rev-sub-seller");
+    const status = el("rev-sub-status");
+    if (!modal) return;
+    if (title) title.textContent = mode === "edit-main" ? "Edit Main Revision" : (mode === "edit-sub" ? "Edit Sub Revision" : "Add Sub Revision");
+    if (buyer) buyer.value = mode === "edit-main" ? mainRevisionText(deps.findRevisionRound(order, revisionId), "buyer") : (subRevision && subRevision.buyerRevision) || "";
+    if (seller) seller.value = mode === "edit-main" ? mainRevisionText(deps.findRevisionRound(order, revisionId), "seller") : (subRevision && subRevision.sellerReply) || "";
+    if (status) status.value = (subRevision && subRevision.status) || "active";
+    status && status.closest("label") && (status.closest("label").hidden = mode === "edit-main");
+    renderModalPreview();
+    setModalStatus("");
+    modal.hidden = false;
+    document.body.classList.add("modal-open");
+  }
+
+  function closeModal() {
+    modalState = null;
+    pendingFiles = [];
+    const modal = el("rev-sub-modal");
+    if (modal) modal.hidden = true;
+    setModalStatus("");
+    if (el("rev-history-drawer") && !el("rev-history-drawer").hidden) return;
+    if (el("chat-drawer") && !el("chat-drawer").hidden) return;
+    document.body.classList.remove("modal-open");
+  }
+
+  function persistOrder(order, options) {
+    order.updatedAt = new Date().toISOString();
+    store.upsertOrder(order);
+    const sheet = global.OwlisticSheet;
+    const label = (options && options.loadingLabel) || "Saving revision...";
+    setModalStatus(label);
+    const finish = function (ok, message) {
+      setModalStatus("");
+      if (message && deps.showToast) deps.showToast(message);
+      if (ok) {
+        closeModal();
+        const fresh = store.getOrder(order.id) || order;
+        renderDrawer(fresh);
+        if (deps.render) deps.render();
+      }
+    };
+    if (!sheet || typeof sheet.sync !== "function") {
+      finish(true, options && options.successMessage);
+      return Promise.resolve();
+    }
+    return sheet.sync(order, options && options.syncOptions).then(function () {
+      finish(true, options && options.successMessage);
+    }).catch(function () {
+      finish(false, "Could not save to Google Sheet. Try again.");
+    });
+  }
+
+  function buildAttachmentsFromPending() {
+    return pendingFiles.map(function (file) {
+      return {
+        id: file.id || ("att_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6)),
+        driveFileId: file.driveFileId || file.driveId || "",
+        fileName: file.fileName || file.name || "image",
+        mimeType: file.mimeType || file.type || "",
+        fileSize: file.fileSize || file.size || 0,
+        imageUrl: file.imageUrl || file.url || "",
+        thumbnailUrl: file.thumbnailUrl || file.previewUrl || file.imageUrl || "",
+        uploadedAt: file.uploadedAt || ""
+      };
+    });
+  }
+
+  function saveModal() {
+    if (!modalState) return;
+    const order = store.getOrder(modalState.orderId);
+    if (!order) return;
+    const buyer = (el("rev-sub-buyer") && el("rev-sub-buyer").value) || "";
+    const seller = (el("rev-sub-seller") && el("rev-sub-seller").value) || "";
+    const status = (el("rev-sub-status") && el("rev-sub-status").value) || "active";
+    const saveBtn = el("rev-sub-save");
+    const attachments = buildAttachmentsFromPending();
+    const needsUpload = attachments.some(function (att) {
+      return att.id && !att.imageUrl;
+    });
+    if (saveBtn) saveBtn.disabled = true;
+    if (needsUpload) setModalStatus("Uploading images...");
+    if (modalState.mode === "edit-main") {
+      store.setMainRevisionMessages(order, modalState.revisionId, buyer, seller);
+    } else if (modalState.mode === "edit-sub") {
+      store.updateSubRevision(order, modalState.revisionId, modalState.subId, {
+        buyerRevision: buyer,
+        sellerReply: seller,
+        status: status,
+        attachments: attachments
+      });
+    } else {
+      store.addSubRevision(order, modalState.revisionId, {
+        buyerRevision: buyer,
+        sellerReply: seller,
+        status: status,
+        attachments: attachments
+      });
+    }
+    persistOrder(order, {
+      successMessage: "Revision saved.",
+      loadingLabel: needsUpload ? "Saving revision..." : "Saving revision...",
+      syncOptions: { skipUploads: false }
+    }).finally(function () {
+      if (saveBtn) saveBtn.disabled = false;
+    });
+  }
+
+  function completeSubRevision(revisionId, subId) {
+    const order = store.getOrder(activeOrderId);
+    if (!order) return;
+    store.setSubRevisionCompleted(order, revisionId, subId, true);
+    persistOrder(order, { successMessage: "Sub revision completed.", syncOptions: { skipUploads: true } });
+  }
+
+  function bindEvents() {
+    document.addEventListener("click", function (event) {
+      const tab = event.target.closest("[data-rev-tab]");
+      if (tab) {
+        activeRevisionNumber = Number(tab.getAttribute("data-rev-tab")) || 0;
+        const order = store.getOrder(activeOrderId);
+        if (order) renderDrawer(order);
+        return;
+      }
+      const addBtn = event.target.closest("[data-add-sub-revision]");
+      if (addBtn) {
+        const order = store.getOrder(activeOrderId);
+        if (!order) return;
+        openModal("add-sub", order, addBtn.getAttribute("data-add-sub-revision"));
+        return;
+      }
+      const editMain = event.target.closest("[data-edit-main-revision]");
+      if (editMain) {
+        const order = store.getOrder(activeOrderId);
+        if (!order) return;
+        openModal("edit-main", order, editMain.getAttribute("data-edit-main-revision"));
+        return;
+      }
+      const editSub = event.target.closest("[data-edit-sub-revision]");
+      if (editSub) {
+        const order = store.getOrder(activeOrderId);
+        const revisionId = editSub.getAttribute("data-edit-sub-revision");
+        const subId = editSub.getAttribute("data-sub-id");
+        const round = store.findRevisionRound(order, revisionId);
+        const sub = store.findSubRevisionRound(order, revisionId, subId);
+        if (!order || !round || !sub) return;
+        openModal("edit-sub", order, revisionId, sub);
+        return;
+      }
+      const completeSub = event.target.closest("[data-complete-sub]");
+      if (completeSub) {
+        completeSubRevision(completeSub.getAttribute("data-complete-sub"), completeSub.getAttribute("data-sub-id"));
+        return;
+      }
+      const preview = event.target.closest("[data-preview-attachment]");
+      if (preview && deps.openLightbox) {
+        const card = preview.closest(".rev-sub-attachments");
+        const order = store.getOrder(activeOrderId);
+        const round = order && store.findRevisionRound(order, card && card.getAttribute("data-revision-id"));
+        const sub = round && store.findSubRevisionRound(order, round.id, card && card.getAttribute("data-sub-id"));
+        const att = (sub && sub.attachments || []).find(function (item) {
+          return String(item.id) === preview.getAttribute("data-preview-attachment");
+        });
+        if (att) deps.openLightbox({ name: att.fileName, url: att.imageUrl, previewUrl: att.thumbnailUrl });
+        return;
+      }
+      const remove = event.target.closest("[data-remove-pending]");
+      if (remove) {
+        const index = Number(remove.getAttribute("data-remove-pending"));
+        pendingFiles.splice(index, 1);
+        renderModalPreview();
+      }
+      const closeModalBtn = event.target.closest("[data-close-rev-sub-modal]");
+      if (closeModalBtn) closeModal();
+    });
+
+    const fileInput = el("rev-sub-files");
+    if (fileInput) {
+      fileInput.addEventListener("change", function () {
+        if (!fileInput.files || !fileInput.files.length) return;
+        store.saveFileBlobs(fileInput.files).then(function (saved) {
+          (saved || []).forEach(function (file) {
+            pendingFiles.push({
+              id: file.id,
+              fileName: file.name,
+              mimeType: file.type,
+              fileSize: file.size,
+              pendingBlob: file.pendingBlob
+            });
+          });
+          renderModalPreview();
+          fileInput.value = "";
+        });
+      });
+    }
+    const saveBtn = el("rev-sub-save");
+    if (saveBtn) saveBtn.addEventListener("click", saveModal);
+    const cancelBtn = el("rev-sub-cancel");
+    if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") return;
+      const modal = el("rev-sub-modal");
+      if (modal && !modal.hidden) closeModal();
+    });
+  }
+
+  function mount(options) {
+    deps = options || {};
+    bindEvents();
+  }
+
+  global.OwlisticRevisionSub = {
+    mount: mount,
+    openDrawer: openDrawer,
+    closeDrawer: closeDrawer
+  };
+})(window);

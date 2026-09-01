@@ -638,13 +638,21 @@
     const number = current ? current.number : (focus.number || rounds.length);
     const buyer = latestRoleSnippet(focus, "buyer");
     const seller = latestRoleSnippet(focus, "seller");
+    const stats = typeof store.subRevisionStats === "function" ? store.subRevisionStats(focus) : { total: 0, completed: 0 };
+    const subSummary = stats.total
+      ? '<p class="rev-latest-line rev-latest-subcount"><span>Sub revisions</span> ' + stats.completed + "/" + stats.total + " completed</p>"
+      : "";
+    const latestAt = focus.updatedAt || focus.createdAt || "";
+    const latestLine = latestAt
+      ? '<p class="rev-latest-meta">Latest update: ' + escapeHtml(shortStamp(latestAt)) + "</p>"
+      : "";
     return '<div class="rev-latest">' +
-      '<span class="rev-latest-badge' + (allDone ? " is-done" : "") + '">' +
-        (allDone ? "All revisions completed" : "Current: Revision " + number) +
-      "</span>" +
+      '<span class="rev-latest-badge' + (allDone ? " is-done" : "") + '">Revision ' + number + "</span>" +
+      subSummary +
       '<p class="rev-latest-line"><span>Buyer revision</span> ' + escapeHtml(buyer || "—") + "</p>" +
       '<p class="rev-latest-line"><span>Seller reply</span> ' + escapeHtml(seller || "—") + "</p>" +
-      '<button type="button" class="rev-history-link" data-open-rev-history="' + escapeHtml(order.id) + '">View revision history</button>' +
+      latestLine +
+      '<button type="button" class="rev-history-link" data-open-rev-history="' + escapeHtml(order.id) + '">View full revision history</button>' +
     "</div>";
   }
 
@@ -1303,7 +1311,11 @@
   }
 
   function closeRevHistory() {
-    if (revHistoryDrawer) revHistoryDrawer.hidden = true;
+    if (window.OwlisticRevisionSub && typeof window.OwlisticRevisionSub.closeDrawer === "function") {
+      window.OwlisticRevisionSub.closeDrawer();
+    } else if (revHistoryDrawer) {
+      revHistoryDrawer.hidden = true;
+    }
     if (!chatDrawer || chatDrawer.hidden) document.body.classList.remove("modal-open");
     closeLightbox();
   }
@@ -1328,6 +1340,10 @@
   }
 
   function openRevHistory(orderId) {
+    if (window.OwlisticRevisionSub && typeof window.OwlisticRevisionSub.openDrawer === "function") {
+      window.OwlisticRevisionSub.openDrawer(orderId);
+      return;
+    }
     const order = store.getOrder(orderId);
     if (!order || !revHistoryDrawer || !revHistoryBody) return;
     closeChat();
@@ -1417,6 +1433,9 @@
     render();
     const finish = function () {
       render();
+      if (revHistoryDrawer && !revHistoryDrawer.hidden && order && window.OwlisticRevisionSub) {
+        window.OwlisticRevisionSub.openDrawer(order.id);
+      }
       if (!completed) {
         showToast("Revision marked open");
       } else if (remaining) {
@@ -2146,6 +2165,25 @@
     });
   });
   bindSheetUpgradeBanner();
+  if (window.OwlisticRevisionSub) {
+    window.OwlisticRevisionSub.mount({
+      escapeHtml: escapeHtml,
+      render: render,
+      showToast: showToast,
+      canEditOrder: function (order) {
+        return typeof auth.canSeeOrder === "function" ? auth.canSeeOrder(order) : true;
+      },
+      revisionRounds: revisionRounds,
+      revisionStepStates: revisionStepStates,
+      findRevisionRound: function (order, id) {
+        return typeof store.findRevisionRound === "function" ? store.findRevisionRound(order, id) : null;
+      },
+      closeChat: closeChat,
+      closeCompletePop: closeCompletePop,
+      hydrateLocalThumbs: hydrateLocalThumbs,
+      openLightbox: openLightbox
+    });
+  }
   if (auth.isSuperAdmin() && window.OwlisticHanifCosting) {
     window.OwlisticHanifCosting.mount({ showToast: showToast });
   }

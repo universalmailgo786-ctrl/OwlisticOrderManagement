@@ -229,8 +229,10 @@
           id: item.id,
           number: item.number || rounds.length + 1,
           createdAt: item.createdAt,
+          updatedAt: item.updatedAt || item.createdAt,
           completed: Boolean(item.completed),
-          messages: item.messages.slice()
+          messages: item.messages.slice(),
+          subRevisions: normalizeSubRevisions(item.subRevisions || [], item.number || rounds.length + 1)
         });
         return;
       }
@@ -250,8 +252,10 @@
           id: item.id,
           number: item.number || rounds.length + 1,
           createdAt: item.createdAt,
+          updatedAt: item.updatedAt || item.createdAt,
           completed: Boolean(item.completed),
-          messages: messages
+          messages: messages,
+          subRevisions: normalizeSubRevisions(item.subRevisions || [], item.number || rounds.length + 1)
         });
         return;
       }
@@ -283,6 +287,211 @@
     return message && (message.role === "seller" || message.kind === "seller") ? "seller" : "buyer";
   }
 
+  function normalizeSubStatus(value, completed) {
+    const raw = String(value || "").trim().toLowerCase();
+    if (completed || raw === "completed") return "completed";
+    if (raw === "active" || raw === "open" || raw === "current") return "active";
+    return "pending";
+  }
+
+  function normalizeSubRevisionAttachment(file) {
+    if (!file) return null;
+    const url = String(file.imageUrl || file.url || file.previewUrl || "").trim();
+    const driveId = String(file.driveFileId || file.driveId || driveFileId(url) || "").trim();
+    return {
+      id: file.id || uid("att"),
+      driveFileId: driveId,
+      fileName: String(file.fileName || file.name || "image").trim(),
+      mimeType: String(file.mimeType || file.type || "").trim(),
+      fileSize: Number(file.fileSize || file.size || 0) || 0,
+      imageUrl: url,
+      thumbnailUrl: String(file.thumbnailUrl || file.previewUrl || url).trim(),
+      uploadedAt: file.uploadedAt || ""
+    };
+  }
+
+  function normalizeSubRevisions(list, parentNumber) {
+    const out = [];
+    (list || []).forEach(function (item, index) {
+      if (!item) return;
+      const completed = Boolean(item.completed || String(item.status || "").toLowerCase() === "completed");
+      const status = normalizeSubStatus(item.status, completed);
+      const attachments = (item.attachments || item.files || []).map(normalizeSubRevisionAttachment).filter(Boolean);
+      out.push({
+        id: item.id || uid("sub"),
+        subRevisionNumber: Number(item.subRevisionNumber || index + 1),
+        parentRevisionNumber: Number(parentNumber || item.parentRevisionNumber || 0),
+        buyerRevision: String(item.buyerRevision || item.buyerMessage || "").trim(),
+        sellerReply: String(item.sellerReply || item.sellerMessage || "").trim(),
+        status: status,
+        completed: completed,
+        createdAt: item.createdAt || nowIso(),
+        updatedAt: item.updatedAt || item.createdAt || nowIso(),
+        attachments: attachments
+      });
+    });
+    out.sort(function (a, b) { return (a.subRevisionNumber || 0) - (b.subRevisionNumber || 0); });
+    out.forEach(function (item, index) {
+      item.subRevisionNumber = index + 1;
+    });
+    return out;
+  }
+
+  function subRevisionStats(round) {
+    const subs = normalizeSubRevisions((round && round.subRevisions) || [], round && round.number);
+    const completed = subs.filter(function (item) { return item.completed; }).length;
+    return { total: subs.length, completed: completed };
+  }
+
+  function buildRevisionsData(order) {
+    const rounds = normalizeRevisions((order && order.revisions) || []);
+    return JSON.stringify({
+      v: 1,
+      revisions: rounds.map(function (round) {
+        return {
+          id: round.id,
+          number: round.number,
+          updatedAt: round.updatedAt || round.createdAt || "",
+          subRevisions: (round.subRevisions || []).map(function (sub) {
+            return {
+              id: sub.id,
+              subRevisionNumber: sub.subRevisionNumber,
+              parentRevisionNumber: round.number,
+              buyerRevision: sub.buyerRevision,
+              sellerReply: sub.sellerReply,
+              status: sub.status,
+              completed: sub.completed,
+              createdAt: sub.createdAt,
+              updatedAt: sub.updatedAt,
+              attachments: (sub.attachments || []).map(function (att) {
+                return {
+                  id: att.id,
+                  driveFileId: att.driveFileId || "",
+                  fileName: att.fileName || "",
+                  mimeType: att.mimeType || "",
+                  fileSize: att.fileSize || 0,
+                  imageUrl: att.imageUrl || "",
+                  thumbnailUrl: att.thumbnailUrl || "",
+                  uploadedAt: att.uploadedAt || ""
+                };
+              })
+            };
+          })
+        };
+      })
+    });
+  }
+
+  function applyRevisionsData(order, raw) {
+    if (!order || !raw) return order;
+    let parsed = null;
+    try { parsed = JSON.parse(String(raw)); } catch (err) { return order; }
+    if (!parsed || !parsed.revisions) return order;
+    const map = {};
+    parsed.revisions.forEach(function (item) {
+      if (!item) return;
+      if (item.id) map[item.id] = item;
+      if (item.number) map["n:" + item.number] = item;
+    });
+    order.revisions = normalizeRevisions(order.revisions || []).map(function (round) {
+      const extra = map[round.id] || map["n:" + round.number] || null;
+      if (!extra) return round;
+      return Object.assign({}, round, {
+        updatedAt: extra.updatedAt || round.updatedAt || round.createdAt,
+        subRevisions: normalizeSubRevisions(extra.subRevisions || round.subRevisions || [], round.number)
+      });
+    });
+    return order;
+  }
+
+  function findRevisionRound(order, revisionId) {
+    return normalizeRevisions((order && order.revisions) || []).find(function (round) {
+      return String(round.id) === String(revisionId);
+    }) || null;
+  }
+
+  function findSubRevisionRound(order, revisionId, subRevisionId) {
+    const round = findRevisionRound(order, revisionId);
+    if (!round) return null;
+    return (round.subRevisions || []).find(function (sub) {
+      return String(sub.id) === String(subRevisionId);
+    }) || null;
+  }
+
+  function touchRevisionRound(order, revisionId, mutator) {
+    if (!order) return order;
+    order.revisions = normalizeRevisions(order.revisions || []);
+    const index = order.revisions.findIndex(function (round) {
+      return String(round.id) === String(revisionId);
+    });
+    if (index < 0) return order;
+    const next = Object.assign({}, order.revisions[index]);
+    mutator(next);
+    next.updatedAt = nowIso();
+    next.subRevisions = normalizeSubRevisions(next.subRevisions || [], next.number);
+    order.revisions[index] = next;
+    order.updatedAt = nowIso();
+    return order;
+  }
+
+  function setMainRevisionMessages(order, revisionId, buyerText, sellerText) {
+    return touchRevisionRound(order, revisionId, function (round) {
+      const messages = (round.messages || []).slice();
+      const buyer = messages.find(function (msg) { return revisionMessageRole(msg) === "buyer"; });
+      const seller = messages.find(function (msg) { return revisionMessageRole(msg) === "seller"; });
+      if (buyer) buyer.text = String(buyerText || "").trim();
+      else messages.unshift({ id: uid("msg"), role: "buyer", createdAt: nowIso(), text: String(buyerText || "").trim(), files: [] });
+      if (seller) seller.text = String(sellerText || "").trim();
+      else messages.push({ id: uid("msg"), role: "seller", createdAt: nowIso(), text: String(sellerText || "").trim(), files: [] });
+      round.messages = messages;
+    });
+  }
+
+  function addSubRevision(order, revisionId, payload) {
+    return touchRevisionRound(order, revisionId, function (round) {
+      const subs = normalizeSubRevisions(round.subRevisions || [], round.number);
+      const attachments = ((payload && payload.attachments) || []).map(normalizeSubRevisionAttachment).filter(Boolean);
+      subs.push({
+        id: (payload && payload.id) || uid("sub"),
+        subRevisionNumber: subs.length + 1,
+        parentRevisionNumber: round.number,
+        buyerRevision: String((payload && payload.buyerRevision) || "").trim(),
+        sellerReply: String((payload && payload.sellerReply) || "").trim(),
+        status: normalizeSubStatus((payload && payload.status) || "active", false),
+        completed: false,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+        attachments: attachments
+      });
+      round.subRevisions = subs;
+    });
+  }
+
+  function updateSubRevision(order, revisionId, subRevisionId, payload) {
+    return touchRevisionRound(order, revisionId, function (round) {
+      round.subRevisions = normalizeSubRevisions(round.subRevisions || [], round.number).map(function (sub) {
+        if (String(sub.id) !== String(subRevisionId)) return sub;
+        const next = Object.assign({}, sub, payload || {});
+        if (payload && "buyerRevision" in payload) next.buyerRevision = String(payload.buyerRevision || "").trim();
+        if (payload && "sellerReply" in payload) next.sellerReply = String(payload.sellerReply || "").trim();
+        if (payload && payload.attachments) {
+          next.attachments = payload.attachments.map(normalizeSubRevisionAttachment).filter(Boolean);
+        }
+        next.completed = Boolean(payload && "completed" in payload ? payload.completed : next.completed);
+        next.status = normalizeSubStatus(payload && payload.status, next.completed);
+        next.updatedAt = nowIso();
+        return next;
+      });
+    });
+  }
+
+  function setSubRevisionCompleted(order, revisionId, subRevisionId, completed) {
+    return updateSubRevision(order, revisionId, subRevisionId, {
+      completed: Boolean(completed),
+      status: completed ? "completed" : "active"
+    });
+  }
+
   function pairRevisionMessages(messages) {
     const pairs = [];
     let pendingBuyer = null;
@@ -302,6 +511,10 @@
   function splitRevisionRounds(rounds) {
     const out = [];
     (rounds || []).forEach(function (revision) {
+      if ((revision.subRevisions || []).length) {
+        out.push(revision);
+        return;
+      }
       const pairs = pairRevisionMessages(revision.messages || []);
       if (pairs.length <= 1) {
         out.push(revision);
@@ -315,8 +528,10 @@
           id: index === 0 ? revision.id : String(revision.id || "rev") + "__r" + (index + 1),
           number: out.length + 1,
           createdAt: (pair.buyer && pair.buyer.createdAt) || revision.createdAt,
+          updatedAt: revision.updatedAt || revision.createdAt,
           completed: Boolean(revision.completed),
-          messages: messages
+          messages: messages,
+          subRevisions: index === 0 ? (revision.subRevisions || []).slice() : []
         });
       });
     });
@@ -717,7 +932,26 @@
           files: overlayFileUrls(message.files || [], (found && found.files) || [])
         });
       });
-      return Object.assign({}, round, { messages: messages });
+      return Object.assign({}, round, {
+        messages: messages,
+        subRevisions: overlaySubRevisions(round.subRevisions || [], (match && match.subRevisions) || [])
+      });
+    });
+  }
+
+  function overlaySubRevisions(previous, incoming) {
+    const prev = normalizeSubRevisions(previous || [], 0);
+    const next = normalizeSubRevisions(incoming || [], 0);
+    if (!prev.length) return next;
+    if (!next.length) return prev;
+    const map = {};
+    next.forEach(function (item) { map[item.id] = item; });
+    return prev.map(function (item) {
+      const match = map[item.id];
+      if (!match) return item;
+      return Object.assign({}, item, match, {
+        attachments: (match.attachments && match.attachments.length) ? match.attachments : item.attachments
+      });
     });
   }
 
@@ -796,7 +1030,9 @@
       id: uid("rev"),
       number: order.revisions.length + 1,
       createdAt: nowIso(),
+      updatedAt: nowIso(),
       completed: false,
+      subRevisions: [],
       messages: [{
         id: uid("msg"),
         role: "buyer",
@@ -1264,6 +1500,7 @@
     const account = accountForName(order.accountName || order.tabName || "");
     if (account) order.accountId = account.id;
     order.revisions = expandSheetRevisions(order);
+    order = applyRevisionsData(order, order.revisionsData);
     order.messageThread = messageThreadOf(order);
     if (!String(order.messageText || "").trim()) {
       order.messageText = formatMessageThread(order.messageThread);
@@ -1329,6 +1566,9 @@
         "";
     }
     order.status = computeStatus(order);
+    if (String(order.revisionsData || "").trim()) {
+      order = applyRevisionsData(order, order.revisionsData);
+    }
     return mergeSchedule(fillOrderAccountProfile(order, previous), previous);
   }
 
@@ -1436,6 +1676,15 @@
     boardStatusLabel: boardStatusLabel,
     setBoardStatus: setBoardStatus,
     setRevisionCompleted: setRevisionCompleted,
+    subRevisionStats: subRevisionStats,
+    buildRevisionsData: buildRevisionsData,
+    applyRevisionsData: applyRevisionsData,
+    addSubRevision: addSubRevision,
+    updateSubRevision: updateSubRevision,
+    setSubRevisionCompleted: setSubRevisionCompleted,
+    setMainRevisionMessages: setMainRevisionMessages,
+    findRevisionRound: findRevisionRound,
+    findSubRevisionRound: findSubRevisionRound,
     visibleRevisions: visibleRevisions,
     canAddRevision: canAddRevision,
     addRevision: addRevision,
@@ -1486,6 +1735,15 @@
   global.OwlisticStore.formatDate = formatDate;
   global.OwlisticStore.setBoardStatus = setBoardStatus;
   global.OwlisticStore.setRevisionCompleted = setRevisionCompleted;
+  global.OwlisticStore.subRevisionStats = subRevisionStats;
+  global.OwlisticStore.buildRevisionsData = buildRevisionsData;
+  global.OwlisticStore.applyRevisionsData = applyRevisionsData;
+  global.OwlisticStore.addSubRevision = addSubRevision;
+  global.OwlisticStore.updateSubRevision = updateSubRevision;
+  global.OwlisticStore.setSubRevisionCompleted = setSubRevisionCompleted;
+  global.OwlisticStore.setMainRevisionMessages = setMainRevisionMessages;
+  global.OwlisticStore.findRevisionRound = findRevisionRound;
+  global.OwlisticStore.findSubRevisionRound = findSubRevisionRound;
   global.OwlisticStore.visibleRevisions = visibleRevisions;
   global.OwlisticStore.canAddRevision = canAddRevision;
   global.OwlisticStore.addRevision = addRevision;
