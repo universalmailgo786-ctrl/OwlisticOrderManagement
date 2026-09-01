@@ -437,12 +437,44 @@
     URL.revokeObjectURL(link.href);
   }
 
+  function jsPdfConstructor() {
+    return (global.jspdf && global.jspdf.jsPDF) || global.jsPDF || null;
+  }
+
   function loadScriptOnce(src) {
-    const existing = document.querySelector('script[data-hanif-src="' + src + '"]');
+    const flag = 'script[data-hanif-src="' + src + '"]';
+    const existing = document.querySelector(flag);
     if (existing) {
+      if (existing.getAttribute("data-loaded") === "true") {
+        return Promise.resolve();
+      }
       return new Promise(function (resolve, reject) {
-        existing.addEventListener("load", resolve, { once: true });
-        existing.addEventListener("error", reject, { once: true });
+        existing.addEventListener("load", function () {
+          existing.setAttribute("data-loaded", "true");
+          resolve();
+        }, { once: true });
+        existing.addEventListener("error", function () {
+          reject(new Error("Could not load " + src));
+        }, { once: true });
+        global.setTimeout(function () {
+          if (existing.getAttribute("data-loaded") === "true") return;
+          if (src.indexOf("jspdf.umd") >= 0 && jsPdfConstructor()) {
+            existing.setAttribute("data-loaded", "true");
+            resolve();
+          }
+          if (src.indexOf("autotable") >= 0) {
+            const ctor = jsPdfConstructor();
+            if (ctor) {
+              try {
+                const probe = new ctor();
+                if (typeof probe.autoTable === "function") {
+                  existing.setAttribute("data-loaded", "true");
+                  resolve();
+                }
+              } catch (err) {}
+            }
+          }
+        }, 0);
       });
     }
     return new Promise(function (resolve, reject) {
@@ -450,9 +482,20 @@
       script.src = src;
       script.async = true;
       script.setAttribute("data-hanif-src", src);
-      script.onload = function () { resolve(); };
-      script.onerror = function () { reject(new Error("Could not load " + src)); };
+      script.onload = function () {
+        script.setAttribute("data-loaded", "true");
+        resolve();
+      };
+      script.onerror = function () {
+        reject(new Error("Could not load " + src));
+      };
       document.head.appendChild(script);
+    });
+  }
+
+  function loadPdfLibs() {
+    return loadScriptOnce("https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js").then(function () {
+      return loadScriptOnce("https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js");
     });
   }
 
@@ -467,15 +510,17 @@
     const pkrRate = pricing.DEFAULT_PKR_RATE || 275;
     const lossPkr = Math.round(stats.totalLoss * pkrRate);
     const exportBtn = el("hanif-export-pdf-btn");
-    if (exportBtn) exportBtn.disabled = true;
+    const previousLabel = exportBtn ? exportBtn.textContent : "";
+    if (exportBtn) {
+      exportBtn.disabled = true;
+      exportBtn.textContent = "Generating PDF...";
+    }
 
-    Promise.all([
-      loadScriptOnce("https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"),
-      loadScriptOnce("https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js")
-    ]).then(function () {
-      const jsPDF = (global.jspdf && global.jspdf.jsPDF) || global.jsPDF;
+    loadPdfLibs().then(function () {
+      const jsPDF = jsPdfConstructor();
       if (!jsPDF) throw new Error("PDF library unavailable");
       const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+      if (typeof doc.autoTable !== "function") throw new Error("PDF table plugin unavailable");
       const forest = [34, 56, 41];
       const muted = [92, 101, 96];
       const margin = 36;
@@ -551,10 +596,15 @@
       );
       doc.save("hanif-costing.pdf");
       if (deps && deps.showToast) deps.showToast("PDF downloaded.");
-    }).catch(function () {
-      if (deps && deps.showToast) deps.showToast("Could not generate PDF.");
+    }).catch(function (err) {
+      if (deps && deps.showToast) {
+        deps.showToast(err && err.message ? err.message : "Could not generate PDF.");
+      }
     }).then(function () {
-      if (exportBtn) exportBtn.disabled = false;
+      if (exportBtn) {
+        exportBtn.disabled = false;
+        exportBtn.textContent = previousLabel || "Download PDF";
+      }
     });
   }
 
