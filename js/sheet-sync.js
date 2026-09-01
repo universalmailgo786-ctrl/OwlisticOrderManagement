@@ -350,7 +350,7 @@
       let block = "Revision " + (round.number || "") + (round.completed ? " [Completed]" : " [Open]") +
         (messages.length ? ": " + messages.join(" || ") : ": (empty)");
       (round.subRevisions || []).forEach(function (sub) {
-        const subStatus = sub.completed ? " [Completed]" : (sub.status === "active" ? " [Active]" : " [Pending]");
+        const subStatus = sub.completed ? " [Completed]" : (sub.status === "active" ? " [Latest]" : " [Pending]");
         block += "\n  R" + round.number + " Sub " + (sub.subRevisionNumber || "") + subStatus +
           " | Buyer: " + String(sub.buyerRevision || "").trim() +
           " | Seller: " + String(sub.sellerReply || "").trim();

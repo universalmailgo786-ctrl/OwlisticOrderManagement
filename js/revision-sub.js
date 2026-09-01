@@ -36,7 +36,7 @@
   function subStatusLabel(sub) {
     if (!sub) return "Pending";
     if (sub.completed || sub.status === "completed") return "Completed";
-    if (sub.status === "active") return "Active";
+    if (sub.status === "active") return "Latest";
     return "Pending";
   }
 
@@ -128,7 +128,7 @@
         'data-revision-number="' + step.number + '" ' +
         'data-previous-value="' + deps.escapeHtml(value) + '" ' +
         'aria-label="Sub revision status">' +
-        '<option value="active"' + (value === "active" ? " selected" : "") + ">Active</option>" +
+        '<option value="active"' + (value === "active" ? " selected" : "") + ">Latest</option>" +
         '<option value="pending"' + (value === "pending" ? " selected" : "") + ">Pending</option>" +
         '<option value="completed"' + (value === "completed" ? " selected" : "") + ">Completed</option>" +
       "</select>" +
@@ -213,7 +213,7 @@
   function renderCurrentSubSection(current, step, order) {
     if (!current) return "";
     return '<div class="rev-sub-section">' +
-      '<p class="rev-sub-section-label">Current Sub Revision</p>' +
+      '<p class="rev-sub-section-label">Latest Sub Revision</p>' +
       renderSubCardBody(current, step, order, { editableStatus: true }) +
     "</div>";
   }
@@ -221,7 +221,7 @@
   function renderPendingSubSection(pending, step, order) {
     if (!pending.length) return "";
     return '<div class="rev-sub-section is-pending-section">' +
-      '<p class="rev-sub-section-label is-quiet">Upcoming Sub Revisions</p>' +
+      '<p class="rev-sub-section-label is-quiet">Pending Sub Revisions</p>' +
       '<div class="rev-sub-pending-list">' +
         pending.map(function (sub) {
           return renderSubCardBody(sub, step, order, { editableStatus: false, quiet: true });
@@ -512,7 +512,7 @@
         return String(sub.id) === String(modalState.pendingSubId);
       });
       if (added && added.status === "pending") {
-        successMessage = "Sub Revision " + added.subRevisionNumber + " saved. It will become active when the current sub revision is completed.";
+        successMessage = "Sub Revision " + added.subRevisionNumber + " saved. It will become latest when the current sub revision is completed.";
       } else if (added) {
         successMessage = "Sub Revision " + added.subRevisionNumber + " saved.";
       }
