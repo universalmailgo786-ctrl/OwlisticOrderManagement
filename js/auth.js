@@ -145,9 +145,16 @@
     profile.name = wanted;
     if (match) {
       profile.id = match.id;
-      if (match.personName && sameAccount(profile.personName, wanted)) {
-        profile.personName = match.personName;
-      }
+    }
+    ["whatsapp", "personName", "fiverrId", "fiverrGigUrl", "paymentStatus", "username"].forEach(function (key) {
+      const sessionValue = String((current && current[key]) || "").trim();
+      const profileValue = String((profile && profile[key]) || "").trim();
+      if (sessionValue) profile[key] = sessionValue;
+      else if (!profileValue && match && match[key]) profile[key] = match[key];
+    });
+    if (!profile.personName && current.personName) profile.personName = current.personName;
+    if (!profile.personName && current.name && !sameAccount(current.name, wanted)) {
+      profile.personName = current.name;
     }
     return store.upsertAccount(profile);
   }
@@ -195,8 +202,17 @@
         return data || { ok: false };
       }
       return sheet.fetchAccountProfile(current.account || current.username).then(function (profile) {
-        if (profile && profile.ok !== false) applyUserProfile(profile);
-        return profile || data || { ok: false };
+        if (profile && profile.ok !== false) {
+          applyUserProfile(profile);
+          return profile;
+        }
+        if (!current.username || sameAccount(current.username, current.account)) {
+          return profile || data || { ok: false };
+        }
+        return sheet.fetchAccountProfile(current.username).then(function (retry) {
+          if (retry && retry.ok !== false) applyUserProfile(retry);
+          return retry || profile || data || { ok: false };
+        });
       });
     }).catch(function () {
       const sheet = global.OwlisticSheet;
@@ -204,8 +220,17 @@
         return { ok: false };
       }
       return sheet.fetchAccountProfile(current.account || current.username).then(function (profile) {
-        if (profile && profile.ok !== false) applyUserProfile(profile);
-        return profile || { ok: false };
+        if (profile && profile.ok !== false) {
+          applyUserProfile(profile);
+          return profile;
+        }
+        if (!current.username || sameAccount(current.username, current.account)) {
+          return profile || { ok: false };
+        }
+        return sheet.fetchAccountProfile(current.username).then(function (retry) {
+          if (retry && retry.ok !== false) applyUserProfile(retry);
+          return retry || profile || { ok: false };
+        });
       });
     });
   }

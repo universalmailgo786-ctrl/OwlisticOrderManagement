@@ -997,13 +997,24 @@
     if (!sheet || typeof sheet.fetchAccountProfile !== "function") {
       return Promise.resolve(null);
     }
+    const session = auth.getSession();
     const wanted = name || (lockedAccount() && (lockedAccount().name || lockedAccount().username)) || "";
     if (!wanted) return Promise.resolve(null);
-    return sheet.fetchAccountProfile(wanted).then(function (profile) {
-      if (!profile || profile.ok === false) return null;
-      populateAccounts(accountSelect && accountSelect.value);
-      applyAccountIfNewOrder();
-      return profile;
+    function loadProfile(key) {
+      return sheet.fetchAccountProfile(key).then(function (profile) {
+        if (!profile || profile.ok === false) return null;
+        populateAccounts(accountSelect && accountSelect.value);
+        applyAccountIfNewOrder();
+        return profile;
+      });
+    }
+    return loadProfile(wanted).then(function (profile) {
+      if (profile) return profile;
+      const fallback = session && session.username && !auth.sameAccount(session.username, wanted)
+        ? session.username
+        : "";
+      if (!fallback) return null;
+      return loadProfile(fallback);
     }).catch(function () {
       return null;
     });
@@ -1663,6 +1674,22 @@
     });
   }
 
+  function applyProfileToForm() {
+    populateAccounts(accountSelect && accountSelect.value);
+    applyAccount(lockedAccount());
+    const session = auth.getSession();
+    const account = lockedAccount();
+    const wanted = (account && (account.name || account.username)) ||
+      (session && (session.account || session.username)) ||
+      "";
+    if (wanted) {
+      return refreshAccountFromSheet(wanted).then(function () {
+        applyAccount(lockedAccount());
+      });
+    }
+    return Promise.resolve();
+  }
+
   function bootForm() {
     const existingId = new URLSearchParams(window.location.search).get("order");
     if (existingId) {
@@ -1687,6 +1714,7 @@
   }
 
   (function startForm() {
+    const queryOrderId = new URLSearchParams(window.location.search).get("order");
     const sheet = window.OwlisticSheet;
     const ordersPromise = sheet && typeof sheet.fetchOrders === "function"
       ? sheet.fetchOrders()
@@ -1705,9 +1733,21 @@
         store.importOrders(result.orders);
       }
       bootForm();
+      if (!queryOrderId) {
+        applyProfileToForm().finally(function () {
+          syncSavedAccountProfiles();
+        });
+        return;
+      }
       syncSavedAccountProfiles();
     }).catch(function () {
       bootForm();
+      if (!queryOrderId) {
+        applyProfileToForm().finally(function () {
+          syncSavedAccountProfiles();
+        });
+        return;
+      }
       syncSavedAccountProfiles();
     });
   })();

@@ -882,7 +882,7 @@
     const url = getWebAppUrl() + join +
       "action=getAccountProfile" +
       "&account=" + encodeURIComponent(wanted) +
-      "&username=" + encodeURIComponent(wanted) +
+      "&username=" + encodeURIComponent((session && session.username) || wanted) +
       "&role=" + encodeURIComponent((session && session.role) || "") +
       "&userAccount=" + encodeURIComponent((session && session.account) || "") +
       "&_=" + Date.now();

@@ -1776,7 +1776,8 @@ function styleSheet_(ss, sheet) {
     "Unscheduled, Place Today, Scheduled, Later, On Hold, or Placed.",
     "Who last set the schedule.",
     "When the schedule was last saved.",
-    "When the order was marked Placed."
+    "When the order was marked Placed.",
+    "JSON blob for main revisions and sub-revisions from the portal."
   ]]);
 
   var dataRows = Math.max(lastRow - 1, FORMAT_ROWS - 1);
@@ -2128,6 +2129,34 @@ function padUserRow_(row) {
   return next.slice(0, USER_HEADERS.length);
 }
 
+function findLoginUserProfile_(username) {
+  setupUsersSheetIfNeeded_();
+  var wantedUser = String(username || "").trim().toLowerCase();
+  if (!wantedUser) return null;
+  var ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
+  var sheet = usersLoginSheet_(ss);
+  var last = Math.max(sheet.getLastRow(), 1);
+  if (last < 2) return null;
+  var values = sheet.getRange(2, 1, last, USER_HEADERS.length).getValues();
+  var i;
+  for (i = 0; i < values.length; i++) {
+    var row = padUserRow_(values[i]);
+    if (String(row[0] || "").trim().toLowerCase() !== wantedUser) continue;
+    var profile = userProfileFromRow_(row);
+    return {
+      username: String(row[0] || "").trim(),
+      account: tabName_(row[3] || ""),
+      name: tabName_(row[3] || ""),
+      personName: profile.personName,
+      whatsapp: profile.whatsapp,
+      fiverrId: profile.fiverrId,
+      fiverrGigUrl: profile.fiverrGigUrl,
+      paymentStatus: profile.paymentStatus
+    };
+  }
+  return null;
+}
+
 function getUserProfile_(params) {
   setupUsersSheetIfNeeded_();
   var wantedUser = String((params && params.username) || "").trim().toLowerCase();
@@ -2148,12 +2177,10 @@ function getUserProfile_(params) {
     if (String(row[0] || "").trim().toLowerCase() !== wantedUser) continue;
     var role = String(row[2] || "user").trim().toLowerCase().replace(/\s+/g, "");
     if (role === "super admin" || role === "admin") role = "superadmin";
-    var forced = "";
     var reqRole = String((params && params.role) || "").toLowerCase().replace(/\s+/g, "");
     if (reqRole === "user" || reqRole === "account") {
-      forced = tabName_((params && (params.userAccount || params.account)) || "");
-      var account = tabName_(row[3] || "");
-      if (forced && account && account.toLowerCase() !== forced.toLowerCase()) {
+      var reqUser = String((params && params.username) || "").trim().toLowerCase();
+      if (!reqUser || reqUser !== String(row[0] || "").trim().toLowerCase()) {
         return { ok: false, action: "getUserProfile", error: "You can only load your own account profile." };
       }
     }
@@ -2407,7 +2434,7 @@ function listAccountProfilesFromSheet_(sheet) {
   var last = sheet.getLastRow();
   if (last < 2) return out;
   var cols = Math.max(sheet.getLastColumn(), PROFILE_HEADERS.length);
-  var values = sheet.getRange(2, 1, last - 1, cols).getValues();
+  var values = sheet.getRange(2, 1, last, cols).getValues();
   var r;
   for (r = 0; r < values.length; r++) {
     var profile = profileFromProfileRow_(values[r]);
@@ -2435,6 +2462,10 @@ function listAccountProfiles_(params) {
       if (username && String(item.username || "").toLowerCase() === username) return true;
       return false;
     });
+    if (!accounts.length && username) {
+      var fromLogin = findLoginUserProfile_(username);
+      if (fromLogin) accounts = [fromLogin];
+    }
   }
   return { ok: true, action: "listAccounts", count: accounts.length, accounts: accounts };
 }
@@ -2463,28 +2494,37 @@ function findAccountProfile_(query) {
         }
       }
     }
+    if (wantedUser) {
+      var fromLogin = findLoginUserProfile_(wantedUser);
+      if (fromLogin) return fromLogin;
+    }
   } catch (err) {
     return null;
   }
   return null;
 }
 
+function profileOwnershipAllowed_(params, profile) {
+  var role = String((params && params.role) || "").toLowerCase().replace(/\s+/g, "");
+  if (role !== "user" && role !== "account") return true;
+  var sessionAccount = tabName_((params && params.userAccount) || "").toLowerCase();
+  var requestAccount = tabName_((params && params.account) || "").toLowerCase();
+  var wantedUser = String((params && params.username) || "").trim().toLowerCase();
+  var profileAccount = String((profile && profile.account) || "").toLowerCase();
+  var profileUser = String((profile && profile.username) || "").toLowerCase();
+  if (wantedUser && profileUser && wantedUser === profileUser) return true;
+  if (sessionAccount && profileAccount && sessionAccount === profileAccount) return true;
+  if (requestAccount && profileAccount && requestAccount === profileAccount) return true;
+  return false;
+}
+
 function getAccountProfile_(params) {
   var profile = findAccountProfile_(params);
   if (!profile) {
-    setupAccountProfiles_();
-    profile = findAccountProfile_(params);
-  }
-  if (!profile) {
     return { ok: false, action: "getAccountProfile", error: "Account profile was not found." };
   }
-  var forced = "";
-  var role = String((params && params.role) || "").toLowerCase().replace(/\s+/g, "");
-  if (role === "user" || role === "account") {
-    forced = tabName_((params && (params.userAccount || params.account)) || "");
-    if (forced && String(profile.account || "").toLowerCase() !== forced.toLowerCase()) {
-      return { ok: false, action: "getAccountProfile", error: "You can only load your own account profile." };
-    }
+  if (!profileOwnershipAllowed_(params, profile)) {
+    return { ok: false, action: "getAccountProfile", error: "You can only load your own account profile." };
   }
   profile.ok = true;
   profile.action = "getAccountProfile";
@@ -2498,7 +2538,7 @@ function upsertAccountProfileRow_(sheet, profile) {
   var last = Math.max(sheet.getLastRow(), 1);
   var found = 0;
   if (last >= 2) {
-    var values = sheet.getRange(2, 1, last - 1, 2).getValues();
+    var values = sheet.getRange(2, 1, last, 2).getValues();
     var i;
     for (i = 0; i < values.length; i++) {
       var existingUser = String(values[i][0] || "").trim().toLowerCase();
@@ -2528,9 +2568,9 @@ function upsertAccountProfileRow_(sheet, profile) {
 }
 
 function upsertAccountProfile_(data) {
-  setupAccountProfiles_();
   var ss = accountsSpreadsheet_();
   var directory = usersDirectorySheet_(ss);
+  styleProfileSheet_(directory);
   var profile = profileObject_(
     data && (data.username || data.user),
     data && (data.account || data.name || data.tabName),
