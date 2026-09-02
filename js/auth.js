@@ -91,9 +91,8 @@
       };
       setSession(session);
       ensureLocalAccount(session);
-      return fetchUserProfile().then(function () {
-        return { ok: true, session: getSession() || session };
-      });
+      fetchUserProfile().catch(function () {});
+      return { ok: true, session: session };
     }).catch(function () {
       return { ok: false, error: "Could not reach the login sheet. Check the web app URL." };
     });

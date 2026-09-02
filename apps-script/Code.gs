@@ -2140,17 +2140,6 @@ function login_(username, password) {
       if (fromAccounts.fiverrGigUrl) profile.fiverrGigUrl = fromAccounts.fiverrGigUrl;
       if (fromAccounts.paymentStatus) profile.paymentStatus = fromAccounts.paymentStatus;
     }
-    if (role !== "superadmin") {
-      syncAccountProfileToDirectory_({
-        username: String(row[0] || "").trim(),
-        account: account,
-        personName: profile.personName,
-        whatsapp: profile.whatsapp,
-        fiverrId: profile.fiverrId,
-        fiverrGigUrl: profile.fiverrGigUrl,
-        paymentStatus: profile.paymentStatus
-      });
-    }
     return {
       ok: true,
       username: String(row[0] || "").trim(),
