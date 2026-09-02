@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>View Order</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css?v=orderview1" />
+</head>
+<body class="records-page order-view-page">
+  <nav class="app-nav">
+    <div class="app-nav-links">
+      <a class="app-nav-link" href="index.html">Order Questionnaire</a>
+      <a class="app-nav-link is-active" href="records.html">Order Records</a>
+    </div>
+    <div class="nav-user" id="nav-user" hidden>
+      <span id="nav-who"></span>
+      <button type="button" class="ghost-btn" id="logout-btn">Log out</button>
+    </div>
+  </nav>
+
+  <div class="page order-view-shell">
+    <header class="order-view-header">
+      <div class="order-view-heading">
+        <a class="order-view-back" href="records.html">← Back to Order Records</a>
+        <h1 id="order-view-title">Order</h1>
+        <p class="order-view-meta" id="order-view-meta"></p>
+      </div>
+      <div class="order-view-toolbar">
+        <a class="ghost-btn" id="order-view-edit" href="records.html">Edit order</a>
+      </div>
+    </header>
+    <div class="order-view-body" id="order-view-body">
+      <div class="empty-state"><strong>Loading order…</strong></div>
+    </div>
+  </div>
+
+  <script src="js/storage.js?v=orderview1"></script>
+  <script src="js/sheet-sync.js?v=orderview1"></script>
+  <script src="js/auth.js?v=orderview1"></script>
+  <script src="js/order-view.js?v=orderview1"></script>
+</body>
+</html>

@@ -1025,6 +1025,14 @@
     if (scheduleClearAll) scheduleClearAll.classList.toggle("is-active", active);
   }
 
+  function orderActionCells(order) {
+    return '<td class="records-actions">' +
+      '<a class="open-link" href="view-order.html?order=' + encodeURIComponent(order.id) + '">View</a>' +
+      '<a class="open-link" href="index.html?order=' + encodeURIComponent(order.id) + '">Edit</a>' +
+      '<button type="button" class="ghost-btn is-danger" data-delete-order="' + escapeHtml(order.id) + '">Delete</button>' +
+    "</td>";
+  }
+
   function render() {
     if (activeTab === "hanif-costing") return;
     const all = auth.visibleOrders();
@@ -1062,11 +1070,7 @@
       const paymentLabel = paymentCopyLabel(order);
       const typeLabel = store.orderTypeLabel(order);
       const statusLabel = statusCopyLabel(order);
-      const actions =
-        '<td class="records-actions">' +
-          '<a class="open-link" href="index.html?order=' + encodeURIComponent(order.id) + '">Edit</a>' +
-          '<button type="button" class="ghost-btn is-danger" data-delete-order="' + escapeHtml(order.id) + '">Delete</button>' +
-        "</td>";
+      const actions = orderActionCells(order);
       if (activeTab === "ready-to-approve") {
         return '<tr class="records-row is-' + status + '">' +
           "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
