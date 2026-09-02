@@ -166,7 +166,7 @@
       file = { name: file, url: "", id: "" };
     }
     let name = String(file.name || file.fileName || "").trim();
-    let url = String(file.url || file.link || "").trim();
+    let url = String(file.url || file.imageUrl || file.link || "").trim();
     if (!url) {
       const found = name.match(/https?:\/\/\S+/i);
       if (found) {
@@ -1591,7 +1591,13 @@
             ? store.orderNeedsProfileRepair(before, order)
             : (!String(before.fiverrId || "").trim() && String(order.fiverrId || "").trim());
           if (needsRepair) {
-            window.OwlisticSheet.sync(order, { skipUploads: true }).catch(function () {});
+            const missingUrls = (order.requirementFiles || []).some(function (file) {
+              return file && file.name && !(file.url || file.imageUrl || file.link);
+            });
+            // Never push a profile repair that would wipe Drive file links.
+            if (!missingUrls) {
+              window.OwlisticSheet.sync(order, { skipUploads: true }).catch(function () {});
+            }
           }
         });
       }

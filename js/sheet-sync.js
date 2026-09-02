@@ -1271,7 +1271,7 @@
 
   function filesMissingDrive(order) {
     return orderUploadFiles(order).filter(function (file) {
-      return file && file.name && !file.url;
+      return file && file.name && !(file.url || file.imageUrl || file.link);
     });
   }
 

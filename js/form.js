@@ -1370,6 +1370,18 @@
       if (isNewOrder) saved.isNewOrder = true;
       if (silent) {
         applySavedOrder(saved);
+        const sheet = window.OwlisticSheet;
+        const pending = sheet && sheet.filesNeedingDrive ? sheet.filesNeedingDrive(saved) : [];
+        if (pending.length && sheet.uploadOrderFiles) {
+          sheet.uploadOrderFiles(saved).then(function () {
+            const live = store.getOrder ? store.getOrder(saved.id) : saved;
+            if (live && sheet.sync) {
+              return sheet.sync(live, { skipUploads: true }).then(function () {
+                applySavedOrder(store.getOrder ? store.getOrder(saved.id) : live);
+              });
+            }
+          }).catch(function () {});
+        }
         return { saved: saved, silent: true };
       }
       if (submitBtn) {

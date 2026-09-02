@@ -1153,7 +1153,8 @@
 
   function filePreviewUrls(file) {
     if (!file) return [];
-    const id = driveFileId(file.url);
+    const raw = String((file.url || file.imageUrl || file.link || "")).trim();
+    const id = driveFileId(raw) || driveFileId(file.name);
     const urls = [];
     if (file.previewUrl) urls.push(file.previewUrl);
     if (id) {
@@ -1161,34 +1162,40 @@
       urls.push("https://drive.google.com/thumbnail?id=" + encodeURIComponent(id) + "&sz=w400");
       urls.push("https://drive.google.com/uc?export=view&id=" + encodeURIComponent(id));
     }
-    if (file.url && urls.indexOf(file.url) === -1) urls.push(file.url);
+    if (raw && urls.indexOf(raw) === -1) urls.push(raw);
     return urls;
   }
 
   function fileDownloadUrl(file) {
     if (!file) return "";
-    const id = driveFileId(file.url) || driveFileId(file.name);
+    const raw = String((file.url || file.imageUrl || file.link || "")).trim();
+    const id = driveFileId(raw) || driveFileId(file.name);
     if (id) return "https://drive.google.com/uc?export=download&confirm=t&id=" + encodeURIComponent(id);
-    return (file && file.url) || "";
+    return raw;
   }
 
   function overlayFileUrls(previous, incoming) {
     const prev = previous || [];
     const next = incoming || [];
+    function fileUrlOf(file) {
+      return String((file && (file.url || file.imageUrl || file.link)) || "").trim();
+    }
     if (!prev.length) {
       return (next || []).filter(function (file) { return file && file.name; }).map(function (file) {
         return {
           id: file.id || "",
           name: file.name || "",
-          url: file.url || "",
+          url: fileUrlOf(file),
           type: file.type || "",
           size: file.size || 0,
-          uploadedAt: file.uploadedAt || ""
+          uploadedAt: file.uploadedAt || "",
+          driveId: file.driveId || file.driveFileId || "",
+          previewUrl: file.previewUrl || file.thumbnailUrl || ""
         };
       });
     }
     const used = {};
-    const merged = prev.map(function (file, index) {
+    const merged = prev.map(function (file) {
       const match = next.find(function (item, itemIndex) {
         if (used[itemIndex]) return false;
         if (file.id && item.id && item.id === file.id) return true;
@@ -1198,12 +1205,12 @@
       return {
         id: file.id || (match && match.id) || "",
         name: file.name || (match && match.name) || "",
-        url: file.url || (match && match.url) || "",
+        url: fileUrlOf(file) || fileUrlOf(match),
         type: file.type || (match && match.type) || "",
         size: file.size || (match && match.size) || 0,
         uploadedAt: file.uploadedAt || (match && match.uploadedAt) || "",
-        driveId: file.driveId || (match && match.driveId) || "",
-        previewUrl: file.previewUrl || (match && match.previewUrl) || "",
+        driveId: file.driveId || file.driveFileId || (match && (match.driveId || match.driveFileId)) || "",
+        previewUrl: file.previewUrl || file.thumbnailUrl || (match && (match.previewUrl || match.thumbnailUrl)) || "",
         pendingBlob: file.pendingBlob || (match && match.pendingBlob) || null
       };
     });
@@ -1212,10 +1219,12 @@
       merged.push({
         id: file.id || "",
         name: file.name || "",
-        url: file.url || "",
+        url: fileUrlOf(file),
         type: file.type || "",
         size: file.size || 0,
-        uploadedAt: file.uploadedAt || ""
+        uploadedAt: file.uploadedAt || "",
+        driveId: file.driveId || file.driveFileId || "",
+        previewUrl: file.previewUrl || file.thumbnailUrl || ""
       });
     });
     return merged;
@@ -1949,7 +1958,8 @@
       order.messageThread = previous.messageThread && previous.messageThread.length
         ? previous.messageThread
         : order.messageThread;
-      order.requirementFiles = previous.requirementFiles;
+      // Keep newer local text, but always pull Drive URLs from the sheet files.
+      order.requirementFiles = mergeRequirementFiles(previous.requirementFiles, order.requirementFiles);
       order.reviewText = previous.reviewText;
       order.orderValue = previous.orderValue;
       order.searchKeyword = previous.searchKeyword;
