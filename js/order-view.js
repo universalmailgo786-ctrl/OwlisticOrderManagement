@@ -261,55 +261,79 @@
     const rounds = store && typeof store.normalizeRevisions === "function"
       ? store.normalizeRevisions(order.revisions || [])
       : (order.revisions || []);
-    const rows = [];
-    rounds.forEach(function (round) {
-      rows.push({
+    return rounds.map(function (round) {
+      const subs = (round.subRevisions || []).slice().sort(function (a, b) {
+        return (a.subRevisionNumber || 0) - (b.subRevisionNumber || 0);
+      });
+      return {
         label: "Revision " + round.number,
         buyer: revisionRoleText(round, "buyer"),
         seller: revisionRoleText(round, "seller"),
         date: formatStamp(round.updatedAt || round.createdAt),
-        kind: "main"
-      });
-      const subs = (round.subRevisions || []).slice().sort(function (a, b) {
-        return (a.subRevisionNumber || 0) - (b.subRevisionNumber || 0);
-      });
-      subs.forEach(function (sub) {
-        rows.push({
-          label: "R" + round.number + " · Sub " + (sub.subRevisionNumber || ""),
-          buyer: String(sub.buyerRevision || "").trim(),
-          seller: String(sub.sellerReply || "").trim(),
-          date: formatStamp(sub.completedAt || sub.updatedAt || sub.createdAt),
-          kind: "sub"
-        });
-      });
+        kind: "main",
+        subRevisions: subs.map(function (sub) {
+          return {
+            label: "Sub " + (sub.subRevisionNumber || ""),
+            buyer: String(sub.buyerRevision || "").trim(),
+            seller: String(sub.sellerReply || "").trim(),
+            date: formatStamp(sub.completedAt || sub.updatedAt || sub.createdAt),
+            status: sub.completed ? "Completed" : (sub.status === "active" ? "Latest" : "Pending")
+          };
+        })
+      };
     });
-    return rows;
+  }
+
+  function renderRevisionDate(dateHtml) {
+    return dateHtml
+      ? '<span class="ov-rev-date-inner">' + ICONS.calendar + "<span>" + escapeHtml(dateHtml) + "</span></span>"
+      : '<span class="ov-empty">—</span>';
+  }
+
+  function renderRevisionCell(text) {
+    return text ? multiline(text) : '<span class="ov-empty">—</span>';
   }
 
   function renderRevisionsTable(order) {
     const rows = revisionRows(order);
     if (!rows.length) return '<p class="ov-empty-block">No revisions yet.</p>';
-    return '<div class="ov-table-wrap">' +
-      '<table class="ov-rev-table">' +
-        "<thead><tr>" +
-          "<th>Revision</th><th>Buyer Message</th><th>Seller Message</th><th>Date</th>" +
-        "</tr></thead>" +
-        "<tbody>" +
-        rows.map(function (row) {
-          return "<tr class=\"" + (row.kind === "sub" ? "is-sub" : "") + "\">" +
-            '<td><span class="ov-rev-pill">' + escapeHtml(row.label) + "</span></td>" +
-            "<td>" + (row.buyer ? multiline(row.buyer) : '<span class="ov-empty">—</span>') + "</td>" +
-            "<td>" + (row.seller ? multiline(row.seller) : '<span class="ov-empty">—</span>') + "</td>" +
-            '<td class="ov-rev-date">' +
-              (row.date
-                ? '<span class="ov-rev-date-inner">' + ICONS.calendar + "<span>" + escapeHtml(row.date) + "</span></span>"
-                : '<span class="ov-empty">—</span>') +
-            "</td>" +
-          "</tr>";
-        }).join("") +
-        "</tbody>" +
-      "</table>" +
-    "</div>";
+    return '<div class="ov-rev-groups">' + rows.map(function (row) {
+      const subsHtml = row.subRevisions.length
+        ? '<div class="ov-subrev-block">' +
+            '<p class="ov-subrev-heading">Sub Revisions</p>' +
+            '<div class="ov-table-wrap">' +
+              '<table class="ov-rev-table ov-rev-table-sub">' +
+                "<thead><tr><th>Sub</th><th>Buyer Message</th><th>Seller Message</th><th>Status</th><th>Date</th></tr></thead>" +
+                "<tbody>" +
+                row.subRevisions.map(function (sub) {
+                  return "<tr>" +
+                    '<td><span class="ov-rev-pill ov-rev-pill-sub">' + escapeHtml(row.label.replace("Revision ", "R") + " · " + sub.label) + "</span></td>" +
+                    "<td>" + renderRevisionCell(sub.buyer) + "</td>" +
+                    "<td>" + renderRevisionCell(sub.seller) + "</td>" +
+                    '<td><span class="ov-subrev-status">' + escapeHtml(sub.status) + "</span></td>" +
+                    '<td class="ov-rev-date">' + renderRevisionDate(sub.date) + "</td>" +
+                  "</tr>";
+                }).join("") +
+                "</tbody>" +
+              "</table>" +
+            "</div>" +
+          "</div>"
+        : "";
+      return '<section class="ov-rev-group">' +
+        '<div class="ov-table-wrap">' +
+          '<table class="ov-rev-table">' +
+            "<thead><tr><th>Revision</th><th>Buyer Message</th><th>Seller Message</th><th>Date</th></tr></thead>" +
+            "<tbody><tr>" +
+              '<td><span class="ov-rev-pill">' + escapeHtml(row.label) + "</span></td>" +
+              "<td>" + renderRevisionCell(row.buyer) + "</td>" +
+              "<td>" + renderRevisionCell(row.seller) + "</td>" +
+              '<td class="ov-rev-date">' + renderRevisionDate(row.date) + "</td>" +
+            "</tr></tbody>" +
+          "</table>" +
+        "</div>" +
+        subsHtml +
+      "</section>";
+    }).join("") + "</div>";
   }
 
   function renderOverview(order) {

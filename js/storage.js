@@ -653,37 +653,171 @@
     return pairs;
   }
 
-  function splitRevisionRounds(rounds) {
+  function isPhantomRevisionId(id) {
+    return /__r\d+$/i.test(String(id || ""));
+  }
+
+  function normalizeRevisionSnippet(text) {
+    return String(text || "")
+      .replace(/^(Buyer|Seller)(?:\s*\([^)]*\))?\s*[—\-:]+\s*/i, "")
+      .replace(/^(Buyer|Seller):\s*/i, "")
+      .trim()
+      .toLowerCase();
+  }
+
+  function revisionTextsFromFields(buyerRevision, sellerReply) {
+    return {
+      buyer: normalizeRevisionSnippet(buyerRevision),
+      seller: normalizeRevisionSnippet(sellerReply)
+    };
+  }
+
+  function revisionTextsFromRound(round) {
+    const buyer = (round.messages || []).find(function (msg) { return revisionMessageRole(msg) === "buyer"; });
+    const seller = (round.messages || []).find(function (msg) { return revisionMessageRole(msg) === "seller"; });
+    return revisionTextsFromFields(buyer && buyer.text, seller && seller.text);
+  }
+
+  function firstRevisionMessagePair(messages) {
+    const pairs = pairRevisionMessages(messages || []);
     const out = [];
-    (rounds || []).forEach(function (revision) {
-      if ((revision.subRevisions || []).length) {
-        out.push(revision);
-        return;
-      }
-      const pairs = pairRevisionMessages(revision.messages || []);
-      if (pairs.length <= 1) {
-        out.push(revision);
-        return;
-      }
-      pairs.forEach(function (pair, index) {
-        const messages = [];
-        if (pair.buyer) messages.push(pair.buyer);
-        if (pair.seller) messages.push(pair.seller);
-        out.push({
-          id: index === 0 ? revision.id : String(revision.id || "rev") + "__r" + (index + 1),
-          number: out.length + 1,
-          createdAt: (pair.buyer && pair.buyer.createdAt) || revision.createdAt,
-          updatedAt: revision.updatedAt || revision.createdAt,
-          completed: Boolean(revision.completed),
-          messages: messages,
-          subRevisions: index === 0 ? (revision.subRevisions || []).slice() : []
-        });
+    const first = pairs[0];
+    if (first && first.buyer) out.push(first.buyer);
+    if (first && first.seller) out.push(first.seller);
+    return out;
+  }
+
+  function collectSubRevisionTextPairs(rounds) {
+    const pairs = [];
+    (rounds || []).forEach(function (round) {
+      (round.subRevisions || []).forEach(function (sub) {
+        pairs.push(revisionTextsFromFields(sub.buyerRevision, sub.sellerReply));
       });
     });
-    out.forEach(function (round, index) {
-      round.number = index + 1;
+    return pairs;
+  }
+
+  function matchesSubRevisionPair(texts, subPairs) {
+    if (!texts || (!texts.buyer && !texts.seller) || !subPairs.length) return false;
+    return subPairs.some(function (sub) {
+      if (!sub.buyer && !sub.seller) return false;
+      return Boolean(texts.buyer && texts.seller && texts.buyer === sub.buyer && texts.seller === sub.seller);
     });
-    return out;
+  }
+
+  function consolidateRevisionRounds(rounds) {
+    const input = (rounds || []).map(function (round) {
+      return Object.assign({}, round, {
+        messages: firstRevisionMessagePair(round.messages || [])
+      });
+    });
+    const subPairs = collectSubRevisionTextPairs(input);
+    const removedTextKeys = {};
+    const kept = [];
+
+    function textKey(texts) {
+      return (texts.buyer || "") + "\u0001" + (texts.seller || "");
+    }
+
+    input.forEach(function (round) {
+      const texts = revisionTextsFromRound(round);
+      const key = textKey(texts);
+      if (isPhantomRevisionId(round.id)) {
+        if (key !== "\u0001") removedTextKeys[key] = true;
+        return;
+      }
+      if (matchesSubRevisionPair(texts, subPairs)) {
+        if (key !== "\u0001") removedTextKeys[key] = true;
+        return;
+      }
+      if (removedTextKeys[key]) return;
+      kept.push(round);
+    });
+
+    const seen = {};
+    const deduped = kept.filter(function (round) {
+      const key = textKey(revisionTextsFromRound(round));
+      if (seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+
+    deduped.forEach(function (round, index) {
+      round.number = index + 1;
+      round.subRevisions = normalizeSubRevisions(round.subRevisions || [], round.number);
+    });
+    return deduped;
+  }
+
+  function revisionsFromDataPayload(raw, fallbackRounds) {
+    if (!raw) return null;
+    let parsed = null;
+    try { parsed = JSON.parse(String(raw)); } catch (err) { return null; }
+    if (!parsed || !Array.isArray(parsed.revisions) || !parsed.revisions.length) return null;
+
+    const subPairs = [];
+    parsed.revisions.forEach(function (item) {
+      if (!item || isPhantomRevisionId(item.id)) return;
+      (item.subRevisions || []).forEach(function (sub) {
+        subPairs.push(revisionTextsFromFields(sub.buyerRevision, sub.sellerReply));
+      });
+    });
+
+    const removedTextKeys = {};
+    function textKey(texts) {
+      return (texts.buyer || "") + "\u0001" + (texts.seller || "");
+    }
+
+    parsed.revisions.forEach(function (item) {
+      if (!item) return;
+      const texts = revisionTextsFromFields(item.buyerRevision, item.sellerReply);
+      const key = textKey(texts);
+      if (isPhantomRevisionId(item.id)) {
+        if (key !== "\u0001") removedTextKeys[key] = true;
+        return;
+      }
+      if (matchesSubRevisionPair(texts, subPairs)) {
+        if (key !== "\u0001") removedTextKeys[key] = true;
+      }
+    });
+
+    const rounds = [];
+    parsed.revisions.forEach(function (item) {
+      if (!item || isPhantomRevisionId(item.id)) return;
+      const texts = revisionTextsFromFields(item.buyerRevision, item.sellerReply);
+      const key = textKey(texts);
+      if (removedTextKeys[key]) return;
+      if (matchesSubRevisionPair(texts, subPairs)) return;
+
+      const messages = [];
+      const buyerText = String(item.buyerRevision || "").trim();
+      const sellerText = String(item.sellerReply || "").trim();
+      const stamp = item.updatedAt || item.createdAt || nowIso();
+      if (buyerText) {
+        messages.push({ id: uid("msg"), role: "buyer", createdAt: stamp, text: buyerText, files: [] });
+      }
+      if (sellerText) {
+        messages.push({ id: uid("msg"), role: "seller", createdAt: stamp, text: sellerText, files: [] });
+      }
+
+      rounds.push({
+        id: item.id || uid("rev"),
+        number: item.number || rounds.length + 1,
+        createdAt: item.createdAt || stamp,
+        updatedAt: item.updatedAt || item.createdAt || stamp,
+        completed: Boolean(item.completed),
+        messages: messages,
+        subRevisions: normalizeSubRevisions(item.subRevisions || [], item.number || rounds.length + 1)
+      });
+    });
+
+    const consolidated = consolidateRevisionRounds(rounds);
+    if (!consolidated.length) return null;
+    return overlayRevisionFiles(consolidated, fallbackRounds || []);
+  }
+
+  function splitRevisionRounds(rounds) {
+    return consolidateRevisionRounds(rounds);
   }
 
   function parseBoardStatus(value) {
@@ -1688,7 +1822,13 @@
     const account = accountForName(order.accountName || order.tabName || "");
     if (account) order.accountId = account.id;
     order.revisions = expandSheetRevisions(order);
-    order = applyRevisionsData(order, order.revisionsData);
+    const rebuilt = revisionsFromDataPayload(order.revisionsData, order.revisions);
+    if (rebuilt && rebuilt.length) {
+      order.revisions = rebuilt;
+    } else {
+      order = applyRevisionsData(order, order.revisionsData);
+      order.revisions = normalizeRevisions(order.revisions || []);
+    }
     order.messageThread = messageThreadOf(order);
     if (!String(order.messageText || "").trim()) {
       order.messageText = formatMessageThread(order.messageThread);
@@ -1702,6 +1842,8 @@
         (order.boardStatus && boardStatusLabel(order.boardStatus)) ||
         "";
       order.status = computeStatus(order);
+      order.revisions = normalizeRevisions(order.revisions || []);
+      order.revisionsData = buildRevisionsData(order);
       return mergeSchedule(fillOrderAccountProfile(order, null), null);
     }
     const incomingRevisions = order.revisions || [];

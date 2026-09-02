@@ -5149,8 +5149,57 @@ body.is-hanif-tab .records-tabs {
   line-height: 1.5;
 }
 
-.ov-rev-table tr.is-sub td {
-  background: rgba(34, 56, 41, 0.02);
+/* Revisions grouped layout */
+.ov-rev-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.ov-rev-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ov-subrev-block {
+  margin-left: 12px;
+  padding-left: 16px;
+  border-left: 3px solid rgba(155, 170, 134, 0.35);
+}
+
+.ov-subrev-heading {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8a8178;
+}
+
+.ov-rev-pill-sub {
+  background: rgba(78, 145, 177, 0.14);
+  color: #2d5f78;
+}
+
+.ov-subrev-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(34, 56, 41, 0.06);
+  font-size: 11px;
+  font-weight: 700;
+  color: #223829;
+}
+
+.ov-rev-table-sub th {
+  font-size: 10px;
+}
+
+.ov-rev-table-sub td {
+  font-size: 12px;
 }
 
 .ov-rev-table tr:last-child td {
