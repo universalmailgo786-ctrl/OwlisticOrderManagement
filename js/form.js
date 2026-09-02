@@ -2258,32 +2258,14 @@
         return;
       }
       deleteOrderBtn.disabled = true;
-      const after = function (result) {
-        deleteOrderBtn.disabled = false;
-        if (result && result.ok === false && result.removedLocal === false) {
-          showToast(result.error || "Could not delete this order from the Google Sheet.");
-          return;
-        }
-        if (store.deleteOrder) store.deleteOrder(order.id);
-        if (result && result.sheetRemaining) {
-          showToast("Deleted from the portal. Removing from Google Sheet…");
-        } else {
-          showToast("Order " + order.id + " deleted");
-        }
-        window.setTimeout(function () {
-          window.location.href = "records.html";
-        }, 700);
-      };
-      if (sheet && typeof sheet.removeOrder === "function") {
-        sheet.removeOrder(order).then(after).catch(function () {
-          if (store.deleteOrder) store.deleteOrder(order.id);
-          after({ ok: true });
-        });
-        return;
-      }
       if (store.deleteOrder) store.deleteOrder(order.id);
-      if (sheet && typeof sheet.deleteOrder === "function") sheet.deleteOrder(order);
-      after({ ok: true });
+      showToast("Order " + order.id + " deleted");
+      if (sheet && typeof sheet.removeOrder === "function") {
+        sheet.removeOrder(order).catch(function () {});
+      } else if (sheet && typeof sheet.deleteOrder === "function") {
+        sheet.deleteOrder(order);
+      }
+      window.location.href = "records.html";
     });
   }
 

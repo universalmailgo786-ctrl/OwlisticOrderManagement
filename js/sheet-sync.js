@@ -721,63 +721,19 @@
     }
     const id = order.id;
     const accountName = accountNameOf(order);
-    function finishLocal() {
-      if (store && typeof store.deleteOrder === "function") store.deleteOrder(id);
-      else if (store && typeof store.rememberDeletedOrder === "function") store.rememberDeletedOrder(id);
-    }
-    function retryDelete() {
-      return postJsonPayload({
-        action: "deleteOrder",
-        orderId: id,
-        accountName: accountName,
-        tabName: tabNameOf(accountName),
-        tab: tabNameOf(accountName)
-      });
-    }
-    return deleteOrder(order).then(function (deleted) {
-      if (deleted && deleted.ok === false && !deleted.missing) {
-        return {
-          ok: false,
-          removedLocal: false,
-          sheetRemaining: true,
-          error: deleted.error || "Could not delete this order from the Google Sheet."
-        };
-      }
-      finishLocal();
-      function check(attempt) {
-        return hasOrder(order).then(function (result) {
-          if (result && result.unsupported) {
-            return { ok: true, removedLocal: true, sheetRemaining: false };
-          }
-          if (!result || !result.found) {
-            finishLocal();
-            return { ok: true, removedLocal: true, sheetRemaining: false };
-          }
-          if (attempt >= 8) {
-            return retryDelete().then(function (again) {
-              return hasOrder(order).then(function (finalCheck) {
-                const stillThere = Boolean(finalCheck && finalCheck.found);
-                if (!stillThere) {
-                  finishLocal();
-                  return { ok: true, removedLocal: true, sheetRemaining: false };
-                }
-                finishLocal();
-                return {
-                  ok: Boolean(again && again.ok),
-                  removedLocal: true,
-                  sheetRemaining: true,
-                  error: (again && again.error) || "Deleted in the portal, but the Google Sheet row is still there."
-                };
-              });
-            });
-          }
-          return delay(450).then(function () {
-            return retryDelete().then(function () { return check(attempt + 1); });
-          });
-        });
-      }
-      return delay(350).then(function () { return check(0); });
-    });
+    if (store && typeof store.deleteOrder === "function") store.deleteOrder(id);
+    else if (store && typeof store.rememberDeletedOrder === "function") store.rememberDeletedOrder(id);
+
+    const payload = {
+      action: "deleteOrder",
+      orderId: id,
+      accountName: accountName,
+      tabName: tabNameOf(accountName),
+      tab: tabNameOf(accountName)
+    };
+    postPayload(payload).catch(function () {});
+    postJsonPayload(payload, 20000).catch(function () {});
+    return Promise.resolve({ ok: true, removedLocal: true, sheetRemaining: false });
   }
 
   function parseCsv(text) {

@@ -2029,34 +2029,16 @@
       return;
     }
     button.disabled = true;
-    const finish = function (result) {
-      button.disabled = false;
-      if (result && result.ok === false && result.removedLocal === false) {
-        showToast(result.error || "Could not delete this order from the Google Sheet.");
-        return;
-      }
-      if (store.deleteOrder) store.deleteOrder(id);
-      if (window.OwlisticHanifCosting) window.OwlisticHanifCosting.onOrderDeleted(id);
-      render();
-      if (result && result.sheetRemaining) {
-        showToast("Deleted from the portal. Removing from Google Sheet… Try refresh if it reappears.");
-      } else {
-        showToast("Order " + id + " deleted");
-      }
-    };
-    if (sheet && typeof sheet.removeOrder === "function") {
-      sheet.removeOrder(order).then(finish).catch(function () {
-        if (store.deleteOrder) store.deleteOrder(id);
-        if (window.OwlisticHanifCosting) window.OwlisticHanifCosting.onOrderDeleted(id);
-        render();
-        showToast("Order " + id + " deleted from the portal");
-      });
-      return;
-    }
     if (store.deleteOrder) store.deleteOrder(id);
-    if (sheet && typeof sheet.deleteOrder === "function") sheet.deleteOrder(order);
+    if (window.OwlisticHanifCosting) window.OwlisticHanifCosting.onOrderDeleted(id);
     render();
     showToast("Order " + id + " deleted");
+    button.disabled = false;
+    if (sheet && typeof sheet.removeOrder === "function") {
+      sheet.removeOrder(order).catch(function () {});
+      return;
+    }
+    if (sheet && typeof sheet.deleteOrder === "function") sheet.deleteOrder(order);
   });
 
   body.addEventListener("focusout", function (event) {
