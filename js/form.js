@@ -1365,7 +1365,9 @@
       if (!canSaveOrderContent()) {
         return { empty: true };
       }
+      const isNewOrder = !String(document.getElementById("order-id").value || "").trim();
       const saved = store.upsertOrder(collectOrder());
+      if (isNewOrder) saved.isNewOrder = true;
       if (silent) {
         applySavedOrder(saved);
         return { saved: saved, silent: true };

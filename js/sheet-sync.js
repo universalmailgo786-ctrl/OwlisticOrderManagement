@@ -1100,10 +1100,23 @@
   }
 
   function allocateSheetOrderId(order) {
-    const current = liveOrder(order) || order;
-    return hasOrder(current).then(function (result) {
-      if (result && result.found) return current;
-      return fetchNextOrderId().then(function (remoteId) {
+    const incoming = order || {};
+    const stored = liveOrder(incoming) || incoming;
+    const incomingTs = Date.parse(incoming.updatedAt || incoming.createdAt || "") || 0;
+    const storedTs = Date.parse(stored.updatedAt || stored.createdAt || "") || 0;
+    const current = incomingTs >= storedTs
+      ? Object.assign({}, stored, incoming)
+      : Object.assign({}, incoming, stored);
+    const forceNew = Boolean(incoming.isNewOrder || incoming._isNewOrder);
+
+    return fetchNextOrderId().then(function (remoteId) {
+      return hasOrder(current).then(function (result) {
+        if (result && result.found) {
+          if (forceNew && remoteId) {
+            return adoptId(current, remoteId);
+          }
+          return current;
+        }
         if (remoteId && (!current.id || orderIdNumber(remoteId) > orderIdNumber(current.id))) {
           return adoptId(current, remoteId);
         }
@@ -1413,10 +1426,13 @@
   const writeQueues = {};
 
   function liveOrder(order) {
-    if (order && order.id && store && typeof store.getOrder === "function") {
-      return store.getOrder(order.id, order) || order;
-    }
-    return order;
+    if (!order || !order.id || !store || typeof store.getOrder !== "function") return order;
+    const stored = store.getOrder(order.id, order);
+    if (!stored) return order;
+    const orderTs = Date.parse(order.updatedAt || order.createdAt || "") || 0;
+    const storedTs = Date.parse(stored.updatedAt || stored.createdAt || "") || 0;
+    if (orderTs >= storedTs) return Object.assign({}, stored, order);
+    return Object.assign({}, order, stored);
   }
 
   function enqueueOrderWrite(orderId, task) {

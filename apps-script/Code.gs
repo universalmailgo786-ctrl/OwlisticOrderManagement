@@ -1200,6 +1200,9 @@ function upsertOrderLocked_(ss, data) {
     row[26] = String(data.clientName || "").trim();
   }
   if (existingRow) {
+    // Keep the original Created Date / Time when updating an existing row.
+    row[1] = existingRow[1];
+    row[2] = existingRow[2];
     if (!String(row[25] || "").trim()) row[25] = String(existingRow[25] || "").trim();
     if (!String(row[26] || "").trim()) row[26] = String(existingRow[26] || "").trim();
     if (!String(row[30] || "").trim() && (String(existingRow[27] || "").trim() || String(existingRow[28] || "").trim() || String(existingRow[29] || "").trim() || String(existingRow[31] || "").trim())) {

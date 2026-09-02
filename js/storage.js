@@ -144,7 +144,11 @@
   }
 
   function nextOrderId() {
-    const next = Number(localStorage.getItem(CTR_KEY) || 0) + 1;
+    let current = Number(localStorage.getItem(CTR_KEY) || 0);
+    getOrders().forEach(function (order) {
+      current = Math.max(current, orderNumberOf(order && order.id));
+    });
+    const next = current + 1;
     localStorage.setItem(CTR_KEY, String(next));
     return padOrderId(next);
   }
@@ -1642,7 +1646,13 @@
     }
     fillOrderAccountProfile(order, existing);
     if (!order.id) {
-      order.id = nextOrderId();
+      let id = nextOrderId();
+      let guard = 0;
+      while (guard < 120 && findOrderInList(orders, id, order)) {
+        id = nextOrderId();
+        guard += 1;
+      }
+      order.id = id;
       order.createdAt = stamp;
       order.updatedAt = stamp;
       rememberOrderNumber(order.id);
