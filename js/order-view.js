@@ -153,8 +153,8 @@
     const pairs = threadPairs(order);
     const items = [];
     pairs.forEach(function (pair, pairIndex) {
-      const buyer = pair.buyer || pair.client || null;
-      const seller = pair.seller || null;
+      const buyer = pair.buyer || null;
+      const seller = pair.client || pair.seller || null;
       if (buyer && String(buyer.text || "").trim()) {
         items.push({ role: "buyer", text: String(buyer.text).trim(), stamp: buyer.createdAt, round: pairIndex + 1 });
       }
@@ -176,15 +176,15 @@
     }
     return '<div class="ov-timeline">' + messages.map(function (msg, index) {
       const isBuyer = msg.role === "buyer";
-      const roleLabel = isBuyer ? "Buyer Message" : "Client Reply";
+      const roleLabel = isBuyer ? "Buyer Message" : "Seller Reply";
       const stamp = formatStamp(msg.stamp);
       return '<article class="ov-timeline-item ' + (isBuyer ? "is-buyer" : "is-seller") + '">' +
-        '<span class="ov-timeline-num">' + (index + 1) + "</span>" +
+        '<span class="ov-timeline-num" aria-hidden="true">' + (index + 1) + "</span>" +
         '<div class="ov-timeline-bubble">' +
           '<header class="ov-timeline-head">' +
             '<span class="ov-timeline-role">' +
               '<span class="ov-timeline-role-icon">' + (isBuyer ? ICONS.buyer : ICONS.seller) + "</span>" +
-              escapeHtml(roleLabel) +
+              '<span class="ov-role-pill ov-role-pill-' + (isBuyer ? "buyer" : "seller") + '">' + escapeHtml(roleLabel) + "</span>" +
             "</span>" +
             (stamp ? '<time class="ov-timeline-time">' + escapeHtml(stamp) + "</time>" : "") +
           "</header>" +
