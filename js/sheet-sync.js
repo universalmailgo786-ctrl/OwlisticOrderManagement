@@ -1108,11 +1108,16 @@
   function adoptId(order, newId) {
     if (!order || !newId) return order;
     if (store && typeof store.adoptOrderId === "function") {
-      store.adoptOrderId(order.id, newId);
+      const adopted = store.adoptOrderId(order.id, newId, order);
+      if (adopted && adopted !== newId && adopted === order.id) {
+        return order;
+      }
+      order.id = adopted || newId;
+    } else {
+      order.id = newId;
     }
-    order.id = newId;
     if (store && typeof store.rememberOrderNumber === "function") {
-      store.rememberOrderNumber(newId);
+      store.rememberOrderNumber(order.id);
     }
     return order;
   }
@@ -1152,8 +1157,17 @@
   }
 
   function bumpLocalOrderId(order) {
-    const next = padOrderId(orderIdNumber(order && order.id) + 1);
-    return adoptId(order, next);
+    let next = orderIdNumber(order && order.id) + 1;
+    let tries = 0;
+    const localOrders = store && typeof store.getOrders === "function" ? store.getOrders() : [];
+    while (tries < 80) {
+      const candidate = padOrderId(next);
+      const taken = localOrders.some(function (item) { return item && item.id === candidate; });
+      if (!taken) return adoptId(order, candidate);
+      next += 1;
+      tries += 1;
+    }
+    return adoptId(order, padOrderId(next));
   }
 
   function hasOrder(order) {
@@ -1444,7 +1458,7 @@
 
   function liveOrder(order) {
     if (order && order.id && store && typeof store.getOrder === "function") {
-      return store.getOrder(order.id) || order;
+      return store.getOrder(order.id, order) || order;
     }
     return order;
   }

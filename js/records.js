@@ -28,6 +28,12 @@
   const scheduleSave = document.getElementById("schedule-save");
   const scheduleModalOrder = document.getElementById("schedule-modal-order");
   const scheduleModalTitle = document.getElementById("schedule-modal-title");
+
+  function resolveOrder(id, el) {
+    const row = el && el.closest ? el.closest("[data-order-account]") : null;
+    const account = (row && row.getAttribute("data-order-account")) || "";
+    return store.getOrder(id, account ? { accountName: account, tabName: account } : null);
+  }
   const sheetUpgradeBanner = document.getElementById("sheet-upgrade-banner");
   const sheetCopyScriptBtn = document.getElementById("sheet-copy-script");
   const sheetOpenScriptBtn = document.getElementById("sheet-open-script");
@@ -1046,8 +1052,12 @@
 
   function orderActionCells(order) {
     return '<td class="records-actions">' +
-      '<a class="open-link" href="view-order.html?order=' + encodeURIComponent(order.id) + '">View</a>' +
-      '<a class="open-link" href="index.html?order=' + encodeURIComponent(order.id) + '">Edit</a>' +
+      '<a class="open-link" href="view-order.html?order=' + encodeURIComponent(order.id) +
+        (order.tabName || order.accountName ? "&tab=" + encodeURIComponent(order.tabName || order.accountName) : "") +
+        '">View</a>' +
+      '<a class="open-link" href="index.html?order=' + encodeURIComponent(order.id) +
+        (order.tabName || order.accountName ? "&tab=" + encodeURIComponent(order.tabName || order.accountName) : "") +
+        '">Edit</a>' +
       '<button type="button" class="ghost-btn is-danger" data-delete-order="' + escapeHtml(order.id) + '">Delete</button>' +
     "</td>";
   }
@@ -1090,8 +1100,9 @@
       const typeLabel = store.orderTypeLabel(order);
       const statusLabel = statusCopyLabel(order);
       const actions = orderActionCells(order);
+      const rowAttrs = ' data-order-id="' + escapeHtml(order.id) + '" data-order-account="' + escapeHtml(order.tabName || order.accountName || "") + '"';
       if (activeTab === "ready-to-approve") {
-        return '<tr class="records-row is-' + status + '">' +
+        return '<tr class="records-row is-' + status + '"' + rowAttrs + ">" +
           "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
           "<td>" + withCopy(escapeHtml(order.fiverrId || "—"), order.fiverrId || "", "Fiverr ID name") + "</td>" +
           "<td>" + editableNameCell(order, "clientName", "Add client name", "client name") + "</td>" +
@@ -1103,7 +1114,7 @@
         "</tr>";
       }
       if (activeTab === "completed") {
-        return '<tr class="records-row is-' + status + '">' +
+        return '<tr class="records-row is-' + status + '"' + rowAttrs + ">" +
           "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
           "<td>" + withCopy(escapeHtml(order.fiverrId || "—"), order.fiverrId || "", "Fiverr ID name") + "</td>" +
           "<td>" + editableNameCell(order, "clientName", "Add client name", "client name") + "</td>" +
@@ -1114,7 +1125,7 @@
         "</tr>";
       }
       if (activeTab === "on-revision") {
-        return '<tr class="records-row is-' + status + ' is-revision-board">' +
+        return '<tr class="records-row is-' + status + ' is-revision-board"' + rowAttrs + ">" +
           "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
           "<td>" + withCopy(escapeHtml(order.fiverrId || "—"), order.fiverrId || "", "Fiverr ID name") + "</td>" +
           "<td>" + editableNameCell(order, "clientName", "Add client name", "client name") + "</td>" +
@@ -1139,7 +1150,7 @@
             mediaCell(revisionRoleHtml(round, "seller"), sellerText, revLabel + " seller", revisionRoleHasFiles(round, "seller"));
         }
       }
-      return '<tr class="' + scheduleRowClass(order, status, "") + '">' +
+      return '<tr class="' + scheduleRowClass(order, status, "") + '"' + rowAttrs + ">" +
         "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
         "<td>" + withCopy(escapeHtml(order.whatsapp || "—"), order.whatsapp || "", "WhatsApp number") + "</td>" +
         "<td>" + withCopy(escapeHtml(order.name || "—"), order.name || "", "name") + "</td>" +
@@ -2001,13 +2012,13 @@
     if (!button) return;
     const id = button.getAttribute("data-delete-order");
     const session = auth.getSession && auth.getSession();
-    const order = store.getOrder(id) || {
+    const order = resolveOrder(id, button) || {
       id: id,
-      accountName: (session && session.account) || "",
-      tabName: (session && session.account) || ""
+      accountName: (button.closest("[data-order-account]") && button.closest("[data-order-account]").getAttribute("data-order-account")) || (session && session.account) || "",
+      tabName: (button.closest("[data-order-account]") && button.closest("[data-order-account]").getAttribute("data-order-account")) || (session && session.account) || ""
     };
     const canSee = auth.canSeeOrder;
-    if (store.getOrder(id) && typeof canSee === "function" && !canSee.call(auth, store.getOrder(id))) {
+    if (resolveOrder(id, button) && typeof canSee === "function" && !canSee.call(auth, resolveOrder(id, button))) {
       showToast("You can only delete orders for your account.");
       return;
     }

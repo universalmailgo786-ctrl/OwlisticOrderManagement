@@ -612,7 +612,10 @@
   }
 
   function loadOrder(orderId) {
-    let order = store.getOrder(orderId);
+    const params = new URLSearchParams(window.location.search);
+    const tabHint = params.get("tab") || "";
+    const accountHint = tabHint ? { accountName: tabHint, tabName: tabHint } : null;
+    let order = store.getOrder(orderId, accountHint);
     if (!order) {
       showMissing("This order was not found in your saved records.");
       return;
@@ -630,13 +633,17 @@
       if (!result || !result.found || !result.order) return;
       const remote = result.order;
       if (!auth.canSeeOrder(remote)) return;
+      if (store.sameOrderIdentity && !store.sameOrderIdentity(localSnapshot, remote) &&
+          store.accountKeyOf && store.accountKeyOf(localSnapshot) && store.accountKeyOf(remote)) {
+        return;
+      }
       const localUpdated = Date.parse((localSnapshot && localSnapshot.updatedAt) || "") || 0;
       const remoteUpdated = Date.parse(remote.updatedAt || "") || 0;
       if (localUpdated > remoteUpdated) return;
       if (typeof store.importOrders === "function") {
         store.importOrders([remote]);
       }
-      const fresh = store.getOrder(orderId);
+      const fresh = store.getOrder(orderId, remote);
       if (fresh) renderOrder(fresh);
     }).catch(function () {});
   }

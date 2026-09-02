@@ -149,14 +149,59 @@
     return padOrderId(next);
   }
 
-  function adoptOrderId(oldId, newId) {
+  function accountKeyOf(value) {
+    if (!value) return "";
+    if (typeof value === "string") return String(value).trim().toLowerCase();
+    return String(value.tabName || value.accountName || "").trim().toLowerCase();
+  }
+
+  function accountsMatch(a, b) {
+    const left = accountKeyOf(a);
+    const right = accountKeyOf(b);
+    if (!left || !right) return false;
+    if (left === right) return true;
+    return left.indexOf(right + " ") === 0 || right.indexOf(left + " ") === 0;
+  }
+
+  function sameOrderIdentity(a, b) {
+    if (!a || !b) return false;
+    if (String(a.id || "").trim() !== String(b.id || "").trim()) return false;
+    const left = accountKeyOf(a);
+    const right = accountKeyOf(b);
+    if (!left || !right) return true;
+    return accountsMatch(left, right);
+  }
+
+  function findOrderInList(orders, id, accountHint) {
+    const wanted = String(id || "").trim();
+    if (!wanted) return null;
+    const list = orders || [];
+    const hintKey = accountKeyOf(accountHint);
+    if (hintKey) {
+      const exact = list.find(function (item) {
+        return item && item.id === wanted && accountsMatch(item, accountHint);
+      });
+      if (exact) return exact;
+    }
+    return list.find(function (item) { return item && item.id === wanted; }) || null;
+  }
+
+  function adoptOrderId(oldId, newId, accountHint) {
     const from = String(oldId || "").trim();
     const to = String(newId || "").trim();
-    if (!to) return to;
+    if (!to) return from || to;
     rememberOrderNumber(to);
     if (!from || from === to) return to;
     const orders = getOrders();
-    const index = orders.findIndex(function (item) { return item.id === from; });
+    const conflict = orders.find(function (item) {
+      return item && item.id === to && item.id !== from;
+    });
+    if (conflict) return from;
+    const index = orders.findIndex(function (item) {
+      if (!item || item.id !== from) return false;
+      if (!accountHint || !accountKeyOf(accountHint)) return true;
+      return accountsMatch(item, accountHint);
+    });
     if (index >= 0) {
       orders[index].id = to;
       saveOrders(orders);
@@ -209,8 +254,8 @@
     return getAccounts().find(function (item) { return item.id === id; }) || null;
   }
 
-  function getOrder(id) {
-    return getOrders().find(function (item) { return item.id === id; }) || null;
+  function getOrder(id, accountHint) {
+    return findOrderInList(getOrders(), id, accountHint);
   }
 
   function entryKind(entry) {
@@ -1584,7 +1629,7 @@
     const orders = getOrders();
     const stamp = nowIso();
     const existing = order && order.id
-      ? orders.find(function (item) { return item.id === order.id; })
+      ? findOrderInList(orders, order.id, order)
       : null;
     if (existing) keepSchedule(order, existing);
     normalizeSchedule(order);
@@ -1604,7 +1649,7 @@
       forgetDeletedOrder(order.id);
       orders.push(order);
     } else {
-      const index = orders.findIndex(function (item) { return item.id === order.id; });
+      const index = orders.findIndex(function (item) { return sameOrderIdentity(item, order); });
       forgetDeletedOrder(order.id);
       if (index === -1) {
         order.createdAt = order.createdAt || stamp;
@@ -1851,6 +1896,9 @@
   function hydrateImportedOrder(order, previous) {
     const account = accountForName(order.accountName || order.tabName || "");
     if (account) order.accountId = account.id;
+    if (previous && !sameOrderIdentity(order, previous)) {
+      previous = null;
+    }
     order.revisions = expandSheetRevisions(order);
     const rebuilt = revisionsFromDataPayload(order.revisionsData, order.revisions);
     if (rebuilt && rebuilt.length) {
@@ -1885,30 +1933,45 @@
     });
     const incomingUpdated = Date.parse(order.updatedAt || "") || 0;
     const previousUpdated = Date.parse(previous.updatedAt || "") || 0;
-    if (previousUpdated > incomingUpdated && previous.revisions && previous.revisions.length) {
-      order.revisions = normalizeRevisions(previous.revisions);
-      order.revisionsData = previous.revisionsData || buildRevisionsData(order);
+    if (previousUpdated > incomingUpdated) {
+      order.directRequirements = previous.directRequirements;
+      order.messageText = previous.messageText;
+      order.messageThread = previous.messageThread && previous.messageThread.length
+        ? previous.messageThread
+        : order.messageThread;
+      order.requirementFiles = previous.requirementFiles;
+      order.reviewText = previous.reviewText;
+      order.orderValue = previous.orderValue;
+      order.searchKeyword = previous.searchKeyword;
+      order.orderTypeCustom = previous.orderTypeCustom;
+      order.orderTypeDirect = previous.orderTypeDirect;
+      if (previous.revisions && previous.revisions.length) {
+        order.revisions = normalizeRevisions(previous.revisions);
+        order.revisionsData = previous.revisionsData || buildRevisionsData(order);
+      }
     } else if (previous.revisions && previous.revisions.length && (!incomingRevisions.length || (looksLikeSheetStub && previousIsLocal))) {
       order.revisions = overlayRevisionFiles(previous.revisions, incomingRevisions);
     } else if (previous.revisions && previous.revisions.length) {
       order.revisions = overlayRevisionFiles(order.revisions, previous.revisions);
     }
-    const incomingThread = order.messageThread || [];
-    const previousThread = previous.messageThread || [];
-    if (previousThread.length || incomingThread.length) {
-      if (!previousThread.length) {
-        order.messageThread = incomingThread;
-      } else if (!incomingThread.length) {
-        order.messageThread = previousThread;
-      } else if (incomingThread.length >= previousThread.length) {
-        order.messageThread = overlayMessageFiles(incomingThread, previousThread);
-      } else {
-        order.messageThread = overlayMessageFiles(previousThread, incomingThread);
+    if (!(previousUpdated > incomingUpdated)) {
+      const incomingThread = order.messageThread || [];
+      const previousThread = previous.messageThread || [];
+      if (previousThread.length || incomingThread.length) {
+        if (!previousThread.length) {
+          order.messageThread = incomingThread;
+        } else if (!incomingThread.length) {
+          order.messageThread = previousThread;
+        } else if (incomingThread.length >= previousThread.length) {
+          order.messageThread = overlayMessageFiles(incomingThread, previousThread);
+        } else {
+          order.messageThread = overlayMessageFiles(previousThread, incomingThread);
+        }
+        order.messageText = formatMessageThread(order.messageThread) || order.messageText || previous.messageText;
       }
-      order.messageText = formatMessageThread(order.messageThread) || order.messageText || previous.messageText;
+      order.requirementFiles = mergeRequirementFiles(previous.requirementFiles, order.requirementFiles);
     }
     if (previous.accountId && !order.accountId) order.accountId = previous.accountId;
-    order.requirementFiles = mergeRequirementFiles(previous.requirementFiles, order.requirementFiles);
     if (previous.createdAt && !order.createdAt) order.createdAt = previous.createdAt;
     if (!String(order.businessName || "").trim() && previous.businessName) {
       order.businessName = previous.businessName;
@@ -1948,7 +2011,7 @@
     (incoming || []).forEach(function (order) {
       if (!order || !order.id) return;
       if (isDeletedOrder(order.id)) return;
-      const index = orders.findIndex(function (item) { return item.id === order.id; });
+      const index = orders.findIndex(function (item) { return sameOrderIdentity(item, order); });
       const previous = index === -1 ? null : orders[index];
       const next = hydrateImportedOrder(order, previous);
       rememberOrderNumber(next.id);
@@ -1965,7 +2028,7 @@
     (incoming || []).forEach(function (order) {
       if (!order || !order.id) return;
       if (isDeletedOrder(order.id)) return;
-      const previous = previousAll.find(function (item) { return item.id === order.id; }) || null;
+      const previous = previousAll.find(function (item) { return sameOrderIdentity(item, order); }) || null;
       const hydrated = hydrateImportedOrder(order, previous);
       rememberOrderNumber(hydrated.id);
       next.push(hydrated);
@@ -2026,6 +2089,8 @@
     deleteAccount: deleteAccount,
     getOrders: getOrders,
     getOrder: getOrder,
+    sameOrderIdentity: sameOrderIdentity,
+    accountKeyOf: accountKeyOf,
     upsertOrder: upsertOrder,
     fillOrderAccountProfile: fillOrderAccountProfile,
     orderNeedsProfileRepair: orderNeedsProfileRepair,

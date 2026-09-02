@@ -1181,19 +1181,20 @@
   }
 
   function collectOrder() {
+    const existingId = document.getElementById("order-id").value;
     const account = lockedAccount();
     if (account) accountSelect.value = account.id;
     syncMessageTextField();
-    const existingId = document.getElementById("order-id").value;
-    const existing = existingId && store.getOrder(existingId);
     const session = auth.getSession ? auth.getSession() : null;
     const accountName = (account && store.accountLabel(account))
       || (session && session.role !== "superadmin" && session.account)
       || "";
+    const existing = existingId && store.getOrder(existingId, { accountName: accountName, tabName: accountName });
     return {
       id: existingId || undefined,
       accountId: account && account.id ? account.id : "",
       accountName: accountName,
+      tabName: accountName,
       whatsapp: document.getElementById("whatsapp").value.trim()
         || (account && account.whatsapp)
         || (session && session.whatsapp)
@@ -1218,10 +1219,14 @@
       searchKeyword: document.getElementById("searchKeyword").value.trim(),
       orderTypeCustom: document.getElementById("order-custom").checked,
       orderTypeDirect: document.getElementById("order-direct").checked,
-      messageThread: threadMessages.slice(),
+      messageThread: threadMessages.map(function (message) {
+        return Object.assign({}, message, {
+          files: (message.files || []).map(function (file) { return Object.assign({}, file); })
+        });
+      }),
       messageText: (store.formatMessageThread ? store.formatMessageThread(threadMessages) : "") || document.getElementById("messageText").value,
       directRequirements: document.getElementById("directRequirements").value,
-      requirementFiles: requirementFiles,
+      requirementFiles: (requirementFiles || []).map(function (file) { return Object.assign({}, file); }),
       fiverrId: document.getElementById("fiverrId").value.trim()
         || (account && account.fiverrId)
         || (session && session.fiverrId)
@@ -1231,7 +1236,7 @@
         || (session && session.fiverrGigUrl)
         || "",
       reviewText: document.getElementById("reviewText").value,
-      revisions: revisions,
+      revisions: JSON.parse(JSON.stringify(revisions || [])),
       readyToApprove: existing
         ? (existing.boardStatus === "completed" || existing.boardStatus === "ready-to-approve" || Boolean(existing.readyToApprove))
         : Boolean(boardStatusSelect && (boardStatusSelect.value === "completed" || boardStatusSelect.value === "ready-to-approve")),
@@ -1258,7 +1263,8 @@
     refreshRequirementFiles();
     updateStatusUI();
     if (window.history && window.history.replaceState) {
-      window.history.replaceState({}, "", "index.html?order=" + encodeURIComponent(saved.id));
+      const tab = saved.tabName || saved.accountName || "";
+      window.history.replaceState({}, "", "index.html?order=" + encodeURIComponent(saved.id) + (tab ? "&tab=" + encodeURIComponent(tab) : ""));
     }
   }
 
@@ -1400,7 +1406,8 @@
     editMeta.hidden = false;
     if (deleteOrderBtn) deleteOrderBtn.hidden = false;
     if (window.history && window.history.replaceState) {
-      window.history.replaceState({}, "", "index.html?order=" + encodeURIComponent(saved.id));
+      const tab = saved.tabName || saved.accountName || "";
+      window.history.replaceState({}, "", "index.html?order=" + encodeURIComponent(saved.id) + (tab ? "&tab=" + encodeURIComponent(tab) : ""));
     }
     return saved;
   }
@@ -1655,9 +1662,14 @@
     return order;
   }
 
-  function openExistingOrder(orderId) {
+  function openExistingOrder(orderId, tabHint) {
     document.getElementById("order-id").value = orderId;
-    const local = store.getOrder(orderId);
+    const session = auth.getSession && auth.getSession();
+    const accountHint = {
+      accountName: tabHint || (session && session.account) || "",
+      tabName: tabHint || (session && session.account) || ""
+    };
+    const local = store.getOrder(orderId, accountHint);
     if (local && !auth.canSeeOrder(local)) {
       showToast("You can only open orders for your account.");
       goToDefaultPage();
@@ -1667,11 +1679,10 @@
       loadOrder(local);
     }
     const sheet = window.OwlisticSheet;
-    const session = auth.getSession && auth.getSession();
     const hint = local || {
       id: orderId,
-      accountName: (session && session.account) || "",
-      tabName: (session && session.account) || ""
+      accountName: accountHint.accountName,
+      tabName: accountHint.tabName
     };
     const applyRemote = function (remote) {
       const raw = remote && remote.order;
@@ -1684,11 +1695,27 @@
         goToDefaultPage();
         return;
       }
+      if (accountHint.accountName && store.sameOrderIdentity &&
+          !store.sameOrderIdentity(raw, { id: orderId, accountName: accountHint.accountName, tabName: accountHint.tabName }) &&
+          store.accountKeyOf && store.accountKeyOf(raw) && store.accountKeyOf(accountHint)) {
+        if (local && auth.canSeeOrder(local)) {
+          loadOrder(local);
+          return;
+        }
+      }
       const order = formOrderFromSheet(raw);
       if (!auth.canSeeOrder(order)) {
         showToast("You can only open orders for your account.");
         goToDefaultPage();
         return;
+      }
+      if (local && local.updatedAt && order.updatedAt) {
+        const localUpdated = Date.parse(local.updatedAt) || 0;
+        const remoteUpdated = Date.parse(order.updatedAt) || 0;
+        if (localUpdated > remoteUpdated) {
+          loadOrder(local);
+          return;
+        }
       }
       loadOrder(order);
     };
@@ -1726,7 +1753,9 @@
   }
 
   function bootForm() {
-    const existingId = new URLSearchParams(window.location.search).get("order");
+    const params = new URLSearchParams(window.location.search);
+    const existingId = params.get("order");
+    const tabHint = params.get("tab") || "";
     if (existingId) {
       document.getElementById("order-id").value = existingId;
     }
@@ -1738,7 +1767,7 @@
     updateStatusUI();
 
     if (existingId) {
-      openExistingOrder(existingId);
+      openExistingOrder(existingId, tabHint);
     } else {
       applyAccount(lockedAccount());
       [200, 800].forEach(function (ms) {

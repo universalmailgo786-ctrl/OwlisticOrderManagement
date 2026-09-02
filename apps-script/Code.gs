@@ -1173,7 +1173,6 @@ function upsertOrderLocked_(ss, data) {
   ensureOrderSheet_(ss, target);
 
   var found = findOrderOnSheet_(target, orderId);
-  if (!found) found = findOrder_(ss, orderId);
   if (found && forced && !canAccessFound_(found, forced)) {
     found = null;
     orderId = "";
@@ -1258,16 +1257,9 @@ function upsertOrderLocked_(ss, data) {
   }).join("\n");
 
   if (found) {
-    if (found.sheet.getSheetId() === target.getSheetId()) {
-      writeOrderRow_(target, found.row, row, files);
-      touchHanifForOrder_(ss, row, target.getName());
-      return { ok: true, updated: true, orderId: orderId, tab: target.getName() };
-    }
-    target.appendRow(row);
-    writeOrderRow_(target, target.getLastRow(), row, files);
-    found.sheet.deleteRow(found.row);
+    writeOrderRow_(target, found.row, row, files);
     touchHanifForOrder_(ss, row, target.getName());
-    return { ok: true, moved: true, orderId: orderId, tab: target.getName() };
+    return { ok: true, updated: true, orderId: orderId, tab: target.getName() };
   }
 
   var duplicate = findDuplicateRecord_(ss, row, target.getName(), orderId);
@@ -1358,6 +1350,21 @@ function findOrderForAccount_(ss, orderId, account) {
   return null;
 }
 
+function findOrderScoped_(ss, orderId, wantedName, forced) {
+  var tab = tabName_(wantedName) || forced || "";
+  if (tab) {
+    var sheet = sheetForAccount_(ss, tab);
+    if (sheet) {
+      var onTab = findOrderOnSheet_(sheet, orderId);
+      if (onTab) return onTab;
+    }
+    if (forced) return findOrderForAccount_(ss, orderId, forced);
+    return null;
+  }
+  if (forced) return findOrderForAccount_(ss, orderId, forced);
+  return findOrder_(ss, orderId);
+}
+
 function orderLookup_(params) {
   var orderId = String((params && params.orderId) || "").trim();
   var role = String((params && params.role) || "").toLowerCase().replace(/\s+/g, "");
@@ -1366,17 +1373,7 @@ function orderLookup_(params) {
     : "";
   var tab = tabName_((params && (params.tab || params.tabName || params.accountName)) || "") || forced;
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var found = null;
-  if (tab) {
-    var sheet = sheetForAccount_(ss, tab);
-    if (sheet) found = findOrderOnSheet_(sheet, orderId);
-  }
-  if (!found && forced) {
-    found = findOrderForAccount_(ss, orderId, forced);
-  }
-  if (!found && !forced) {
-    found = findOrder_(ss, orderId);
-  }
+  var found = findOrderScoped_(ss, orderId, tab, forced);
   if (found && forced && !canAccessFound_(found, forced)) {
     return { orderId: orderId, found: null, denied: true, forced: forced, tab: tab };
   }
@@ -1498,12 +1495,7 @@ function updateRevisionsData_(ss, data) {
   }
   var forced = forcedAccount_(data);
   var wantedName = tabName_(data.tabName || data.accountName || "");
-  var found = null;
-  if (wantedName) {
-    var sheet = sheetForAccount_(ss, wantedName);
-    if (sheet) found = findOrderOnSheet_(sheet, orderId);
-  }
-  if (!found) found = findOrder_(ss, orderId);
+  var found = findOrderScoped_(ss, orderId, wantedName, forced);
   if (!found) {
     return { ok: false, action: "updateRevisionsData", found: false, error: "Order " + orderId + " was not found on the Google Sheet." };
   }
@@ -1531,12 +1523,7 @@ function updateOrderSchedule_(ss, data) {
   }
   var forced = forcedAccount_(data);
   var wantedName = tabName_(data.tabName || data.tab || data.accountName || "");
-  var found = null;
-  if (wantedName) {
-    var sheet = sheetForAccount_(ss, wantedName);
-    if (sheet) found = findOrderOnSheet_(sheet, orderId);
-  }
-  if (!found) found = findOrder_(ss, orderId);
+  var found = findOrderScoped_(ss, orderId, wantedName, forced);
   if (!found) {
     return { ok: false, action: "updateOrderSchedule", found: false, error: "Order " + orderId + " was not found on the Google Sheet." };
   }
@@ -1583,12 +1570,7 @@ function updateOrderNames_(ss, data) {
   }
   var forced = forcedAccount_(data);
   var wantedName = tabName_(data.tabName || data.tab || data.accountName || "");
-  var found = null;
-  if (wantedName) {
-    var sheet = sheetForAccount_(ss, wantedName);
-    if (sheet) found = findOrderOnSheet_(sheet, orderId);
-  }
-  if (!found) found = findOrder_(ss, orderId);
+  var found = findOrderScoped_(ss, orderId, wantedName, forced);
   if (!found) {
     return { ok: false, action: "updateOrderNames", found: false, error: "Order " + orderId + " was not found on the Google Sheet." };
   }
@@ -1619,12 +1601,7 @@ function updateOrderStatus_(ss, data) {
   }
   var forced = forcedAccount_(data);
   var wantedName = tabName_(data.tabName || data.tab || data.accountName || "");
-  var found = null;
-  if (wantedName) {
-    var sheet = sheetForAccount_(ss, wantedName);
-    if (sheet) found = findOrderOnSheet_(sheet, orderId);
-  }
-  if (!found) found = findOrder_(ss, orderId);
+  var found = findOrderScoped_(ss, orderId, wantedName, forced);
   if (!found) {
     return { ok: false, action: "updateOrderStatus", found: false, error: "Order " + orderId + " was not found on the Google Sheet." };
   }
