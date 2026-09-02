@@ -425,6 +425,27 @@
     });
   }
 
+  function revisionActivityTime(round) {
+    let stamp = Date.parse((round && round.updatedAt) || (round && round.createdAt) || "") || 0;
+    ((round && round.subRevisions) || []).forEach(function (sub) {
+      stamp = Math.max(stamp, Date.parse(sub.updatedAt || sub.createdAt || "") || 0);
+    });
+    return stamp;
+  }
+
+  function mergeSubRevisionsForRounds(sheetRound, localRound) {
+    const sheetSubs = normalizeSubRevisions((sheetRound && sheetRound.subRevisions) || [], (sheetRound && sheetRound.number) || 0);
+    const localSubs = normalizeSubRevisions((localRound && localRound.subRevisions) || [], (localRound && localRound.number) || 0);
+    if (!localRound) return sheetSubs;
+    if (!sheetRound) return localSubs;
+    const sheetTime = revisionActivityTime(sheetRound);
+    const localTime = revisionActivityTime(localRound);
+    if (localTime >= sheetTime) {
+      return overlaySubRevisions(sheetSubs, localSubs, "incoming");
+    }
+    return overlaySubRevisions(localSubs, sheetSubs, "incoming");
+  }
+
   function applyRevisionsData(order, raw) {
     if (!order || !raw) return order;
     let parsed = null;
@@ -446,10 +467,19 @@
       });
       const localSubs = normalizeSubRevisions(round.subRevisions || [], round.number);
       const sheetSubs = normalizeSubRevisions(mergedSubs, round.number);
+      const localTime = revisionActivityTime(round);
+      const sheetTime = revisionActivityTime({
+        updatedAt: extra.updatedAt,
+        createdAt: extra.createdAt,
+        subRevisions: sheetSubs
+      });
+      const subRevisions = localTime >= sheetTime
+        ? normalizeSubRevisions(localSubs, round.number)
+        : normalizeSubRevisions(overlaySubRevisions(localSubs, sheetSubs, "incoming"), round.number);
       return Object.assign({}, round, {
         completed: "completed" in extra ? Boolean(extra.completed) : round.completed,
         updatedAt: extra.updatedAt || round.updatedAt || round.createdAt,
-        subRevisions: normalizeSubRevisions(overlaySubRevisions(localSubs, sheetSubs, "incoming"), round.number)
+        subRevisions: subRevisions
       });
     });
     return order;
@@ -1049,13 +1079,7 @@
       });
       return Object.assign({}, round, {
         messages: messages,
-        subRevisions: overlaySubRevisions(
-          round.subRevisions || [],
-          (match && match.subRevisions) || [],
-          match && (Date.parse(match.updatedAt || match.createdAt || "") || 0) >= (Date.parse(round.updatedAt || round.createdAt || "") || 0)
-            ? "incoming"
-            : "union"
-        )
+        subRevisions: mergeSubRevisionsForRounds(round, match)
       });
     });
   }
@@ -1735,8 +1759,14 @@
         "";
     }
     order.status = computeStatus(order);
-    if (String(order.revisionsData || "").trim()) {
+    if (previous && previousUpdatedAt > incomingUpdatedAt) {
+      order.revisions = normalizeRevisions(order.revisions || previous.revisions || []);
+      order.revisionsData = buildRevisionsData(order);
+    } else if (String(order.revisionsData || "").trim()) {
       order = applyRevisionsData(order, order.revisionsData);
+      order.revisionsData = buildRevisionsData(order);
+    } else {
+      order.revisionsData = buildRevisionsData(order);
     }
     return mergeSchedule(fillOrderAccountProfile(order, previous), previous);
   }

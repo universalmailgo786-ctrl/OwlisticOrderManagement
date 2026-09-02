@@ -266,6 +266,7 @@
       return;
     }
     renderOrder(order);
+    const localSnapshot = order;
 
     const sheet = window.OwlisticSheet;
     if (!sheet || typeof sheet.fetchOrder !== "function") return;
@@ -273,6 +274,9 @@
       if (!result || !result.found || !result.order) return;
       const remote = result.order;
       if (!auth.canSeeOrder(remote)) return;
+      const localUpdated = Date.parse((localSnapshot && localSnapshot.updatedAt) || "") || 0;
+      const remoteUpdated = Date.parse(remote.updatedAt || "") || 0;
+      if (localUpdated > remoteUpdated) return;
       if (typeof store.importOrders === "function") {
         store.importOrders([remote]);
       }

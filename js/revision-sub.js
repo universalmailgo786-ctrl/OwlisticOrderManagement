@@ -615,7 +615,8 @@
       return;
     }
     store.upsertOrder(order);
-    syncOrderInBackground(order, { syncOptions: { skipUploads: true } }).then(function (result) {
+    const syncedOrder = store.getOrder(activeOrderId) || order;
+    syncOrderInBackground(syncedOrder, { syncOptions: { skipUploads: true } }).then(function (result) {
       const fresh = store.getOrder(activeOrderId);
       if (fresh) {
         renderDrawer(fresh);
