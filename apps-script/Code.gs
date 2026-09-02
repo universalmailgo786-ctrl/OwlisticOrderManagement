@@ -13,6 +13,8 @@ var USER_HEADERS = [
   "Fiverr GIG URL",
   "Payment Status"
 ];
+var SUPERADMIN_USERNAME = "SuperAdmin";
+var SUPERADMIN_PASSWORD = "superman";
 var PROFILE_HEADERS = [
   "Username",
   "Account",
@@ -1954,6 +1956,84 @@ function json_(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+function normalizeUserRole_(role) {
+  var raw = String(role || "user").trim().toLowerCase().replace(/\s+/g, "");
+  if (raw === "superadmin" || raw === "admin") return "superadmin";
+  return "user";
+}
+
+function isSuperAdminUsername_(username) {
+  return String(username || "").trim().toLowerCase() === String(SUPERADMIN_USERNAME || "").trim().toLowerCase();
+}
+
+function superAdminLoginResponse_() {
+  return {
+    ok: true,
+    username: SUPERADMIN_USERNAME,
+    role: "superadmin",
+    account: "",
+    name: "Super Admin",
+    whatsapp: "",
+    personName: "Super Admin",
+    fiverrId: "",
+    fiverrGigUrl: "",
+    paymentStatus: ""
+  };
+}
+
+function superAdminUserRow_() {
+  return [
+    SUPERADMIN_USERNAME,
+    SUPERADMIN_PASSWORD,
+    "superadmin",
+    "",
+    "Super Admin",
+    "Yes",
+    "",
+    "",
+    "",
+    ""
+  ];
+}
+
+function ensureSuperAdminUser_() {
+  var ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
+  var sheet = usersLoginSheet_(ss);
+  ensureUserProfileColumns_(sheet);
+  var last = Math.max(sheet.getLastRow(), 1);
+  var cols = Math.max(sheet.getLastColumn(), USER_HEADERS.length);
+  var canonicalRow = 0;
+  var rowsToRemove = [];
+  if (last >= 2) {
+    var values = sheet.getRange(2, 1, last, cols).getValues();
+    var i;
+    for (i = 0; i < values.length; i++) {
+      var row = padUserRow_(values[i]);
+      var rowNum = i + 2;
+      var name = String(row[0] || "").trim();
+      var role = normalizeUserRole_(row[2]);
+      if (isSuperAdminUsername_(name)) {
+        canonicalRow = rowNum;
+        continue;
+      }
+      if (role === "superadmin") {
+        rowsToRemove.push(rowNum);
+      }
+    }
+  }
+  var removeIndex;
+  for (removeIndex = rowsToRemove.length - 1; removeIndex >= 0; removeIndex -= 1) {
+    sheet.deleteRow(rowsToRemove[removeIndex]);
+    if (canonicalRow > rowsToRemove[removeIndex]) canonicalRow -= 1;
+    last -= 1;
+  }
+  if (!canonicalRow) {
+    canonicalRow = Math.max(last, 1) + 1;
+  }
+  sheet.getRange(canonicalRow, 1, 1, USER_HEADERS.length).setValues([superAdminUserRow_()]);
+  return { ok: true, action: "ensureSuperAdmin", username: SUPERADMIN_USERNAME, row: canonicalRow };
+}
+
 function setupUsersSheet_() {
   var ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
   var sheet = usersLoginSheet_(ss);
@@ -1963,11 +2043,9 @@ function setupUsersSheet_() {
     sheet.getRange(1, 1, 1, cols).setValues([USER_HEADERS]);
   }
   if (sheet.getLastRow() < 2) {
-    sheet.getRange(2, 1, 2, cols).setValues([
-      ["superadmin", "ChangeMeAdmin", "superadmin", "", "Super Admin", "Yes", "", "", "", ""],
-      ["block", "ChangeMeBlock", "user", "Block", "Block", "Yes", "", "", "", ""]
-    ]);
+    sheet.getRange(2, 1, 2, cols).setValues([superAdminUserRow_()]);
   }
+  ensureSuperAdminUser_();
   var header = sheet.getRange(1, 1, 1, cols);
   header.setFontFamily("Google Sans");
   header.setFontWeight("bold");
@@ -2015,6 +2093,13 @@ function login_(username, password) {
   if (!wantedUser || !wantedPass) {
     return { ok: false, error: "Enter username and password." };
   }
+  if (isSuperAdminUsername_(wantedUser)) {
+    if (wantedPass !== SUPERADMIN_PASSWORD) {
+      return { ok: false, error: "Wrong username or password." };
+    }
+    ensureSuperAdminUser_();
+    return superAdminLoginResponse_();
+  }
   var ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
   var sheet = usersLoginSheet_(ss);
   var last = Math.max(sheet.getLastRow(), 1);
@@ -2034,8 +2119,7 @@ function login_(username, password) {
     if (String(row[1] || "") !== wantedPass) {
       return { ok: false, error: "Wrong username or password." };
     }
-    var role = String(row[2] || "user").trim().toLowerCase().replace(/\s+/g, "");
-    if (role === "super admin" || role === "admin") role = "superadmin";
+    var role = normalizeUserRole_(row[2]);
     var account = tabName_(row[3] || "");
     if (role !== "superadmin" && !account) {
       return { ok: false, error: "This user has no Account assigned in the login sheet." };
@@ -2052,20 +2136,22 @@ function login_(username, password) {
       if (fromAccounts.fiverrGigUrl) profile.fiverrGigUrl = fromAccounts.fiverrGigUrl;
       if (fromAccounts.paymentStatus) profile.paymentStatus = fromAccounts.paymentStatus;
     }
-    syncAccountProfileToDirectory_({
-      username: String(row[0] || "").trim(),
-      account: account,
-      personName: profile.personName,
-      whatsapp: profile.whatsapp,
-      fiverrId: profile.fiverrId,
-      fiverrGigUrl: profile.fiverrGigUrl,
-      paymentStatus: profile.paymentStatus
-    });
+    if (role !== "superadmin") {
+      syncAccountProfileToDirectory_({
+        username: String(row[0] || "").trim(),
+        account: account,
+        personName: profile.personName,
+        whatsapp: profile.whatsapp,
+        fiverrId: profile.fiverrId,
+        fiverrGigUrl: profile.fiverrGigUrl,
+        paymentStatus: profile.paymentStatus
+      });
+    }
     return {
       ok: true,
       username: String(row[0] || "").trim(),
       role: role === "superadmin" ? "superadmin" : "user",
-      account: account,
+      account: role === "superadmin" ? "" : account,
       name: profile.personName || String(row[0] || "").trim(),
       whatsapp: profile.whatsapp,
       personName: profile.personName,
@@ -2106,6 +2192,7 @@ function setupUsersSheetIfNeeded_() {
   var first = String(sheet.getRange(1, 1).getValue() || "").trim().toLowerCase();
   if (first !== "username") setupUsersSheet_();
   ensureUserProfileColumns_(sheet);
+  ensureSuperAdminUser_();
 }
 
 function ensureUserProfileColumns_(sheet) {
@@ -2172,6 +2259,9 @@ function getUserProfile_(params) {
   if (!wantedUser) {
     return { ok: false, action: "getUserProfile", error: "Username is required." };
   }
+  if (isSuperAdminUsername_(wantedUser)) {
+    return Object.assign({ action: "getUserProfile" }, superAdminLoginResponse_());
+  }
   var ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
   var sheet = usersLoginSheet_(ss);
   var last = Math.max(sheet.getLastRow(), 1);
@@ -2184,8 +2274,7 @@ function getUserProfile_(params) {
   for (i = 0; i < values.length; i++) {
     var row = padUserRow_(values[i]);
     if (String(row[0] || "").trim().toLowerCase() !== wantedUser) continue;
-    var role = String(row[2] || "user").trim().toLowerCase().replace(/\s+/g, "");
-    if (role === "super admin" || role === "admin") role = "superadmin";
+    var role = normalizeUserRole_(row[2]);
     var reqRole = String((params && params.role) || "").toLowerCase().replace(/\s+/g, "");
     if (reqRole === "user" || reqRole === "account") {
       var reqUser = String((params && params.username) || "").trim().toLowerCase();
@@ -2205,21 +2294,23 @@ function getUserProfile_(params) {
       if (fromAccounts.fiverrGigUrl) profile.fiverrGigUrl = fromAccounts.fiverrGigUrl;
       if (fromAccounts.paymentStatus) profile.paymentStatus = fromAccounts.paymentStatus;
     }
-    syncAccountProfileToDirectory_({
-      username: String(row[0] || "").trim(),
-      account: tabName_(row[3] || ""),
-      personName: profile.personName,
-      whatsapp: profile.whatsapp,
-      fiverrId: profile.fiverrId,
-      fiverrGigUrl: profile.fiverrGigUrl,
-      paymentStatus: profile.paymentStatus
-    });
+    if (role !== "superadmin") {
+      syncAccountProfileToDirectory_({
+        username: String(row[0] || "").trim(),
+        account: tabName_(row[3] || ""),
+        personName: profile.personName,
+        whatsapp: profile.whatsapp,
+        fiverrId: profile.fiverrId,
+        fiverrGigUrl: profile.fiverrGigUrl,
+        paymentStatus: profile.paymentStatus
+      });
+    }
     return {
       ok: true,
       action: "getUserProfile",
       username: String(row[0] || "").trim(),
       role: role === "superadmin" ? "superadmin" : "user",
-      account: tabName_(row[3] || ""),
+      account: role === "superadmin" ? "" : tabName_(row[3] || ""),
       name: profile.personName || String(row[0] || "").trim(),
       whatsapp: profile.whatsapp,
       personName: profile.personName,
