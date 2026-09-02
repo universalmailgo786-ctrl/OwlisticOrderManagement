@@ -2,6 +2,7 @@
   const ACC_KEY = "owlistic.accounts";
   const ORD_KEY = "owlistic.orders";
   const CTR_KEY = "owlistic.orderCounter";
+  const DEL_KEY = "owlistic.deletedOrders";
   const DB_NAME = "owlistic-files";
   const DB_STORE = "files";
 
@@ -1600,9 +1601,11 @@
       order.createdAt = stamp;
       order.updatedAt = stamp;
       rememberOrderNumber(order.id);
+      forgetDeletedOrder(order.id);
       orders.push(order);
     } else {
       const index = orders.findIndex(function (item) { return item.id === order.id; });
+      forgetDeletedOrder(order.id);
       if (index === -1) {
         order.createdAt = order.createdAt || stamp;
         order.updatedAt = stamp;
@@ -1617,12 +1620,39 @@
     return order;
   }
 
+  function getDeletedOrderIds() {
+    const list = readJson(DEL_KEY, []);
+    return Array.isArray(list) ? list.map(function (id) { return String(id || "").trim(); }).filter(Boolean) : [];
+  }
+
+  function isDeletedOrder(id) {
+    const wanted = String(id || "").trim();
+    if (!wanted) return false;
+    return getDeletedOrderIds().indexOf(wanted) >= 0;
+  }
+
+  function rememberDeletedOrder(id) {
+    const wanted = String(id || "").trim();
+    if (!wanted) return;
+    const list = getDeletedOrderIds();
+    if (list.indexOf(wanted) >= 0) return;
+    list.push(wanted);
+    writeJson(DEL_KEY, list);
+  }
+
+  function forgetDeletedOrder(id) {
+    const wanted = String(id || "").trim();
+    if (!wanted) return;
+    writeJson(DEL_KEY, getDeletedOrderIds().filter(function (item) { return item !== wanted; }));
+  }
+
   function deleteOrder(id) {
     const wanted = String(id || "").trim();
     if (!wanted) return false;
+    rememberDeletedOrder(wanted);
     const before = getOrders();
     const next = before.filter(function (item) { return item.id !== wanted; });
-    if (next.length === before.length) return false;
+    if (next.length === before.length) return true;
     saveOrders(next);
     return true;
   }
@@ -1917,6 +1947,7 @@
     const orders = getOrders();
     (incoming || []).forEach(function (order) {
       if (!order || !order.id) return;
+      if (isDeletedOrder(order.id)) return;
       const index = orders.findIndex(function (item) { return item.id === order.id; });
       const previous = index === -1 ? null : orders[index];
       const next = hydrateImportedOrder(order, previous);
@@ -1933,6 +1964,7 @@
     const next = [];
     (incoming || []).forEach(function (order) {
       if (!order || !order.id) return;
+      if (isDeletedOrder(order.id)) return;
       const previous = previousAll.find(function (item) { return item.id === order.id; }) || null;
       const hydrated = hydrateImportedOrder(order, previous);
       rememberOrderNumber(hydrated.id);
@@ -2010,6 +2042,10 @@
     orderNumberOf: orderNumberOf,
     padOrderId: padOrderId,
     deleteOrder: deleteOrder,
+    rememberDeletedOrder: rememberDeletedOrder,
+    forgetDeletedOrder: forgetDeletedOrder,
+    isDeletedOrder: isDeletedOrder,
+    getDeletedOrderIds: getDeletedOrderIds,
     importOrders: importOrders,
     replaceOrders: replaceOrders,
     parseBoardStatus: parseBoardStatus,

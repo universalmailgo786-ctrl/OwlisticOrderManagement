@@ -684,11 +684,29 @@
     if (!order || !order.id) {
       return Promise.resolve({ skipped: true });
     }
-    return postPayload({
+    const accountName = accountNameOf(order);
+    return postJsonPayload({
       action: "deleteOrder",
       orderId: order.id,
-      accountName: accountNameOf(order),
-      tabName: tabNameOf(accountNameOf(order))
+      accountName: accountName,
+      tabName: tabNameOf(accountName),
+      tab: tabNameOf(accountName)
+    }).then(function (result) {
+      if (result && result.ok) return result;
+      return postPayload({
+        action: "deleteOrder",
+        orderId: order.id,
+        accountName: accountName,
+        tabName: tabNameOf(accountName),
+        tab: tabNameOf(accountName)
+      }).then(function (fallback) {
+        if (fallback && fallback.ok === false) {
+          return { ok: false, error: (result && result.error) || fallback.error || "Could not delete order from Google Sheet." };
+        }
+        return result && result.error
+          ? { ok: false, error: result.error }
+          : { ok: true, fallback: true };
+      });
     });
   }
 
@@ -702,29 +720,63 @@
       return Promise.resolve({ skipped: true });
     }
     const id = order.id;
-    return deleteOrder(order).then(function () {
+    const accountName = accountNameOf(order);
+    function finishLocal() {
       if (store && typeof store.deleteOrder === "function") store.deleteOrder(id);
+      else if (store && typeof store.rememberDeletedOrder === "function") store.rememberDeletedOrder(id);
+    }
+    function retryDelete() {
+      return postJsonPayload({
+        action: "deleteOrder",
+        orderId: id,
+        accountName: accountName,
+        tabName: tabNameOf(accountName),
+        tab: tabNameOf(accountName)
+      });
+    }
+    return deleteOrder(order).then(function (deleted) {
+      if (deleted && deleted.ok === false && !deleted.missing) {
+        return {
+          ok: false,
+          removedLocal: false,
+          sheetRemaining: true,
+          error: deleted.error || "Could not delete this order from the Google Sheet."
+        };
+      }
+      finishLocal();
       function check(attempt) {
         return hasOrder(order).then(function (result) {
           if (result && result.unsupported) {
-            return { ok: true, removedLocal: true };
-          }
-          if (!result || !result.found) {
-            if (store && typeof store.deleteOrder === "function") store.deleteOrder(id);
             return { ok: true, removedLocal: true, sheetRemaining: false };
           }
-          if (attempt >= 10) {
-            return {
-              ok: true,
-              removedLocal: true,
-              sheetRemaining: true,
-              error: "Deleted in the portal, but the Google Sheet row is still there."
-            };
+          if (!result || !result.found) {
+            finishLocal();
+            return { ok: true, removedLocal: true, sheetRemaining: false };
           }
-          return delay(500).then(function () { return check(attempt + 1); });
+          if (attempt >= 8) {
+            return retryDelete().then(function (again) {
+              return hasOrder(order).then(function (finalCheck) {
+                const stillThere = Boolean(finalCheck && finalCheck.found);
+                if (!stillThere) {
+                  finishLocal();
+                  return { ok: true, removedLocal: true, sheetRemaining: false };
+                }
+                finishLocal();
+                return {
+                  ok: Boolean(again && again.ok),
+                  removedLocal: true,
+                  sheetRemaining: true,
+                  error: (again && again.error) || "Deleted in the portal, but the Google Sheet row is still there."
+                };
+              });
+            });
+          }
+          return delay(450).then(function () {
+            return retryDelete().then(function () { return check(attempt + 1); });
+          });
         });
       }
-      return delay(400).then(function () { return check(0); });
+      return delay(350).then(function () { return check(0); });
     });
   }
 

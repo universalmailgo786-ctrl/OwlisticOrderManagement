@@ -1541,7 +1541,25 @@
 
   function applySheetOrders(result) {
     if (!result || result.skipped) return;
-    const list = result.orders || [];
+    let list = result.orders || [];
+    if (store.getDeletedOrderIds && store.getDeletedOrderIds().length) {
+      const lingering = [];
+      list = list.filter(function (order) {
+        if (!order || !order.id) return false;
+        if (store.isDeletedOrder && store.isDeletedOrder(order.id)) {
+          lingering.push(order);
+          return false;
+        }
+        return true;
+      });
+      if (lingering.length && window.OwlisticSheet && typeof window.OwlisticSheet.deleteOrder === "function") {
+        lingering.forEach(function (order) {
+          window.OwlisticSheet.deleteOrder(order).then(function (deleted) {
+            if (deleted && deleted.ok && store.deleteOrder) store.deleteOrder(order.id);
+          }).catch(function () {});
+        });
+      }
+    }
     const repairBefore = {};
     list.forEach(function (order) {
       if (!order || !order.id) return;
@@ -2001,11 +2019,16 @@
     }
     button.disabled = true;
     const finish = function (result) {
+      button.disabled = false;
+      if (result && result.ok === false && result.removedLocal === false) {
+        showToast(result.error || "Could not delete this order from the Google Sheet.");
+        return;
+      }
       if (store.deleteOrder) store.deleteOrder(id);
       if (window.OwlisticHanifCosting) window.OwlisticHanifCosting.onOrderDeleted(id);
       render();
       if (result && result.sheetRemaining) {
-        showToast("Deleted from the portal. The Google Sheet row is still there. Try Delete again.");
+        showToast("Deleted from the portal. Removing from Google Sheet… Try refresh if it reappears.");
       } else {
         showToast("Order " + id + " deleted");
       }

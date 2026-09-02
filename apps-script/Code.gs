@@ -1291,15 +1291,21 @@ function upsertOrderLocked_(ss, data) {
 function deleteOrder_(ss, data) {
   var orderId = String((data && (data.orderId || data.id)) || "").trim();
   if (!orderId) {
-    return { ok: false, error: "Order ID is required." };
+    return { ok: false, action: "deleteOrder", error: "Order ID is required." };
   }
-  var found = findOrder_(ss, orderId);
+  var lookup = orderLookup_({
+    orderId: orderId,
+    role: data && data.role,
+    userAccount: data && (data.userAccount || data.account),
+    account: data && data.account,
+    tab: data && (data.tabName || data.tab || data.accountName)
+  });
+  if (lookup.denied) {
+    return { ok: false, action: "deleteOrder", orderId: orderId, error: "You can only delete orders for " + lookup.forced + "." };
+  }
+  var found = lookup.found;
   if (!found) {
     return { ok: true, action: "deleteOrder", orderId: orderId, missing: true };
-  }
-  var forced = forcedAccount_(data);
-  if (forced && !canAccessFound_(found, forced)) {
-    return { ok: false, error: "You can only delete orders for " + forced + "." };
   }
   found.sheet.deleteRow(found.row);
   try { removeHanifRecordByOrderId_(ss, orderId, true); } catch (err) {}
@@ -1337,20 +1343,40 @@ function findOrderOnSheet_(sheet, orderId) {
   return null;
 }
 
+function findOrderForAccount_(ss, orderId, account) {
+  if (!ss || !orderId || !account) return null;
+  var sheets = ss.getSheets();
+  var i;
+  for (i = 0; i < sheets.length; i++) {
+    var sheet = sheets[i];
+    var name = sheet.getName();
+    if (skipOrderWorkbookSheet_(name)) continue;
+    if (!sheetMatchesAccount_(name, account)) continue;
+    var found = findOrderOnSheet_(sheet, orderId);
+    if (found) return found;
+  }
+  return null;
+}
+
 function orderLookup_(params) {
   var orderId = String((params && params.orderId) || "").trim();
   var role = String((params && params.role) || "").toLowerCase().replace(/\s+/g, "");
   var forced = (role === "user" || role === "account")
     ? tabName_((params && (params.userAccount || params.account)) || "")
     : "";
-  var tab = tabName_((params && params.tab) || "") || forced;
+  var tab = tabName_((params && (params.tab || params.tabName || params.accountName)) || "") || forced;
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var found = null;
   if (tab) {
     var sheet = sheetForAccount_(ss, tab);
     if (sheet) found = findOrderOnSheet_(sheet, orderId);
   }
-  if (!found) found = findOrder_(ss, orderId);
+  if (!found && forced) {
+    found = findOrderForAccount_(ss, orderId, forced);
+  }
+  if (!found && !forced) {
+    found = findOrder_(ss, orderId);
+  }
   if (found && forced && !canAccessFound_(found, forced)) {
     return { orderId: orderId, found: null, denied: true, forced: forced, tab: tab };
   }
