@@ -326,6 +326,14 @@ function listOrders_(params) {
     if (String(sheet.getRange(1, 1).getValue() || "").trim() !== "Order ID") continue;
     workbookTabs.push(name);
     var values = sheet.getRange(2, 1, last - 1, colCount).getValues();
+    // Drive links live in rich-text hyperlinks on Requirement Files (col 15).
+    // Plain getValues() only returns names, which made Records show "(not on Drive)".
+    var richFileCol = [];
+    try {
+      richFileCol = sheet.getRange(2, 15, last - 1, 15).getRichTextValues();
+    } catch (richErr) {
+      richFileCol = [];
+    }
     var r;
     for (r = 0; r < values.length; r++) {
       var row = values[r];
@@ -333,7 +341,8 @@ function listOrders_(params) {
       var id = String(row[0] || "").trim();
       if (!id) continue;
       if (!rowBelongsToAny_(row, name, allowedTabs)) continue;
-      orders.push(orderFromRow_(row, name, parseFiles_(row[14])));
+      var richCell = richFileCol[r] && richFileCol[r][0] ? richFileCol[r][0] : null;
+      orders.push(orderFromRow_(row, name, filesFromCell_(richCell, row[14])));
     }
   }
   return { ok: true, action: "listOrders", count: orders.length, orders: orders, sheetColumns: HEADERS.length, workbookTabs: workbookTabs };
