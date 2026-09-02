@@ -356,11 +356,17 @@
     "</div>";
   }
 
+  function displayScheduledBy(order) {
+    const owner = String((order && order.name) || "").trim();
+    if (owner) return owner;
+    return String((order && order.scheduledBy) || "").trim();
+  }
+
   function renderSchedule(order) {
     return '<div class="ov-schedule-grid">' +
       '<div class="ov-schedule-item"><span class="ov-schedule-label">Place on</span><span class="ov-schedule-value">' + display(formatPlaceOn(order)) + "</span></div>" +
       '<div class="ov-schedule-item"><span class="ov-schedule-label">Placement status</span><span class="ov-schedule-value">' + display(placementLabel(order)) + "</span></div>" +
-      '<div class="ov-schedule-item"><span class="ov-schedule-label">Scheduled by</span><span class="ov-schedule-value">' + display(order.scheduledBy) + "</span></div>" +
+      '<div class="ov-schedule-item"><span class="ov-schedule-label">Scheduled by</span><span class="ov-schedule-value">' + display(displayScheduledBy(order)) + "</span></div>" +
       '<div class="ov-schedule-item"><span class="ov-schedule-label">Schedule updated</span><span class="ov-schedule-value">' + display(formatStamp(order.scheduleUpdatedAt)) + "</span></div>" +
       '<div class="ov-schedule-item"><span class="ov-schedule-label">Placed at</span><span class="ov-schedule-value">' + display(formatStamp(order.placedAt)) + "</span></div>" +
     "</div>";

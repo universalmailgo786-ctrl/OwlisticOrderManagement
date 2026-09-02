@@ -786,10 +786,29 @@
     }
   }
 
-  function scheduleActor() {
+  function scheduleOwnerName(order) {
+    if (!order) return "";
+    const fromOrder = String(order.name || order.personName || "").trim();
+    if (fromOrder) return fromOrder;
+    if (store && typeof store.accountForName === "function" && order.accountName) {
+      const account = store.accountForName(order.accountName);
+      if (account && account.personName) return String(account.personName).trim();
+    }
+    return "";
+  }
+
+  function scheduleActor(order) {
+    const owner = scheduleOwnerName(order);
+    if (owner) return owner;
     const current = (auth.getSession && auth.getSession()) || session;
     if (!current) return "";
-    return String(current.name || current.username || "").trim();
+    return String(current.personName || current.name || current.username || "").trim();
+  }
+
+  function canScheduleOrder(order) {
+    if (!order) return false;
+    if (auth.isSuperAdmin && auth.isSuperAdmin()) return true;
+    return typeof auth.canSeeOrder === "function" ? auth.canSeeOrder(order) : true;
   }
 
   function placeOnLabel(order) {
@@ -1738,7 +1757,7 @@
   function applyScheduleAction(orderId, action) {
     const order = store.getOrder(orderId);
     if (!order) return;
-    if (typeof auth.canSeeOrder === "function" && !auth.canSeeOrder(order)) {
+    if (typeof auth.canSeeOrder === "function" && !canScheduleOrder(order)) {
       showToast("You can only schedule orders for your account.");
       return;
     }
@@ -1748,17 +1767,17 @@
     }
     if (!store.applyManualSchedule) return;
     if (action === "placed") {
-      store.applyManualSchedule(order, { placed: true }, scheduleActor());
+      store.applyManualSchedule(order, { placed: true }, scheduleActor(order));
       persistSchedule(order, "Order moved to Orders Placed", { movedToPlaced: true });
       return;
     }
     if (action === "hold") {
-      store.applyManualSchedule(order, { hold: true }, scheduleActor());
+      store.applyManualSchedule(order, { hold: true }, scheduleActor(order));
       persistSchedule(order, "Schedule saved");
       return;
     }
     if (action === "clear") {
-      store.applyManualSchedule(order, { clear: true }, scheduleActor());
+      store.applyManualSchedule(order, { clear: true }, scheduleActor(order));
       persistSchedule(order, "Schedule saved");
     }
   }
@@ -1769,7 +1788,7 @@
     if (!store.applyManualSchedule) return;
     const mode = scheduleMode ? scheduleMode.value : "scheduled";
     if (mode === "hold") {
-      store.applyManualSchedule(order, { hold: true }, scheduleActor());
+      store.applyManualSchedule(order, { hold: true }, scheduleActor(order));
       persistSchedule(order, "Schedule saved");
       return;
     }
@@ -1778,7 +1797,7 @@
       showToast("Choose a Place On date, or set status to On Hold.");
       return;
     }
-    store.applyManualSchedule(order, { placeOn: date }, scheduleActor());
+    store.applyManualSchedule(order, { placeOn: date }, scheduleActor(order));
     persistSchedule(order, "Schedule saved");
   }
 
