@@ -5117,6 +5117,137 @@ body.is-hanif-tab .records-tabs {
   color: #8a8178;
 }
 
+.ov-file-thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(34, 56, 41, 0.1);
+}
+
+.ov-file-download {
+  font-size: 10px;
+  font-weight: 700;
+  color: #4e91b1;
+}
+
+/* Message / revision attachments */
+.ov-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.ov-timeline-bubble .ov-attachments {
+  margin-top: 12px;
+}
+
+.ov-rev-cell .ov-attachments {
+  margin-top: 8px;
+}
+
+.ov-attach-item {
+  margin: 0;
+  max-width: 180px;
+}
+
+.ov-attach-item.is-image {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ov-attach-image-link {
+  display: block;
+  line-height: 0;
+}
+
+.ov-attach-thumb {
+  width: 160px;
+  max-width: 100%;
+  height: auto;
+  max-height: 160px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid rgba(34, 56, 41, 0.12);
+  background: #fff;
+}
+
+.ov-attach-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 12px;
+  background: rgba(155, 170, 134, 0.2);
+  font-size: 12px;
+  font-weight: 700;
+  color: #223829;
+}
+
+.ov-attach-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.ov-attach-name {
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.ov-attach-size {
+  font-weight: 400;
+  color: #8a8178;
+}
+
+.ov-attach-download {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: #4e91b1;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ov-attach-download:hover {
+  text-decoration: underline;
+}
+
+.ov-attach-url {
+  display: block;
+  font-size: 9px;
+  line-height: 1.35;
+  color: #8a8178;
+  word-break: break-all;
+}
+
+.ov-attach-missing {
+  font-size: 10px;
+  color: #b45309;
+}
+
+.ov-attach-item.is-file {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 140px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(34, 56, 41, 0.1);
+  background: #fff;
+}
+
 /* Revisions table */
 .ov-table-wrap {
   overflow-x: auto;
@@ -5271,6 +5402,20 @@ body.is-hanif-tab .records-tabs {
 
   .ov-timeline::before {
     background: #ccc;
+  }
+
+  .ov-attach-url,
+  .ov-pdf-link {
+    display: block !important;
+    color: #1a5f8a !important;
+    font-size: 8px !important;
+    word-break: break-all;
+  }
+
+  .ov-attach-thumb,
+  .ov-file-thumb {
+    max-width: 120px;
+    max-height: 120px;
   }
 }
 

@@ -149,22 +149,72 @@
     return [];
   }
 
+  function repairMessage(message) {
+    if (!message) return null;
+    if (store && store.repairRevisionMessages) {
+      return store.repairRevisionMessages([message])[0] || message;
+    }
+    return message;
+  }
+
+  function normalizeViewFile(file) {
+    if (!file) return null;
+    const name = String(file.fileName || file.name || "file").trim();
+    const url = String(file.imageUrl || file.url || file.previewUrl || "").trim();
+    if (!name && !url && !file.id) return null;
+    return {
+      id: file.id || "",
+      name: name || "file",
+      url: url,
+      type: file.mimeType || file.type || "",
+      size: file.fileSize || file.size || 0,
+      previewUrl: String(file.thumbnailUrl || file.previewUrl || "").trim()
+    };
+  }
+
+  function viewFilesList(files) {
+    return (files || []).map(normalizeViewFile).filter(Boolean);
+  }
+
+  function fileDownloadHref(file) {
+    if (store && store.fileDownloadUrl) return store.fileDownloadUrl(file) || "";
+    return (file && file.url) || "";
+  }
+
+  function filePreviewSrc(file) {
+    if (file && file.previewUrl) return file.previewUrl;
+    if (store && store.filePreviewUrl) return store.filePreviewUrl(file) || "";
+    return (file && file.url) || "";
+  }
+
   function flattenMessages(order) {
     const pairs = threadPairs(order);
     const items = [];
     pairs.forEach(function (pair, pairIndex) {
-      const buyer = pair.buyer || null;
-      const seller = pair.client || pair.seller || null;
-      if (buyer && String(buyer.text || "").trim()) {
-        items.push({ role: "buyer", text: String(buyer.text).trim(), stamp: buyer.createdAt, round: pairIndex + 1 });
+      const buyer = repairMessage(pair.buyer);
+      const seller = repairMessage(pair.client || pair.seller);
+      if (buyer) {
+        const text = String(buyer.text || "").trim();
+        const files = viewFilesList(buyer.files);
+        if (text || files.length) {
+          items.push({ role: "buyer", text: text, files: files, stamp: buyer.createdAt, round: pairIndex + 1 });
+        }
       }
-      if (seller && String(seller.text || "").trim()) {
-        items.push({ role: "seller", text: String(seller.text).trim(), stamp: seller.createdAt, round: pairIndex + 1 });
+      if (seller) {
+        const text = String(seller.text || "").trim();
+        const files = viewFilesList(seller.files);
+        if (text || files.length) {
+          items.push({ role: "seller", text: text, files: files, stamp: seller.createdAt, round: pairIndex + 1 });
+        }
       }
     });
     if (!items.length) {
-      const fallback = String(order.messageText || "").trim();
-      if (fallback) items.push({ role: "buyer", text: fallback, stamp: "", round: 1 });
+      const fallback = repairMessage({ text: order.messageText || "", files: [] });
+      const text = String((fallback && fallback.text) || "").trim();
+      const files = viewFilesList(fallback && fallback.files);
+      if (text || files.length) {
+        items.push({ role: "buyer", text: text, files: files, stamp: "", round: 1 });
+      }
     }
     return items;
   }
@@ -188,7 +238,8 @@
             "</span>" +
             (stamp ? '<time class="ov-timeline-time">' + escapeHtml(stamp) + "</time>" : "") +
           "</header>" +
-          '<p class="ov-timeline-text">' + escapeHtml(msg.text).replace(/\n/g, "<br>") + "</p>" +
+          (msg.text ? '<p class="ov-timeline-text">' + escapeHtml(msg.text).replace(/\n/g, "<br>") + "</p>" : "") +
+          renderAttachmentsHtml(msg.files) +
         "</div>" +
       "</article>";
     }).join("") + "</div>";
@@ -217,44 +268,108 @@
   }
 
   function isImageFile(file) {
-    if (store && store.isImageFile) return store.isImageFile(file);
-    const name = String((file && (file.fileName || file.name)) || "");
-    return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/i.test(name);
+    const probe = {
+      name: (file && (file.fileName || file.name)) || "",
+      type: (file && (file.mimeType || file.type)) || ""
+    };
+    if (store && store.isImageFile) return store.isImageFile(probe);
+    return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/i.test(probe.name) || /^image\//i.test(probe.type);
   }
 
-  function fileUrl(file) {
-    return (file && (file.url || file.imageUrl || file.previewUrl)) || "";
+  function renderAttachmentsHtml(files) {
+    const list = viewFilesList(files);
+    if (!list.length) return "";
+    return '<div class="ov-attachments">' + list.map(function (file) {
+      const download = fileDownloadHref(file);
+      const preview = filePreviewSrc(file) || download;
+      const name = escapeHtml(file.name);
+      const missing = !download && !file.id;
+      if (isImageFile(file)) {
+        const imgHtml = preview
+          ? '<a class="ov-attach-image-link" href="' + escapeHtml(download || preview) + '" target="_blank" rel="noopener noreferrer">' +
+              '<img class="ov-attach-thumb ov-pdf-image" src="' + escapeHtml(preview) + '" alt="' + name + '"' +
+              (file.id ? ' data-local-file-id="' + escapeHtml(file.id) + '"' : "") +
+              ' crossorigin="anonymous" loading="lazy" />' +
+            "</a>"
+          : '<span class="ov-attach-fallback" aria-hidden="true">IMG</span>';
+        const downloadHtml = missing
+          ? '<span class="ov-attach-missing">Not on Drive</span>'
+          : (download
+            ? '<a class="ov-attach-download ov-pdf-link" href="' + escapeHtml(download) + '" target="_blank" rel="noopener noreferrer" download="' + name + '">Download</a>'
+            : '<button type="button" class="ov-attach-download" data-ov-download-id="' + escapeHtml(file.id) + '" data-ov-download-name="' + name + '">Download</button>');
+        const urlHtml = download
+          ? '<span class="ov-attach-url ov-pdf-link" title="Image download link">' + escapeHtml(download) + "</span>"
+          : "";
+        return '<figure class="ov-attach-item is-image">' + imgHtml +
+          '<figcaption class="ov-attach-meta">' +
+            '<span class="ov-attach-name">' + name + "</span>" +
+            downloadHtml +
+            urlHtml +
+          "</figcaption>" +
+        "</figure>";
+      }
+      const size = formatBytes(file.size);
+      const ext = fileExtLabel(file);
+      const fileActions = missing
+        ? '<span class="ov-attach-missing">Not on Drive</span>'
+        : (download
+          ? '<a class="ov-attach-download ov-pdf-link" href="' + escapeHtml(download) + '" target="_blank" rel="noopener noreferrer" download="' + name + '">Download</a>'
+          : '<button type="button" class="ov-attach-download" data-ov-download-id="' + escapeHtml(file.id) + '" data-ov-download-name="' + name + '">Download</button>');
+      const urlHtml = download
+        ? '<span class="ov-attach-url ov-pdf-link">' + escapeHtml(download) + "</span>"
+        : "";
+      return '<div class="ov-attach-item is-file">' +
+        '<span class="ov-file-icon" aria-hidden="true">' + escapeHtml(ext) + "</span>" +
+        '<div class="ov-attach-meta">' +
+          '<span class="ov-attach-name">' + name + (size ? ' <span class="ov-attach-size">(' + escapeHtml(size) + ")</span>" : "") + "</span>" +
+          fileActions +
+          urlHtml +
+        "</div>" +
+      "</div>";
+    }).join("") + "</div>";
   }
 
   function renderFiles(order) {
     const list = (order.requirementFiles || []).filter(Boolean);
     if (!list.length) return '<p class="ov-empty-block">No requirement files attached.</p>';
     return '<div class="ov-file-grid">' + list.map(function (file) {
-      const name = file.fileName || file.name || "file";
-      const url = fileUrl(file);
-      const ext = fileExtLabel(file);
-      const isImage = isImageFile(file);
+      const normalized = normalizeViewFile(file) || file;
+      const name = normalized.name || "file";
+      const download = fileDownloadHref(normalized);
+      const preview = filePreviewSrc(normalized) || download;
+      const ext = fileExtLabel(normalized);
+      const isImage = isImageFile(normalized);
       const isPdf = ext === "PDF";
-      const size = formatBytes(file.size);
+      const size = formatBytes(normalized.size);
       const kindClass = isImage ? "is-image" : (isPdf ? "is-pdf" : "is-file");
-      const inner = '<span class="ov-file-icon" aria-hidden="true">' + escapeHtml(ext) + "</span>" +
+      const thumb = isImage && preview
+        ? '<img class="ov-file-thumb ov-pdf-image" src="' + escapeHtml(preview) + '" alt="' + escapeHtml(name) + '"' +
+          (normalized.id ? ' data-local-file-id="' + escapeHtml(normalized.id) + '"' : "") +
+          ' crossorigin="anonymous" loading="lazy" />'
+        : '<span class="ov-file-icon" aria-hidden="true">' + escapeHtml(ext) + "</span>";
+      const inner = thumb +
         '<span class="ov-file-name">' + escapeHtml(name) + "</span>" +
-        (size ? '<span class="ov-file-size">' + escapeHtml(size) + "</span>" : "");
-      if (url) {
-        return '<a class="ov-file-card ' + kindClass + '" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' + inner + "</a>";
+        (size ? '<span class="ov-file-size">' + escapeHtml(size) + "</span>" : "") +
+        (download ? '<span class="ov-file-download ov-pdf-link">Download</span>' : "");
+      const href = download || preview;
+      if (href) {
+        return '<a class="ov-file-card ' + kindClass + '" href="' + escapeHtml(href) + '" target="_blank" rel="noopener noreferrer" download="' + escapeHtml(name) + '">' + inner + "</a>";
       }
       return '<div class="ov-file-card ' + kindClass + ' is-static">' + inner + "</div>";
     }).join("") + "</div>";
   }
 
-  function revisionRoleText(round, role) {
+  function revisionRoleMessage(round, role) {
     const messages = (round && round.messages) || [];
     for (let i = 0; i < messages.length; i += 1) {
-      const msg = messages[i];
+      const msg = repairMessage(messages[i]);
       const msgRole = msg && (msg.role === "seller" || msg.kind === "seller") ? "seller" : "buyer";
-      if (msgRole === role && String(msg.text || "").trim()) return String(msg.text).trim();
+      if (msgRole !== role) continue;
+      const text = String(msg.text || "").trim();
+      const files = viewFilesList(msg.files);
+      if (text || files.length) return { text: text, files: files };
     }
-    return "";
+    return { text: "", files: [] };
   }
 
   function revisionRows(order) {
@@ -265,17 +380,24 @@
       const subs = (round.subRevisions || []).slice().sort(function (a, b) {
         return (a.subRevisionNumber || 0) - (b.subRevisionNumber || 0);
       });
+      const buyerMsg = revisionRoleMessage(round, "buyer");
+      const sellerMsg = revisionRoleMessage(round, "seller");
       return {
         label: "Revision " + round.number,
-        buyer: revisionRoleText(round, "buyer"),
-        seller: revisionRoleText(round, "seller"),
+        buyer: buyerMsg.text,
+        buyerFiles: buyerMsg.files,
+        seller: sellerMsg.text,
+        sellerFiles: sellerMsg.files,
         date: formatStamp(round.updatedAt || round.createdAt),
         kind: "main",
         subRevisions: subs.map(function (sub) {
+          const sellerFiles = viewFilesList(sub.attachments || sub.files);
           return {
             label: "Sub " + (sub.subRevisionNumber || ""),
             buyer: String(sub.buyerRevision || "").trim(),
+            buyerFiles: [],
             seller: String(sub.sellerReply || "").trim(),
+            sellerFiles: sellerFiles,
             date: formatStamp(sub.completedAt || sub.updatedAt || sub.createdAt),
             status: sub.completed ? "Completed" : (sub.status === "active" ? "Latest" : "Pending")
           };
@@ -290,8 +412,11 @@
       : '<span class="ov-empty">—</span>';
   }
 
-  function renderRevisionCell(text) {
-    return text ? multiline(text) : '<span class="ov-empty">—</span>';
+  function renderRevisionCell(text, files) {
+    const textHtml = text ? multiline(text) : "";
+    const filesHtml = renderAttachmentsHtml(files);
+    if (!textHtml && !filesHtml) return '<span class="ov-empty">—</span>';
+    return '<div class="ov-rev-cell">' + textHtml + filesHtml + "</div>";
   }
 
   function renderRevisionsTable(order) {
@@ -308,8 +433,8 @@
                 row.subRevisions.map(function (sub) {
                   return "<tr>" +
                     '<td><span class="ov-rev-pill ov-rev-pill-sub">' + escapeHtml(row.label.replace("Revision ", "R") + " · " + sub.label) + "</span></td>" +
-                    "<td>" + renderRevisionCell(sub.buyer) + "</td>" +
-                    "<td>" + renderRevisionCell(sub.seller) + "</td>" +
+                    "<td>" + renderRevisionCell(sub.buyer, sub.buyerFiles) + "</td>" +
+                    "<td>" + renderRevisionCell(sub.seller, sub.sellerFiles) + "</td>" +
                     '<td><span class="ov-subrev-status">' + escapeHtml(sub.status) + "</span></td>" +
                     '<td class="ov-rev-date">' + renderRevisionDate(sub.date) + "</td>" +
                   "</tr>";
@@ -325,8 +450,8 @@
             "<thead><tr><th>Revision</th><th>Buyer Message</th><th>Seller Message</th><th>Date</th></tr></thead>" +
             "<tbody><tr>" +
               '<td><span class="ov-rev-pill">' + escapeHtml(row.label) + "</span></td>" +
-              "<td>" + renderRevisionCell(row.buyer) + "</td>" +
-              "<td>" + renderRevisionCell(row.seller) + "</td>" +
+              "<td>" + renderRevisionCell(row.buyer, row.buyerFiles) + "</td>" +
+              "<td>" + renderRevisionCell(row.seller, row.sellerFiles) + "</td>" +
               '<td class="ov-rev-date">' + renderRevisionDate(row.date) + "</td>" +
             "</tr></tbody>" +
           "</table>" +
@@ -393,6 +518,33 @@
       sectionCard("files", "Requirement File", "", renderFiles(order)) +
       sectionCard("review", "Review Text (Feedback)", "", multiline(order.reviewText)) +
       sectionCard("revisions", "Revisions", "", renderRevisionsTable(order));
+    hydrateLocalThumbs(bodyEl);
+  }
+
+  function hydrateLocalThumbs(root) {
+    if (!root || typeof store.getFile !== "function") return;
+    root.querySelectorAll("img[data-local-file-id]").forEach(function (img) {
+      const id = img.getAttribute("data-local-file-id");
+      if (!id || img.getAttribute("data-local-hydrated") === "1") return;
+      store.getFile(id).then(function (record) {
+        if (!record || !record.blob) return;
+        img.src = URL.createObjectURL(record.blob);
+        img.setAttribute("data-local-hydrated", "1");
+      }).catch(function () {});
+    });
+  }
+
+  function downloadLocalFile(id, name) {
+    if (!id || typeof store.getFile !== "function") return;
+    store.getFile(id).then(function (record) {
+      if (!record || !record.blob) return;
+      const url = URL.createObjectURL(record.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name || record.name || "download";
+      link.click();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+    }).catch(function () {});
   }
 
   function showMissing(message) {
@@ -489,9 +641,20 @@
     }).catch(function () {});
   }
 
+  function bindAttachmentActions() {
+    if (!bodyEl) return;
+    bodyEl.addEventListener("click", function (event) {
+      const btn = event.target.closest("[data-ov-download-id]");
+      if (!btn) return;
+      event.preventDefault();
+      downloadLocalFile(btn.getAttribute("data-ov-download-id"), btn.getAttribute("data-ov-download-name") || "download");
+    });
+  }
+
   function init() {
     if (!auth.requirePage()) return;
     auth.bindNav();
+    bindAttachmentActions();
     if (pdfBtn) pdfBtn.addEventListener("click", exportPdf);
     const orderId = new URLSearchParams(window.location.search).get("order");
     if (!orderId) {
