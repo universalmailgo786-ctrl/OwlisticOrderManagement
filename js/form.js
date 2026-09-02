@@ -91,8 +91,11 @@
     return lockedAccount() || store.getAccount(accountSelect && accountSelect.value);
   }
 
-  function formHasFilledOrderData() {
-    const account = selectedAccount() || {};
+  function isEditingExistingOrder() {
+    return Boolean(fieldValue("order-id"));
+  }
+
+  function hasOrderDetailsBeyondProfile() {
     if (fieldValue("orderValue")) return true;
     if (fieldValue("searchKeyword")) return true;
     if (document.getElementById("order-custom") && document.getElementById("order-custom").checked) return true;
@@ -102,19 +105,27 @@
     if (fieldValue("messageText")) return true;
     if (typeof threadHasContent === "function" && threadHasContent()) return true;
     if (requirementFiles.length) return true;
-    if (revisions.length) return true;
+    if (revisions.some(function (round) {
+      const messages = (round && round.messages) || [];
+      return messages.some(function (message) {
+        return String(message.text || "").trim() || (message.files && message.files.length);
+      });
+    })) return true;
     if (fileInput && fileInput.files && fileInput.files.length) return true;
-    if (fieldValue("whatsapp") && !sameText(fieldValue("whatsapp"), account.whatsapp)) return true;
-    if (fieldValue("name") && !sameText(fieldValue("name"), account.personName)) return true;
-    if (fieldValue("fiverrId") && !sameText(fieldValue("fiverrId"), account.fiverrId)) return true;
-    if (fieldValue("fiverrGigUrl") && !sameText(fieldValue("fiverrGigUrl"), account.fiverrGigUrl)) return true;
-    const payment = selectedPayment("paymentStatus");
-    if (payment && !sameText(payment, account.paymentStatus)) return true;
     return false;
   }
 
+  function canSaveOrderContent() {
+    if (isEditingExistingOrder()) return true;
+    return hasOrderDetailsBeyondProfile();
+  }
+
+  function saveBlockedMessage() {
+    return "Fill in the order details (value, messages, requirements, review, or files) before saving.";
+  }
+
   function hasPersistableContent() {
-    return formHasFilledOrderData();
+    return canSaveOrderContent();
   }
 
   function maybePersist() {
@@ -1335,7 +1346,7 @@
   }
 
   function doSaveOrder(silent) {
-    if (!formHasFilledOrderData() && !(fileInput && fileInput.files && fileInput.files.length)) {
+    if (!canSaveOrderContent() && !(fileInput && fileInput.files && fileInput.files.length)) {
       return Promise.resolve({ empty: true });
     }
     const leftover = fileInput && fileInput.files && fileInput.files.length
@@ -1345,7 +1356,7 @@
       ? ingestRequirementFiles(leftover)
       : (filesStillUploading() ? ingestQueue : Promise.resolve());
     return ready.then(function () {
-      if (!formHasFilledOrderData()) {
+      if (!canSaveOrderContent()) {
         return { empty: true };
       }
       const saved = store.upsertOrder(collectOrder());
@@ -1383,7 +1394,7 @@
   }
 
   function persistLocalOrder() {
-    if (!formHasFilledOrderData()) return null;
+    if (!canSaveOrderContent()) return null;
     const saved = store.upsertOrder(collectOrder());
     document.getElementById("order-id").value = saved.id;
     editMeta.hidden = false;
@@ -1445,7 +1456,11 @@
     const saved = persistLocalOrder();
     const orderId = (saved && saved.id) || document.getElementById("order-id").value;
     if (!sheet || typeof sheet.uploadFile !== "function") {
-      showToast("Image added on the form. Click Save to store it in Drive.", 4000);
+      showToast("Image added on the form. Fill in the order details, then click Save to store it in Drive.", 4500);
+      return Promise.resolve([]);
+    }
+    if (!canSaveOrderContent()) {
+      showToast(saveBlockedMessage(), 4500);
       return Promise.resolve([]);
     }
     showToast("Image added. Uploading to Drive…", 2200);
@@ -2241,8 +2256,8 @@
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     if (isSubmitting) return;
-    if (!formHasFilledOrderData()) {
-      showToast("The form is empty. Fill in the order details before saving.", 4000);
+    if (!canSaveOrderContent()) {
+      showToast(saveBlockedMessage(), 4500);
       return;
     }
     isSubmitting = true;
@@ -2259,7 +2274,7 @@
     saveOrder(false).then(function (outcome) {
       if (!outcome || outcome.empty || (outcome.sheet && outcome.sheet.skipped)) {
         if (outcome && outcome.empty) {
-          showToast("The form is empty. Fill in the order details before saving.", 4000);
+          showToast(saveBlockedMessage(), 4500);
         }
         return;
       }
