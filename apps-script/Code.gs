@@ -15,6 +15,7 @@ var USER_HEADERS = [
 ];
 var SUPERADMIN_USERNAME = "SuperAdmin";
 var SUPERADMIN_PASSWORD = "superman";
+var SUPERADMIN_DISPLAY_NAME = "Ashar";
 var PROFILE_HEADERS = [
   "Username",
   "Account",
@@ -1972,9 +1973,9 @@ function superAdminLoginResponse_() {
     username: SUPERADMIN_USERNAME,
     role: "superadmin",
     account: "",
-    name: "Super Admin",
+    name: SUPERADMIN_DISPLAY_NAME,
     whatsapp: "",
-    personName: "Super Admin",
+    personName: SUPERADMIN_DISPLAY_NAME,
     fiverrId: "",
     fiverrGigUrl: "",
     paymentStatus: ""
@@ -1987,7 +1988,7 @@ function superAdminUserRow_() {
     SUPERADMIN_PASSWORD,
     "superadmin",
     "",
-    "Super Admin",
+    SUPERADMIN_DISPLAY_NAME,
     "Yes",
     "",
     "",
