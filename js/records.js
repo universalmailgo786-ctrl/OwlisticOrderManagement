@@ -743,6 +743,7 @@
     }
     const hideRevisionColumns = activeTab === "in-progress" || activeTab === "orders-placed";
     const showScheduleColumns = activeTab === "in-progress";
+    const showSearchKeyword = activeTab === "in-progress";
     const revisionHeads = [];
     if (!hideRevisionColumns) {
       for (let i = 1; i <= revisionCount; i += 1) {
@@ -759,7 +760,7 @@
       "<th>Client Name</th>" +
       "<th>Business Name</th>" +
       "<th>Value</th>" +
-      (showScheduleColumns ? "<th>Search Keyword</th>" : "") +
+      (showSearchKeyword ? "<th>Search Keyword</th>" : "") +
       "<th>Type</th>" +
       "<th>Chat Summary</th>" +
       "<th>Total Chats</th>" +
@@ -771,7 +772,7 @@
       "<th>Status</th>" +
       (showScheduleColumns ? "<th>Place On</th><th>Placement Status</th><th>Action</th>" : "") +
       "<th>Actions</th>";
-    if (table) table.style.minWidth = String((hideRevisionColumns ? (showScheduleColumns ? 2340 : 1760) : 1760) + (hideRevisionColumns ? 0 : revisionCount * 360)) + "px";
+    if (table) table.style.minWidth = String((hideRevisionColumns ? (showScheduleColumns ? 2360 : 1760) : 1760) + (hideRevisionColumns ? 0 : revisionCount * 360)) + "px";
   }
 
   function renderAccountFilter() {
