@@ -675,7 +675,7 @@
     if (activeTab === "on-revision") return 10;
     if (activeTab === "ready-to-approve") return 8;
     if (activeTab === "completed") return 7;
-    if (activeTab === "in-progress") return 20;
+    if (activeTab === "in-progress") return 21;
     if (activeTab === "orders-placed") return 17;
     return 17 + (revisionCount * 2);
   }
@@ -759,6 +759,7 @@
       "<th>Client Name</th>" +
       "<th>Business Name</th>" +
       "<th>Value</th>" +
+      (showScheduleColumns ? "<th>Search Keyword</th>" : "") +
       "<th>Type</th>" +
       "<th>Chat Summary</th>" +
       "<th>Total Chats</th>" +
@@ -770,7 +771,7 @@
       "<th>Status</th>" +
       (showScheduleColumns ? "<th>Place On</th><th>Placement Status</th><th>Action</th>" : "") +
       "<th>Actions</th>";
-    if (table) table.style.minWidth = String((hideRevisionColumns ? (showScheduleColumns ? 2180 : 1760) : 1760) + (hideRevisionColumns ? 0 : revisionCount * 360)) + "px";
+    if (table) table.style.minWidth = String((hideRevisionColumns ? (showScheduleColumns ? 2340 : 1760) : 1760) + (hideRevisionColumns ? 0 : revisionCount * 360)) + "px";
   }
 
   function renderAccountFilter() {
@@ -1159,6 +1160,9 @@
         "<td>" + editableNameCell(order, "clientName", "Add client name", "client name") + "</td>" +
         "<td>" + editableNameCell(order, "businessName", "Add business name", "business name") + "</td>" +
         '<td class="records-value">' + withCopy(formatValue(order.orderValue), order.orderValue == null ? "" : String(order.orderValue), "value") + "</td>" +
+        (activeTab === "in-progress"
+          ? '<td class="records-clip-cell">' + withCopy(escapeHtml(order.searchKeyword || "—"), order.searchKeyword || "", "search keyword") + "</td>"
+          : "") +
         "<td>" + withCopy(escapeHtml(typeLabel || "—"), typeLabel || "", "type") + "</td>" +
         '<td class="records-chat-cell">' + chatSummaryHtml(order) + "</td>" +
         '<td class="records-chat-cell records-chat-total">' + totalChatsHtml(order) + "</td>" +
