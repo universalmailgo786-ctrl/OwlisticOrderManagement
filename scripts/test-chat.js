@@ -133,6 +133,14 @@ if (filesLib.MAX_BYTES !== 10 * 1024 * 1024) {
   console.log("ok max attachment size");
 }
 
+const pageJs = fs.readFileSync(path.join(ROOT, "js/chat-page.js"), "utf8");
+if (pageJs.indexOf("document.hasFocus()") < 0) {
+  failed += 1;
+  console.error("FAIL chat-page must require window focus before marking read");
+} else {
+  console.log("ok chat-page marks read only when focused");
+}
+
 const navJs = fs.readFileSync(path.join(ROOT, "js/chat-nav.js"), "utf8");
 const navRequired = ["is-on", "unreadSummary", "data-chat-badge"];
 navRequired.forEach(function (token) {

@@ -688,7 +688,7 @@
   }
 
   function viewingThisChat() {
-    return Boolean(state.thread) && document.visibilityState === "visible";
+    return Boolean(state.thread) && document.visibilityState === "visible" && document.hasFocus();
   }
 
   async function markOpenThreadRead() {
@@ -935,6 +935,9 @@
 
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "visible") markOpenThreadRead();
+  });
+  window.addEventListener("focus", function () {
+    markOpenThreadRead();
   });
 
   function syncOpenMessages() {
