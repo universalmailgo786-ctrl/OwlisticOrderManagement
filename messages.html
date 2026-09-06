@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Messages</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css?v=chat1" />
+</head>
+<body class="records-page chat-page">
+  <nav class="app-nav">
+    <div class="app-nav-links">
+      <a class="app-nav-link" href="index.html">Order Questionnaire</a>
+      <a class="app-nav-link" href="records.html">Order Records</a>
+      <a class="app-nav-link is-active chat-nav-link" href="messages.html" data-chat-nav="1">
+        Messages <span class="chat-unread-badge" data-chat-badge hidden>0</span>
+      </a>
+    </div>
+    <div class="nav-user" id="nav-user" hidden>
+      <span id="nav-who"></span>
+      <button type="button" class="ghost-btn" id="logout-btn">Log out</button>
+    </div>
+  </nav>
+
+  <div class="page chat-shell">
+    <div class="chat-layout" id="chat-layout">
+      <aside class="chat-inbox" id="chat-inbox">
+        <div class="chat-inbox-head">
+          <h1>Inbox</h1>
+          <p>Private chats with each user</p>
+        </div>
+        <label class="chat-search-label">
+          <span class="sr-only">Search conversations</span>
+          <input id="chat-inbox-search" type="search" placeholder="Search users or messages" />
+        </label>
+        <div class="chat-start-row">
+          <select id="chat-start-user">
+            <option value="">Start a conversation…</option>
+          </select>
+          <button type="button" class="submit-btn" id="chat-start-btn">Open</button>
+        </div>
+        <div class="chat-inbox-list" id="chat-inbox-list"></div>
+        <p class="chat-inbox-empty" id="chat-inbox-empty">No conversations yet.</p>
+      </aside>
+
+      <section class="chat-main" id="chat-main">
+        <header class="chat-header">
+          <button type="button" class="ghost-btn chat-back" id="chat-back">Back</button>
+          <span class="chat-avatar" id="chat-header-avatar">A</span>
+          <div class="chat-header-copy">
+            <h2 id="chat-header-title">Messages</h2>
+            <p id="chat-header-sub">Private conversation</p>
+          </div>
+          <span class="chat-status" id="chat-status"></span>
+        </header>
+        <div class="chat-log" id="chat-log">
+          <button type="button" class="ghost-btn chat-older" id="chat-load-older" hidden>Load older messages</button>
+          <div class="chat-empty" id="chat-empty">
+            <strong>No messages yet</strong>
+            <p>Send a message to start this conversation.</p>
+          </div>
+        </div>
+        <p class="chat-error" id="chat-error" hidden></p>
+        <form class="chat-composer" id="chat-composer">
+          <label class="sr-only" for="chat-input">Message</label>
+          <textarea id="chat-input" rows="1" placeholder="Write a message" required></textarea>
+          <button type="submit" class="submit-btn" id="chat-send">Send</button>
+        </form>
+      </section>
+    </div>
+  </div>
+
+  <script src="js/storage.js?v=chat1"></script>
+  <script src="js/sheet-sync.js?v=chat1"></script>
+  <script src="js/auth.js?v=chat1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.min.js"></script>
+  <script src="js/chat-config.js?v=chat1"></script>
+  <script src="js/chat-client.js?v=chat1"></script>
+  <script src="js/chat-nav.js?v=chat1"></script>
+  <script src="js/chat-page.js?v=chat1"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+{
+  "name": "owlistic-dummy-orders",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node scripts/test-chat.js",
+    "test:chat": "node scripts/test-chat.js",
+    "chat:migrate": "node scripts/apply-chat-migration.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/universalmailgo786-ctrl/OwlisticOrderManagement.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/universalmailgo786-ctrl/OwlisticOrderManagement/issues"
+  },
+  "homepage": "https://github.com/universalmailgo786-ctrl/OwlisticOrderManagement#readme",
+  "dependencies": {
+    "@google/clasp": "^2.4.2",
+    "@supabase/supabase-js": "^2.115.0",
+    "playwright-core": "^1.62.1"
+  },
+  "devDependencies": {
+    "supabase": "^2.116.0"
+  }
+}

@@ -2,3 +2,8 @@ node_modules/
 package-lock.json
 .clasprc.json
 **/.clasprc.json
+.env
+.env.local
+.env.*.local
+supabase/.temp/
+

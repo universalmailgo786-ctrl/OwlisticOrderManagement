@@ -92,13 +92,42 @@
       setSession(session);
       ensureLocalAccount(session);
       fetchUserProfile().catch(function () {});
-      return { ok: true, session: session };
+      return attachChatSession(session, data.username, password).then(function () {
+        return { ok: true, session: getSession() || session };
+      });
     }).catch(function () {
       return { ok: false, error: "Could not reach the login sheet. Check the web app URL." };
     });
   }
 
+  function attachChatSession(session, username, password) {
+    const url = (global.OwlisticChatConfig && global.OwlisticChatConfig.sessionUrl) || "/api/chat/session";
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: username, password: password })
+    }).then(function (response) {
+      return response.json().catch(function () { return null; });
+    }).then(function (data) {
+      if (!data || !data.ok) return session;
+      session.chatAccessToken = data.access_token || "";
+      session.chatRefreshToken = data.refresh_token || "";
+      session.chatExpiresAt = data.expires_at || 0;
+      setSession(session);
+      return session;
+    }).catch(function () {
+      return session;
+    });
+  }
+
   function logout() {
+    if (global.OwlisticChat && typeof global.OwlisticChat.signOut === "function") {
+      Promise.resolve(global.OwlisticChat.signOut()).catch(function () {}).then(function () {
+        clearSession();
+        window.location.href = "login.html";
+      });
+      return;
+    }
     clearSession();
     window.location.href = "login.html";
   }
