@@ -2,6 +2,7 @@ const { Client } = require("pg");
 const { POSTGRES_URL, envFlags } = require("../_lib/env");
 const { cors, send } = require("../_lib/http");
 const SQL = require("../_lib/chat-schema");
+const IMAGES_SQL = require("../_lib/chat-images-sql");
 
 function connectionConfig() {
   let url = POSTGRES_URL;
@@ -60,6 +61,11 @@ async function status() {
         ["supabase_realtime", ["chat_threads", "chat_messages"]]
       )).rows[0].n
       : 0;
+    const imageCol = messages
+      ? (await client.query(
+        "select 1 from information_schema.columns where table_schema = 'public' and table_name = 'chat_messages' and column_name = 'image_url'"
+      )).rowCount > 0
+      : false;
     return {
       ok: true,
       applied: threads && messages,
@@ -68,6 +74,7 @@ async function status() {
         chat_threads: threads,
         chat_messages: messages
       },
+      images: imageCol,
       rls: Boolean(rls && rls.relrowsecurity),
       realtimeTables: realtime
     };
@@ -77,6 +84,7 @@ async function status() {
 async function apply() {
   return withClient(async function (client) {
     await client.query(SQL);
+    await client.query(IMAGES_SQL);
     return status();
   });
 }
@@ -95,14 +103,14 @@ module.exports = async function handler(req, res) {
       return send(res, 405, { ok: false, error: "Method not allowed." });
     }
     const current = await status();
-    if (current.applied) {
-      return send(res, 200, Object.assign({ already: true }, current));
-    }
     if (!current.flags.hasPostgres) {
       return send(res, 503, current);
     }
     const result = await apply();
-    return send(res, 200, Object.assign({ appliedNow: true }, result));
+    return send(res, 200, Object.assign({
+      appliedNow: true,
+      upgradedImages: Boolean(result.images)
+    }, result));
   } catch (err) {
     return send(res, 500, {
       ok: false,

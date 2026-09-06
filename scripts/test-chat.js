@@ -6,6 +6,8 @@ const ROOT = path.join(__dirname, "..");
 const files = [
   "api/chat/session.js",
   "api/chat/setup.js",
+  "api/chat/upload.js",
+  "api/_lib/chat-images-sql.js",
   "api/_lib/env.js",
   "api/_lib/chat-schema.js",
   "api/_lib/owlistic-login.js",
@@ -56,6 +58,13 @@ if (token.split(".").length !== 3) {
   console.error("FAIL jwt format");
 } else {
   console.log("ok jwt minted");
+}
+const verified = jwt.verifySupabaseJwt(token, "test-secret");
+if (!verified || jwt.chatUserFromJwt(verified).username !== "block") {
+  failed += 1;
+  console.error("FAIL jwt verify");
+} else {
+  console.log("ok jwt verify");
 }
 
 if (failed) {

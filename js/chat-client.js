@@ -198,19 +198,99 @@
     return (result.data || []).slice().reverse();
   }
 
-  async function sendMessage(threadId, text) {
+  async function sendMessage(threadId, text, imageUrl) {
     const db = await ensureClient();
     const me = sessionUser();
     const message = String(text || "").trim();
-    if (!message) throw new Error("Type a message first.");
+    const image = String(imageUrl || "").trim();
+    if (!message && !image) throw new Error("Type a message or add an image.");
     const senderId = me && me.isSuperAdmin ? (config.superAdminUsername || "SuperAdmin") : me.username;
-    const result = await db.from("chat_messages").insert({
+    const row = {
       thread_id: threadId,
       sender_id: senderId,
-      message: message
-    }).select("*").single();
+      message: message || (image ? "Photo" : "")
+    };
+    if (image) row.image_url = image;
+    const result = await db.from("chat_messages").insert(row).select("*").single();
     if (result.error) throw result.error;
     return result.data;
+  }
+
+  function fileToDataUrl(file) {
+    return new Promise(function (resolve, reject) {
+      const reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result || "")); };
+      reader.onerror = function () { reject(new Error("Could not read that image.")); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function compressImage(file) {
+    return new Promise(function (resolve, reject) {
+      if (!file) return reject(new Error("No image selected."));
+      if (!/^image\//i.test(file.type || "")) return reject(new Error("That file is not an image."));
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = function () {
+        URL.revokeObjectURL(url);
+        const max = 1600;
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+        if (width > max || height > max) {
+          const scale = Math.min(max / width, max / height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, width);
+        canvas.height = Math.max(1, height);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const quality = file.size > 1200000 ? 0.72 : 0.82;
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve({
+          contentType: "image/jpeg",
+          filename: String(file.name || "photo").replace(/\.[^.]+$/, "") + ".jpg",
+          data: dataUrl,
+          preview: dataUrl
+        });
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        fileToDataUrl(file).then(function (dataUrl) {
+          resolve({
+            contentType: file.type || "image/jpeg",
+            filename: file.name || "photo",
+            data: dataUrl,
+            preview: dataUrl
+          });
+        }).catch(reject);
+      };
+      img.src = url;
+    });
+  }
+
+  async function uploadImage(file) {
+    const token = currentAccessToken();
+    if (!token) throw new Error("Messages is not connected for this sign-in. Sign out and sign in again.");
+    const compressed = await compressImage(file);
+    const response = await fetch(config.uploadUrl || "/api/chat/upload", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + token
+      },
+      body: JSON.stringify({
+        contentType: compressed.contentType,
+        filename: compressed.filename,
+        data: compressed.data
+      })
+    });
+    const data = await response.json().catch(function () { return null; });
+    if (!data || !data.ok) {
+      throw new Error((data && data.error) || "Could not upload the image.");
+    }
+    return { url: data.url, preview: compressed.preview };
   }
 
   async function markRead(threadId) {
@@ -300,6 +380,8 @@
     listThreads: listThreads,
     listMessages: listMessages,
     sendMessage: sendMessage,
+    uploadImage: uploadImage,
+    compressImage: compressImage,
     markRead: markRead,
     subscribeThread: subscribeThread,
     subscribeInbox: subscribeInbox,

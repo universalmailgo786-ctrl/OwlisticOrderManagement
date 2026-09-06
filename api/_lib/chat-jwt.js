@@ -77,9 +77,49 @@ function randomPassword() {
   return crypto.randomBytes(24).toString("hex");
 }
 
+function verifySupabaseJwt(token, secret) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3 || !secret) return null;
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(parts[0] + "." + parts[1])
+    .digest("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+  const actual = parts[2];
+  const expectedBuf = Buffer.from(expected);
+  const actualBuf = Buffer.from(actual);
+  if (expectedBuf.length !== actualBuf.length) return null;
+  if (!crypto.timingSafeEqual(expectedBuf, actualBuf)) return null;
+  let payload;
+  try {
+    payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+  } catch (err) {
+    return null;
+  }
+  if (payload.exp && Number(payload.exp) < Math.floor(Date.now() / 1000)) return null;
+  return payload;
+}
+
+function chatUserFromJwt(payload) {
+  const meta = (payload && payload.user_metadata) || {};
+  const app = (payload && payload.app_metadata) || {};
+  const username = String(meta.username || app.username || (payload && payload.username) || "").trim();
+  const role = String(meta.role || app.role || "").trim().toLowerCase();
+  return {
+    username: username,
+    role: role,
+    displayName: meta.displayName || username,
+    isSuperAdmin: role === "superadmin" || role === "admin" || /^(superadmin|admin)$/i.test(username)
+  };
+}
+
 module.exports = {
   uuidFromUsername,
   mintSupabaseJwt,
+  verifySupabaseJwt,
+  chatUserFromJwt,
   emailForUsername,
   randomPassword
 };

@@ -5769,3 +5769,157 @@ body.is-hanif-tab .records-tabs {
     display: inline-flex;
   }
 }
+
+.ghost-btn[hidden],
+.submit-btn[hidden],
+.chat-older[hidden],
+.chat-toast[hidden],
+.chat-image-lightbox[hidden],
+.chat-error[hidden],
+.chat-empty[hidden] {
+  display: none !important;
+}
+
+.chat-conv.has-unread .chat-conv-name {
+  font-weight: 700;
+}
+
+.chat-conv.has-unread .chat-conv-preview {
+  color: var(--text);
+}
+
+.chat-composer {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.chat-composer-attach {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px;
+}
+
+.chat-composer.is-disabled {
+  opacity: 0.55;
+}
+
+.chat-composer.is-drop {
+  outline: 2px dashed var(--sage);
+  outline-offset: -6px;
+  background: #f4f7f0;
+}
+
+.chat-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+.chat-previews:empty {
+  display: none;
+}
+
+.chat-preview-chip {
+  position: relative;
+  width: 72px;
+  height: 72px;
+}
+
+.chat-preview-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.chat-preview-chip button {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: #3d4a36;
+  color: #fff;
+  cursor: pointer;
+  line-height: 22px;
+}
+
+.chat-image-btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.chat-image {
+  display: block;
+  max-width: 100%;
+  max-height: 280px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.chat-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 40;
+  display: grid;
+  gap: 2px;
+  min-width: 220px;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-toast strong,
+.chat-toast span {
+  display: block;
+}
+
+.chat-toast span {
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.chat-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.chat-image-lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(45, 50, 42, 0.72);
+}
+
+.chat-image-lightbox img {
+  position: relative;
+  z-index: 1;
+  max-width: min(960px, 92vw);
+  max-height: 82vh;
+  border-radius: 12px;
+  object-fit: contain;
+  background: #fff;
+}
+
+.chat-image-lightbox .ghost-btn {
+  position: relative;
+  z-index: 1;
+  margin-top: 12px;
+}

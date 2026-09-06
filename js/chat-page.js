@@ -9,7 +9,6 @@
 
   const me = chat.sessionUser();
   const layout = document.getElementById("chat-layout");
-  const inbox = document.getElementById("chat-inbox");
   const inboxList = document.getElementById("chat-inbox-list");
   const inboxSearch = document.getElementById("chat-inbox-search");
   const inboxEmpty = document.getElementById("chat-inbox-empty");
@@ -27,6 +26,12 @@
   const form = document.getElementById("chat-composer");
   const input = document.getElementById("chat-input");
   const sendBtn = document.getElementById("chat-send");
+  const attachBtn = document.getElementById("chat-attach");
+  const fileInput = document.getElementById("chat-file");
+  const previewsEl = document.getElementById("chat-previews");
+  const toastEl = document.getElementById("chat-toast");
+  const lightbox = document.getElementById("chat-image-lightbox");
+  const lightboxImg = document.getElementById("chat-image-lightbox-img");
 
   const state = {
     thread: null,
@@ -38,7 +43,9 @@
     loading: false,
     sending: false,
     search: "",
-    mobileChat: false
+    mobileChat: false,
+    pending: [],
+    fingerprint: ""
   };
 
   function escapeHtml(value) {
@@ -77,6 +84,22 @@
     errorEl.textContent = text || "";
   }
 
+  function showToast(title, body) {
+    if (!toastEl) return;
+    toastEl.hidden = false;
+    toastEl.innerHTML = "<strong></strong><span></span>";
+    toastEl.querySelector("strong").textContent = title || "New message";
+    toastEl.querySelector("span").textContent = body || "";
+    window.clearTimeout(showToast.timer);
+    showToast.timer = window.setTimeout(function () {
+      toastEl.hidden = true;
+    }, 5000);
+  }
+
+  window.OwlisticChatNotify = function (title, body) {
+    showToast(title, body);
+  };
+
   function directoryName(userId) {
     const wanted = String(userId || "").toLowerCase();
     const match = state.directory.find(function (item) {
@@ -86,6 +109,12 @@
     if (match) return match.displayName || match.personName || match.account || match.username;
     const thread = state.threads.find(function (item) { return String(item.user_id).toLowerCase() === wanted; });
     return (thread && thread.user_id) || userId || "User";
+  }
+
+  function previewText(thread) {
+    const text = String((thread && thread.last_message) || "").trim();
+    if (text) return text;
+    return "No messages yet";
   }
 
   function renderInbox() {
@@ -109,7 +138,7 @@
       const unread = state.unread.byThread[thread.id] || 0;
       const item = document.createElement("button");
       item.type = "button";
-      item.className = "chat-conv" + (state.thread && state.thread.id === thread.id ? " is-active" : "");
+      item.className = "chat-conv" + (state.thread && state.thread.id === thread.id ? " is-active" : "") + (unread ? " has-unread" : "");
       item.innerHTML =
         '<span class="chat-avatar" aria-hidden="true">' + escapeHtml(initials(label)) + "</span>" +
         '<span class="chat-conv-body">' +
@@ -122,7 +151,7 @@
         (unread ? '<span class="chat-unread-badge">' + (unread > 99 ? "99+" : unread) + "</span>" : "");
       item.querySelector(".chat-conv-name").textContent = label;
       item.querySelector(".chat-conv-time").textContent = formatTime(thread.updated_at);
-      item.querySelector(".chat-conv-preview").textContent = thread.last_message || "No messages yet";
+      item.querySelector(".chat-conv-preview").textContent = previewText(thread);
       item.addEventListener("click", function () {
         openThread(thread.user_id, true);
       });
@@ -154,20 +183,53 @@
     return sender.toLowerCase() === String(me.username).toLowerCase();
   }
 
+  function openLightbox(src) {
+    if (!lightbox || !lightboxImg || !src) return;
+    lightboxImg.src = src;
+    lightbox.hidden = false;
+  }
+
+  function closeLightbox() {
+    if (!lightbox) return;
+    lightbox.hidden = true;
+    if (lightboxImg) lightboxImg.removeAttribute("src");
+  }
+
   function messageNode(message) {
     const mine = isMine(message);
     const item = document.createElement("div");
     item.className = "chat-bubble-row" + (mine ? " is-mine" : "");
     item.setAttribute("data-message-id", message.id);
     const who = mine ? "You" : (chat.isSuperAdminSender(message.sender_id) ? (config.adminName || "Ashar") : directoryName(message.sender_id));
+    const text = String(message.message || "").trim();
+    const imageUrl = String(message.image_url || "").trim();
+    const caption = text && text.toLowerCase() !== "photo" ? text : "";
     item.innerHTML =
       '<div class="chat-bubble">' +
-        '<p class="chat-bubble-text"></p>' +
+        (imageUrl ? '<button type="button" class="chat-image-btn"><img class="chat-image" alt=""></button>' : "") +
+        (caption ? '<p class="chat-bubble-text"></p>' : "") +
         '<span class="chat-bubble-meta"></span>' +
       "</div>";
-    item.querySelector(".chat-bubble-text").textContent = message.message || "";
+    if (imageUrl) {
+      const img = item.querySelector(".chat-image");
+      img.src = imageUrl;
+      img.alt = caption || "Photo";
+      item.querySelector(".chat-image-btn").addEventListener("click", function () {
+        openLightbox(imageUrl);
+      });
+    }
+    if (caption) item.querySelector(".chat-bubble-text").textContent = caption;
     item.querySelector(".chat-bubble-meta").textContent = who + " · " + formatTime(message.created_at);
     return item;
+  }
+
+  function setComposerEnabled(on) {
+    if (!form) return;
+    form.classList.toggle("is-disabled", !on);
+    input.disabled = !on;
+    sendBtn.disabled = !on || state.sending;
+    if (attachBtn) attachBtn.disabled = !on;
+    input.placeholder = on ? "Write a message or paste an image" : "Select a conversation to reply";
   }
 
   function renderMessages() {
@@ -179,7 +241,16 @@
       logEl.appendChild(messageNode(message));
     });
     emptyEl.hidden = state.messages.length > 0 || !state.thread;
+    if (emptyEl && !state.thread) {
+      emptyEl.hidden = false;
+      emptyEl.querySelector("strong").textContent = "Select a conversation";
+      emptyEl.querySelector("p").textContent = "Open a user on the left to read and reply.";
+    } else if (emptyEl && state.thread && !state.messages.length) {
+      emptyEl.querySelector("strong").textContent = "No messages yet";
+      emptyEl.querySelector("p").textContent = "Send a message or paste an image to start this conversation.";
+    }
     olderBtn.hidden = !state.hasMore;
+    setComposerEnabled(Boolean(state.thread));
     if (stickToBottom || !state.messages.length) {
       logEl.scrollTop = logEl.scrollHeight;
     }
@@ -222,6 +293,40 @@
     layout.classList.toggle("is-chat-open", state.mobileChat);
   }
 
+  function renderPreviews() {
+    if (!previewsEl) return;
+    previewsEl.innerHTML = "";
+    state.pending.forEach(function (item, index) {
+      const chip = document.createElement("div");
+      chip.className = "chat-preview-chip";
+      chip.innerHTML = '<img alt=""><button type="button" aria-label="Remove image">×</button>';
+      chip.querySelector("img").src = item.preview;
+      chip.querySelector("button").addEventListener("click", function () {
+        state.pending.splice(index, 1);
+        renderPreviews();
+      });
+      previewsEl.appendChild(chip);
+    });
+  }
+
+  async function addPendingFiles(fileList) {
+    const files = Array.prototype.slice.call(fileList || []).filter(function (file) {
+      return file && /^image\//i.test(file.type || "");
+    });
+    if (!files.length) return;
+    showError("");
+    for (let i = 0; i < files.length; i++) {
+      if (state.pending.length >= 4) break;
+      try {
+        const compressed = await chat.compressImage(files[i]);
+        state.pending.push({ file: files[i], preview: compressed.preview });
+      } catch (err) {
+        showError(err.message || "Could not add that image.");
+      }
+    }
+    renderPreviews();
+  }
+
   async function refreshUnread() {
     state.unread = await chat.unreadSummary();
     if (window.OwlisticChatNav) window.OwlisticChatNav.renderCount(state.unread.total);
@@ -236,16 +341,35 @@
     try {
       const result = await window.OwlisticSheet.fetchLoginUsers();
       state.directory = (result && result.users) || [];
+      renderInbox();
     } catch (err) {
       state.directory = [];
     }
   }
 
-  async function loadInbox() {
+  function fingerprintOf(threads) {
+    return (threads || []).map(function (thread) {
+      return thread.id + ":" + (thread.updated_at || "") + ":" + (thread.last_message || "");
+    }).join("|");
+  }
+
+  async function loadInbox(options) {
     if (!me.isSuperAdmin) return;
-    state.threads = await chat.listThreads();
-    await refreshUnread();
-    renderInbox();
+    const silent = options && options.silent;
+    try {
+      const threads = await chat.listThreads();
+      const nextPrint = fingerprintOf(threads);
+      const changed = nextPrint !== state.fingerprint;
+      state.threads = threads;
+      state.fingerprint = nextPrint;
+      await refreshUnread();
+      renderInbox();
+      if (!silent) setStatus(state.thread ? "Live" : "Select a conversation");
+      return changed;
+    } catch (err) {
+      if (!silent) showError(err.message || "Could not load conversations.");
+      return false;
+    }
   }
 
   async function openThread(userId, fromInbox) {
@@ -277,7 +401,7 @@
         },
         onStatus: function (status) {
           if (status === "SUBSCRIBED") setStatus("Live");
-          else if (status === "TIMED_OUT" || status === "CHANNEL_ERROR") setStatus("Reconnecting…", true);
+          else if (status === "TIMED_OUT" || status === "CHANNEL_ERROR") setStatus("Checking for new messages…", true);
         }
       });
       setStatus("Live");
@@ -312,17 +436,31 @@
     if (event) event.preventDefault();
     if (state.sending || !state.thread) return;
     const text = input.value.trim();
-    if (!text) return;
+    const pending = state.pending.slice();
+    if (!text && !pending.length) return;
     state.sending = true;
     sendBtn.disabled = true;
     input.value = "";
+    state.pending = [];
+    renderPreviews();
     try {
-      const saved = await chat.sendMessage(state.thread.id, text);
-      upsertMessage(saved);
+      if (pending.length) {
+        for (let i = 0; i < pending.length; i++) {
+          const uploaded = await chat.uploadImage(pending[i].file);
+          const caption = i === pending.length - 1 ? text : "";
+          const saved = await chat.sendMessage(state.thread.id, caption, uploaded.url);
+          upsertMessage(saved);
+        }
+      } else {
+        const saved = await chat.sendMessage(state.thread.id, text);
+        upsertMessage(saved);
+      }
       renderMessages();
-      await loadInbox();
+      await loadInbox({ silent: true });
     } catch (err) {
       input.value = text;
+      state.pending = pending.concat(state.pending);
+      renderPreviews();
       showError(err.message || "Message was not sent.");
     }
     state.sending = false;
@@ -335,6 +473,12 @@
     input.style.height = Math.min(input.scrollHeight, 140) + "px";
   }
 
+  function newestUnreadThread() {
+    return state.threads.find(function (thread) {
+      return state.unread.byThread[thread.id];
+    }) || null;
+  }
+
   input.addEventListener("input", autoGrow);
   input.addEventListener("keydown", function (event) {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -342,8 +486,51 @@
       send();
     }
   });
+  const chatMain = document.getElementById("chat-main");
+  if (chatMain) {
+    chatMain.addEventListener("paste", function (event) {
+      const items = event.clipboardData && event.clipboardData.items;
+      if (!items || !state.thread) return;
+      const files = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.indexOf("image") === 0) {
+          const file = items[i].getAsFile();
+          if (file) files.push(file);
+        }
+      }
+      if (!files.length) return;
+      event.preventDefault();
+      addPendingFiles(files);
+    });
+  }
   form.addEventListener("submit", send);
+  form.addEventListener("dragover", function (event) {
+    event.preventDefault();
+    form.classList.add("is-drop");
+  });
+  form.addEventListener("dragleave", function () {
+    form.classList.remove("is-drop");
+  });
+  form.addEventListener("drop", function (event) {
+    event.preventDefault();
+    form.classList.remove("is-drop");
+    addPendingFiles(event.dataTransfer && event.dataTransfer.files);
+  });
   olderBtn.addEventListener("click", loadOlder);
+  if (attachBtn && fileInput) {
+    attachBtn.addEventListener("click", function () {
+      fileInput.click();
+    });
+    fileInput.addEventListener("change", function () {
+      addPendingFiles(fileInput.files);
+      fileInput.value = "";
+    });
+  }
+  if (lightbox) {
+    lightbox.addEventListener("click", function (event) {
+      if (event.target === lightbox || event.target.hasAttribute("data-close-lightbox")) closeLightbox();
+    });
+  }
   if (backBtn) {
     backBtn.addEventListener("click", function () {
       setMobileChat(false);
@@ -362,12 +549,22 @@
       openThread(userId, true);
     });
   }
+  if (toastEl) {
+    toastEl.addEventListener("click", function () {
+      toastEl.hidden = true;
+      const thread = newestUnreadThread();
+      if (thread) openThread(thread.user_id, true);
+    });
+  }
 
   async function boot() {
     layout.classList.toggle("is-admin", me.isSuperAdmin);
     layout.classList.toggle("is-user", !me.isSuperAdmin);
     setHeader(null);
     showError("");
+    setComposerEnabled(!me.isSuperAdmin);
+    if (inboxEmpty) inboxEmpty.textContent = "Loading conversations…";
+    setStatus("Loading…");
     try {
       await chat.ensureClient();
     } catch (err) {
@@ -375,17 +572,28 @@
       setStatus("Offline", true);
       return;
     }
-    await loadDirectory();
+    loadDirectory();
     if (me.isSuperAdmin) {
       await loadInbox();
-      await chat.subscribeInbox({
-        onThread: function () { loadInbox(); },
-        onInsert: function () { loadInbox(); },
+      chat.subscribeInbox({
+        onThread: function () { loadInbox({ silent: true }); },
+        onInsert: function () { loadInbox({ silent: true }); },
         onUpdate: function () { refreshUnread(); }
       });
-      setStatus("Select a conversation");
+      const unreadThread = newestUnreadThread();
+      if (unreadThread) openThread(unreadThread.user_id, false);
+      else setStatus("Select a conversation");
+      window.setInterval(function () { loadInbox({ silent: true }); }, Number(config.pollMs || 4000));
     } else {
       await openThread(me.username, false);
+      window.setInterval(function () {
+        if (!state.thread) return;
+        chat.listMessages(state.thread.id).then(function (rows) {
+          const before = state.messages.length;
+          rows.forEach(upsertMessage);
+          if (state.messages.length !== before) renderMessages();
+        }).catch(function () {});
+      }, Number(config.pollMs || 4000));
     }
   }
 
