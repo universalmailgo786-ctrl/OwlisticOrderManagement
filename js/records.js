@@ -1046,13 +1046,17 @@
   }
 
   function updateTabCounts(all) {
+    const scoped = (all || []).filter(function (order) {
+      return orderMatchesSelectedAccount(order);
+    });
     const counts = { "in-progress": 0, "orders-placed": 0, "on-revision": 0, "ready-to-approve": 0, completed: 0 };
-    all.forEach(function (order) {
+    scoped.forEach(function (order) {
       const tab = tabOf(order);
       if (counts[tab] != null) counts[tab] += 1;
     });
     document.querySelectorAll("[data-tab-count]").forEach(function (el) {
       const key = el.getAttribute("data-tab-count");
+      if (key === "hanif-costing") return;
       el.textContent = String(counts[key] || 0);
     });
     if (window.OwlisticHanifCosting) {
