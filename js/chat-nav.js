@@ -116,20 +116,17 @@
       const stamp = latest ? String(latest.id) + ":" + String(latest.updated_at || "") + ":" + String(latest.last_message || "") : "";
       renderCount(summary.total);
       const first = lastTotal == null;
-      const grew = !first && (summary.total > lastTotal || (stamp && stamp !== lastStamp && summary.total > 0));
-      if (grew) {
-        const me = api.sessionUser && api.sessionUser();
-        const fromMe = latest && me && (
-          me.isSuperAdmin
-            ? api.isSuperAdminSender(latest.last_sender_id)
-            : String(latest.last_sender_id || "").toLowerCase() === String(me.username || "").toLowerCase()
-        );
-        if (!fromMe) {
-          const who = me && me.isSuperAdmin
-            ? ((latest && latest.user_id) || "A user")
-            : (config.adminName || "Ashar");
-          notifyNew(who, (latest && latest.last_message) || "New message");
-        }
+      const me = api.sessionUser && api.sessionUser();
+      const fromMe = latest && me && (
+        me.isSuperAdmin
+          ? api.isSuperAdminSender(latest.last_sender_id)
+          : String(latest.last_sender_id || "").toLowerCase() === String(me.username || "").toLowerCase()
+      );
+      if (!first && stamp && stamp !== lastStamp && !fromMe) {
+        const who = me && me.isSuperAdmin
+          ? ((latest && latest.user_id) || "A user")
+          : (config.adminName || "Ashar");
+        notifyNew(who, (latest && latest.last_message) || "New message");
       }
       lastTotal = summary.total;
       lastStamp = stamp;

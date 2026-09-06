@@ -302,9 +302,9 @@
       .eq("thread_id", threadId)
       .is("read_at", null);
     if (me.isSuperAdmin) {
-      query = query.filter("sender_id", "not.in", '("SuperAdmin","superadmin","admin")');
+      query = query.not("sender_id", "ilike", "superadmin").not("sender_id", "ilike", "admin");
     } else {
-      query = query.neq("sender_id", me.username);
+      query = query.not("sender_id", "ilike", me.username);
     }
     const result = await query;
     if (result.error) throw result.error;
