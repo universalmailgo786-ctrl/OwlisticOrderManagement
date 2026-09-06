@@ -307,12 +307,16 @@
     const who = document.getElementById("nav-who");
     const logoutBtn = document.getElementById("logout-btn");
     const box = document.getElementById("nav-user");
+    const avatar = document.getElementById("nav-avatar");
     if (!session) return;
     if (box) box.hidden = false;
-    if (who) {
-      who.textContent = isSuperAdmin(session)
-        ? (session.name || session.username) + " · Super Admin"
-        : (session.name || session.username) + " · " + (session.account || "Account");
+    const label = isSuperAdmin(session)
+      ? (session.name || session.username) + " · Super Admin"
+      : (session.name || session.username) + " · " + (session.account || "Account");
+    if (who) who.textContent = label;
+    if (avatar) {
+      const source = String(session.name || session.username || "A").trim();
+      avatar.textContent = source.charAt(0).toUpperCase() || "A";
     }
     if (logoutBtn) logoutBtn.addEventListener("click", logout);
     document.querySelectorAll(".admin-only").forEach(function (el) {

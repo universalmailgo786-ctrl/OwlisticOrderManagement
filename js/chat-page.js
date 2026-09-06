@@ -14,6 +14,21 @@
   const inboxEmpty = document.getElementById("chat-inbox-empty");
   const startUser = document.getElementById("chat-start-user");
   const startBtn = document.getElementById("chat-start-btn");
+  const startToggle = document.getElementById("chat-start-toggle");
+  const startPanel = document.getElementById("chat-start-panel");
+  const startSearch = document.getElementById("chat-start-search");
+  const startList = document.getElementById("chat-start-list");
+  const unreadFilterCount = document.querySelector("[data-unread-filter-count]");
+  const threadSearchWrap = document.getElementById("chat-thread-search-wrap");
+  const threadSearch = document.getElementById("chat-thread-search");
+  const threadSearchBtn = document.getElementById("chat-thread-search-btn");
+  const headerMenuBtn = document.getElementById("chat-header-menu-btn");
+  const headerMenu = document.getElementById("chat-header-menu");
+  const emojiBtn = document.getElementById("chat-emoji-btn");
+  const emojiPanel = document.getElementById("chat-emoji-panel");
+  const galleryBtn = document.getElementById("chat-gallery-btn");
+  const galleryInput = document.getElementById("chat-gallery");
+  const mailBtn = document.querySelector("[data-chat-mail]");
   const backBtn = document.getElementById("chat-back");
   const headerTitle = document.getElementById("chat-header-title");
   const headerSub = document.getElementById("chat-header-sub");
@@ -46,6 +61,10 @@
     loading: false,
     sending: false,
     search: "",
+    inboxFilter: "all",
+    threadSearch: "",
+    startQuery: "",
+    startOpen: false,
     mobileChat: false,
     pending: [],
     fingerprint: "",
@@ -74,6 +93,42 @@
     const day = date.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
     const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     return day + " · " + time;
+  }
+
+  function formatClock(value) {
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return "";
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+
+  function formatInboxTime(value) {
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return "";
+    const now = new Date();
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startThat = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diff = (startToday - startThat) / 86400000;
+    if (diff === 0) return formatClock(value);
+    if (diff === 1) return "Yesterday";
+    return date.toLocaleDateString([], { day: "numeric", month: "short" });
+  }
+
+  function formatDay(value) {
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return "";
+    return date.toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" });
+  }
+
+  function dayKey(value) {
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return "";
+    return date.getFullYear() + "-" + date.getMonth() + "-" + date.getDate();
+  }
+
+  function isActiveThread(thread) {
+    const at = new Date(thread && thread.updated_at);
+    if (isNaN(at.getTime())) return false;
+    return Date.now() - at.getTime() < 30 * 60 * 1000;
   }
 
   function setStatus(text, isError) {
@@ -125,19 +180,96 @@
     return "No messages yet";
   }
 
+  function availableStartUsers() {
+    const existing = {};
+    state.threads.forEach(function (thread) {
+      existing[String(thread.user_id).toLowerCase()] = true;
+    });
+    const q = String(state.startQuery || "").trim().toLowerCase();
+    return (state.directory || []).filter(function (user) {
+      const id = String(user.username || "").trim();
+      if (!id || /^(superadmin|admin)$/i.test(id) || existing[id.toLowerCase()]) return false;
+      if (!q) return true;
+      const hay = [
+        id,
+        user.displayName,
+        user.personName,
+        user.account
+      ].join(" ").toLowerCase();
+      return hay.indexOf(q) >= 0;
+    });
+  }
+
+  function renderStartList() {
+    if (!startList) return;
+    const rows = availableStartUsers();
+    startList.innerHTML = "";
+    if (!rows.length) {
+      const empty = document.createElement("p");
+      empty.className = "chat-inbox-empty";
+      empty.textContent = state.startQuery ? "No matching users." : "Every user already has a conversation.";
+      startList.appendChild(empty);
+      return;
+    }
+    rows.slice(0, 40).forEach(function (user) {
+      const id = String(user.username || "").trim();
+      const label = user.displayName || user.personName || id;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "chat-start-person";
+      btn.innerHTML = '<span class="chat-avatar" aria-hidden="true"></span><span></span>';
+      btn.querySelector(".chat-avatar").textContent = initials(label);
+      btn.querySelector("span:last-child").textContent = label + " · " + id;
+      btn.addEventListener("click", function () {
+        setStartOpen(false);
+        openThread(id, true);
+      });
+      startList.appendChild(btn);
+    });
+  }
+
+  function setStartOpen(open) {
+    state.startOpen = Boolean(open);
+    if (startPanel) startPanel.hidden = !state.startOpen;
+    if (state.startOpen) {
+      renderStartList();
+      if (startSearch) startSearch.focus();
+    }
+  }
+
+  function setInboxFilter(next) {
+    state.inboxFilter = next || "all";
+    document.querySelectorAll("[data-inbox-filter]").forEach(function (btn) {
+      btn.classList.toggle("is-on", btn.getAttribute("data-inbox-filter") === state.inboxFilter);
+    });
+    renderInbox();
+  }
+
   function renderInbox() {
     if (!me.isSuperAdmin || !inboxList) return;
     const q = String(state.search || "").trim().toLowerCase();
+    let unreadTotal = 0;
     const rows = state.threads.filter(function (thread) {
+      const unread = state.unread.byThread[thread.id] || 0;
+      unreadTotal += unread;
+      if (state.inboxFilter === "unread" && unread < 1) return false;
+      if (state.inboxFilter === "active" && !isActiveThread(thread) && !(state.thread && state.thread.id === thread.id)) return false;
       if (!q) return true;
       const label = directoryName(thread.user_id).toLowerCase();
       return label.indexOf(q) >= 0 || String(thread.user_id).toLowerCase().indexOf(q) >= 0 ||
         String(thread.last_message || "").toLowerCase().indexOf(q) >= 0;
     });
+    if (unreadFilterCount) {
+      unreadFilterCount.textContent = unreadTotal > 99 ? "99+" : String(unreadTotal);
+      if (unreadTotal > 0) unreadFilterCount.removeAttribute("hidden");
+      else unreadFilterCount.setAttribute("hidden", "");
+    }
     inboxList.innerHTML = "";
     if (!rows.length) {
       inboxEmpty.hidden = false;
-      inboxEmpty.textContent = q ? "No conversations match that search." : "No conversations yet. Start one from the list below.";
+      inboxEmpty.textContent = q || state.inboxFilter !== "all"
+        ? "No conversations match that filter."
+        : "No conversations yet. Use + to start one.";
     } else {
       inboxEmpty.hidden = true;
     }
@@ -148,7 +280,10 @@
       item.type = "button";
       item.className = "chat-conv" + (state.thread && state.thread.id === thread.id ? " is-active" : "") + (unread ? " has-unread" : "");
       item.innerHTML =
-        '<span class="chat-avatar" aria-hidden="true">' + escapeHtml(initials(label)) + "</span>" +
+        '<span class="chat-avatar-wrap">' +
+          '<span class="chat-avatar" aria-hidden="true">' + escapeHtml(initials(label)) + "</span>" +
+          '<span class="chat-presence' + (isActiveThread(thread) ? " is-online" : "") + '" aria-hidden="true"></span>' +
+        "</span>" +
         '<span class="chat-conv-body">' +
           '<span class="chat-conv-top">' +
             '<span class="chat-conv-name"></span>' +
@@ -158,7 +293,7 @@
         "</span>" +
         (unread ? '<span class="chat-unread-badge is-on">' + (unread > 99 ? "99+" : unread) + "</span>" : "");
       item.querySelector(".chat-conv-name").textContent = label;
-      item.querySelector(".chat-conv-time").textContent = formatTime(thread.updated_at);
+      item.querySelector(".chat-conv-time").textContent = formatInboxTime(thread.updated_at);
       item.querySelector(".chat-conv-preview").textContent = previewText(thread);
       item.addEventListener("click", function () {
         openThread(thread.user_id, true);
@@ -167,15 +302,10 @@
     });
 
     if (startUser) {
-      const existing = {};
-      state.threads.forEach(function (thread) {
-        existing[String(thread.user_id).toLowerCase()] = true;
-      });
       const previous = startUser.value;
       startUser.innerHTML = '<option value="">Start a conversation…</option>';
-      state.directory.forEach(function (user) {
+      availableStartUsers().forEach(function (user) {
         const id = String(user.username || "").trim();
-        if (!id || /^(superadmin|admin)$/i.test(id) || existing[id.toLowerCase()]) return;
         const option = document.createElement("option");
         option.value = id;
         option.textContent = (user.displayName || user.personName || id) + " · " + id;
@@ -183,6 +313,7 @@
       });
       if (previous) startUser.value = previous;
     }
+    renderStartList();
   }
 
   function isMine(message) {
@@ -225,7 +356,8 @@
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "chat-att-download" + (extraClass ? " " + extraClass : "");
-    btn.textContent = "Download";
+    btn.textContent = extraClass && extraClass.indexOf("is-overlay") >= 0 ? "" : "Download";
+    if (extraClass && extraClass.indexOf("is-overlay") >= 0) btn.setAttribute("aria-label", "Download");
     btn.addEventListener("click", function (event) {
       event.preventDefault();
       event.stopPropagation();
@@ -298,7 +430,7 @@
     const files = atts.filter(function (att) { return String(att.attachment_type || "") !== "image"; });
     const editing = state.editingId === message.id;
     const showMenu = canEdit(message) || canDelete(message);
-    const when = formatTime(message.created_at) + (message.edited_at ? " · Edited" : "");
+    const when = formatClock(message.created_at) + (message.edited_at ? " · Edited" : "");
     const actionsHtml = showMenu
       ? '<div class="chat-msg-actions">' +
           '<button type="button" class="chat-msg-more" aria-label="Message actions">' +
@@ -310,7 +442,7 @@
     item.innerHTML =
       (mine ? "" : actionsHtml) +
       '<div class="chat-bubble">' +
-        (imageUrl ? '<button type="button" class="chat-image-btn" data-legacy-image><img class="chat-image" alt=""></button>' : "") +
+        (imageUrl ? '<div class="chat-att-image"><button type="button" class="chat-image-btn" data-legacy-image><img class="chat-image" alt=""></button></div>' : "") +
         '<div class="chat-att-images"></div>' +
         '<div class="chat-att-files"></div>' +
         (editing
@@ -318,7 +450,7 @@
           : (caption ? '<p class="chat-bubble-text"></p>' : "")) +
         '<span class="chat-bubble-meta">' +
           '<span class="chat-bubble-when"></span>' +
-          (mine ? '<span class="chat-receipt"></span>' : "") +
+          (mine ? '<span class="chat-receipt-ticks" aria-hidden="true"></span>' : "") +
         "</span>" +
       "</div>" +
       (mine ? actionsHtml : "");
@@ -330,11 +462,12 @@
       item.querySelector("[data-legacy-image]").addEventListener("click", function () {
         openLightbox(imageUrl, { image_url: imageUrl, signedUrl: imageUrl, file_name: "photo.jpg" });
       });
-      item.querySelector("[data-legacy-image]").after(downloadButton({
+      const wrap = item.querySelector(".chat-att-image");
+      wrap.appendChild(downloadButton({
         image_url: imageUrl,
         signedUrl: imageUrl,
         file_name: "photo.jpg"
-      }));
+      }, "is-overlay"));
     }
 
     const imageWrap = item.querySelector(".chat-att-images");
@@ -351,7 +484,7 @@
       btn.querySelector("img").alt = att.file_name || "Photo";
       btn.addEventListener("click", function () { openLightbox(src, att); });
       wrap.appendChild(btn);
-      wrap.appendChild(downloadButton(att));
+      wrap.appendChild(downloadButton(att, "is-overlay"));
       imageWrap.appendChild(wrap);
     });
 
@@ -393,13 +526,15 @@
       item.querySelector(".chat-bubble-text").textContent = caption;
     }
 
-    item.querySelector(".chat-bubble-when").textContent = who + " · " + when;
+    item.querySelector(".chat-bubble-when").textContent = when;
     if (mine) {
-      const receipt = item.querySelector(".chat-receipt");
+      const receipt = item.querySelector(".chat-receipt-ticks");
       const read = Boolean(message.read_at);
-      receipt.textContent = read ? "Read" : "Sent";
-      receipt.className = "chat-receipt " + (read ? "is-read" : "is-sent");
-      if (read) receipt.title = "Read " + formatTime(message.read_at);
+      receipt.innerHTML = read
+        ? '<svg width="16" height="10" viewBox="0 0 16 10"><path d="M1.2 5.2l2.2 2.2 4.4-5.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.2 5.2l2.2 2.2 6.2-6.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        : '<svg width="16" height="10" viewBox="0 0 16 10"><path d="M4.2 5.2l2.2 2.2 6.2-6.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      receipt.className = "chat-receipt-ticks " + (read ? "is-read" : "is-sent");
+      receipt.title = read ? "Read " + formatTime(message.read_at) : "Sent";
     }
 
     if (showMenu) {
@@ -490,16 +625,35 @@
     input.disabled = !on;
     sendBtn.disabled = !on || state.sending;
     if (attachBtn) attachBtn.disabled = !on;
-    input.placeholder = on ? "Write a message or attach a file" : "Select a conversation to reply";
+    input.placeholder = on ? "Type a message or paste an image..." : "Select a conversation to reply";
   }
 
   function renderMessages() {
     const stickToBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 80;
-    logEl.querySelectorAll("[data-message-id]").forEach(function (node) {
+    logEl.querySelectorAll("[data-message-id], .chat-day-rule").forEach(function (node) {
       node.remove();
     });
+    let lastDay = "";
+    const needle = String(state.threadSearch || "").trim().toLowerCase();
     state.messages.forEach(function (message) {
-      logEl.appendChild(messageNode(message));
+      const day = dayKey(message.created_at);
+      if (day && day !== lastDay) {
+        const rule = document.createElement("div");
+        rule.className = "chat-day-rule";
+        rule.textContent = formatDay(message.created_at);
+        logEl.appendChild(rule);
+        lastDay = day;
+      }
+      const node = messageNode(message);
+      if (needle) {
+        const hay = [
+          captionOf(message),
+          message.message,
+          message.sender_id
+        ].join(" ").toLowerCase();
+        if (hay.indexOf(needle) >= 0) node.querySelector(".chat-bubble").classList.add("is-match");
+      }
+      logEl.appendChild(node);
     });
     emptyEl.hidden = state.messages.length > 0 || !state.thread;
     if (emptyEl && !state.thread) {
@@ -561,11 +715,11 @@
     if (me.isSuperAdmin) {
       const label = directoryName(thread.user_id);
       headerTitle.textContent = label;
-      headerSub.textContent = thread.user_id;
+      headerSub.textContent = isActiveThread(thread) ? "Active now" : (thread.user_id + " · " + (formatInboxTime(thread.updated_at) || "Offline"));
       headerAvatar.textContent = initials(label);
     } else {
-      headerTitle.textContent = "Chat with " + (config.adminName || "Admin");
-      headerSub.textContent = "Private conversation with Superadmin";
+      headerTitle.textContent = config.adminName || "Ashar";
+      headerSub.textContent = isActiveThread(thread) ? "Active now" : "Private conversation with Superadmin";
       headerAvatar.textContent = initials(config.adminName || "A");
     }
   }
@@ -905,11 +1059,122 @@
       renderInbox();
     });
   }
+  document.querySelectorAll("[data-inbox-filter]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      setInboxFilter(btn.getAttribute("data-inbox-filter"));
+    });
+  });
+  if (startToggle) {
+    startToggle.addEventListener("click", function (event) {
+      event.stopPropagation();
+      setStartOpen(!state.startOpen);
+    });
+  }
+  if (startSearch) {
+    startSearch.addEventListener("input", function () {
+      state.startQuery = startSearch.value;
+      renderStartList();
+    });
+  }
   if (startBtn) {
     startBtn.addEventListener("click", function () {
       const userId = startUser && startUser.value;
       if (!userId) return;
+      setStartOpen(false);
       openThread(userId, true);
+    });
+  }
+  function showThreadSearch(on) {
+    if (!threadSearchWrap) return;
+    threadSearchWrap.hidden = !on;
+    if (on && threadSearch) threadSearch.focus();
+  }
+  if (threadSearchBtn) {
+    threadSearchBtn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      showThreadSearch(threadSearchWrap && threadSearchWrap.hidden);
+    });
+  }
+  if (threadSearch) {
+    threadSearch.addEventListener("input", function () {
+      state.threadSearch = threadSearch.value;
+      renderMessages();
+    });
+  }
+  function closeHeaderMenu() {
+    if (headerMenu) headerMenu.hidden = true;
+  }
+  if (headerMenuBtn && headerMenu) {
+    headerMenuBtn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      headerMenu.hidden = !headerMenu.hidden;
+    });
+    headerMenu.addEventListener("click", function (event) {
+      event.stopPropagation();
+      const action = event.target && event.target.getAttribute && event.target.getAttribute("data-header-action");
+      if (!action) return;
+      closeHeaderMenu();
+      if (action === "search") showThreadSearch(true);
+      if (action === "unread") {
+        setInboxFilter("unread");
+        const next = newestUnreadThread();
+        if (next) openThread(next.user_id, true);
+      }
+      if (action === "read") markOpenThreadRead();
+      if (action === "older") loadOlder();
+    });
+  }
+  if (mailBtn) {
+    mailBtn.addEventListener("click", function (event) {
+      if (currentPageIsMessages()) {
+        event.preventDefault();
+        setInboxFilter("unread");
+        const next = newestUnreadThread();
+        if (next) openThread(next.user_id, true);
+      }
+    });
+  }
+  function currentPageIsMessages() {
+    return (window.location.pathname.split("/").pop() || "").indexOf("messages") === 0;
+  }
+  const EMOJI_SET = ["😀","😁","😂","😊","😍","😘","😎","🙂","😉","😢","😭","😡","👍","👎","🙏","🔥","✨","🎉","❤️","💜","💙","💚","🧡","👏","🙌","💯","✅","📌","📷","📎"];
+  if (emojiPanel) {
+    EMOJI_SET.forEach(function (glyph) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = glyph;
+      btn.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const start = input.selectionStart || input.value.length;
+        const end = input.selectionEnd || input.value.length;
+        input.value = input.value.slice(0, start) + glyph + input.value.slice(end);
+        input.focus();
+        const caret = start + glyph.length;
+        input.setSelectionRange(caret, caret);
+        autoGrow();
+        emojiPanel.hidden = true;
+      });
+      emojiPanel.appendChild(btn);
+    });
+  }
+  if (emojiBtn && emojiPanel) {
+    emojiBtn.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      emojiPanel.hidden = !emojiPanel.hidden;
+    });
+    emojiPanel.addEventListener("click", function (event) {
+      event.stopPropagation();
+    });
+  }
+  if (galleryBtn && galleryInput) {
+    galleryBtn.addEventListener("click", function () {
+      galleryInput.click();
+    });
+    galleryInput.addEventListener("change", function () {
+      addPendingFiles(galleryInput.files);
+      galleryInput.value = "";
     });
   }
   function requestedUser() {
@@ -929,8 +1194,14 @@
     const thread = newestUnreadThread();
     if (thread) openThread(thread.user_id, true);
   };
-  document.addEventListener("click", function () {
+  document.addEventListener("click", function (event) {
     closeMenus();
+    closeHeaderMenu();
+    if (emojiPanel) emojiPanel.hidden = true;
+    const target = event.target;
+    if (state.startOpen && startPanel && startToggle && !startPanel.contains(target) && !startToggle.contains(target)) {
+      setStartOpen(false);
+    }
   });
 
   document.addEventListener("visibilitychange", function () {

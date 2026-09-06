@@ -62,13 +62,13 @@
     if (!badge) badge = document.querySelector("[data-chat-badge]");
     const n = Number(total || 0);
     const label = countLabel(n);
-    if (badge) {
-      badge.textContent = label;
-      badge.classList.toggle("is-on", n > 0);
-      badge.setAttribute("aria-hidden", n > 0 ? "false" : "true");
-      if (n > 0) badge.removeAttribute("hidden");
-      else badge.setAttribute("hidden", "");
-    }
+    document.querySelectorAll("[data-chat-badge]").forEach(function (el) {
+      el.textContent = label;
+      el.classList.toggle("is-on", n > 0);
+      el.setAttribute("aria-hidden", n > 0 ? "false" : "true");
+      if (n > 0) el.removeAttribute("hidden");
+      else el.setAttribute("hidden", "");
+    });
     if (link) {
       link.setAttribute("data-unread", String(n));
       link.setAttribute("aria-label", n > 0 ? "Messages, " + label + " unread" : "Messages");
