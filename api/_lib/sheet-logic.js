@@ -615,7 +615,10 @@ async function upsertOrder(data) {
       return { ok: false, error: "You can only save orders for " + forced + "." };
     }
     if (!orderId) orderId = await nextOrderIdValue(client);
-    if (!tab) tab = existing ? existing.tab_name : "Unassigned";
+    if (!tab && existing) tab = existing.tab_name;
+    if (!tab) {
+      return { ok: false, error: "Select an account before saving." };
+    }
     if (forced) tab = forced;
     let payload;
     if (row.length) {
@@ -1011,7 +1014,7 @@ async function handle(data) {
       return { ok: true, action: action || "ensureTabs", tabs: await workbookTabs(client), sheetColumns: HEADERS_LEN };
     });
   }
-  if (action === "upsertOrder" || (!action && (data.row || data.orderId || data.order))) {
+  if (action === "upsertOrder" || action === "upsert" || (!action && (data.row || data.orderId || data.order))) {
     return upsertOrder(data);
   }
   return { ok: true, service: "Owlistic Order Management", sheetColumns: HEADERS_LEN, database: "supabase" };

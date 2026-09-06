@@ -2341,6 +2341,10 @@
       showToast(saveBlockedMessage(), 4500);
       return;
     }
+    if (isAdmin() && !lockedAccount()) {
+      showToast("Select an account before saving.");
+      return;
+    }
     isSubmitting = true;
     window.clearTimeout(persistTimer);
     persistTimer = null;
@@ -2358,7 +2362,7 @@
         showToast("Order saved.", 5000);
         return;
       }
-      showToast("Could not save this order. Try Save again.", 5000);
+      showToast((outcome.sheet && outcome.sheet.error) || "Could not save this order. Try Save again.", 5000);
     }).catch(function () {
       showToast("Could not save this order");
     }).then(function () {

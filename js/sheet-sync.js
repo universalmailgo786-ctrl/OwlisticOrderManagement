@@ -1866,11 +1866,24 @@
                 return writeAndConfirm(current, attempt + 1);
               });
             }
-            if (result && result.ok === false) return retry();
+            if (result && result.ok === false) {
+              if (isSheetApiUrl(getWebAppUrl())) {
+                result.confirmed = false;
+                return result;
+              }
+              return retry();
+            }
             if (isSheetApiUrl(getWebAppUrl())) {
-              result.ok = true;
-              result.confirmed = true;
-              result.orderId = current.id;
+              if (result && result.ok !== false && result.action === "upsertOrder") {
+                result.ok = true;
+                result.confirmed = true;
+                result.orderId = result.orderId || current.id;
+                return result;
+              }
+              result = result || {};
+              result.ok = false;
+              result.confirmed = false;
+              result.error = result.error || "Could not save this order.";
               return result;
             }
             return confirmSheetWrite(current, { timeout: 2500 }).then(function (confirm) {
