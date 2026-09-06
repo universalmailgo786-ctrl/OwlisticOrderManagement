@@ -734,6 +734,7 @@
       node.remove();
     });
     let lastDay = "";
+    let lastSender = "";
     const needle = String(state.threadSearch || "").trim().toLowerCase();
     state.messages.forEach(function (message) {
       const day = dayKey(message.created_at);
@@ -743,8 +744,12 @@
         rule.textContent = formatDay(message.created_at);
         logEl.appendChild(rule);
         lastDay = day;
+        lastSender = "";
       }
       const node = messageNode(message);
+      const sender = String(message.sender_id || "");
+      if (lastSender && sender === lastSender) node.classList.add("is-continued");
+      lastSender = sender;
       if (needle) {
         const hay = [
           captionOf(message),

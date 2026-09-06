@@ -188,12 +188,26 @@ if (navJs.indexOf("lastByUser") < 0 || navJs.indexOf("byUser") < 0) {
   console.log("ok chat-nav has per-user unread counts");
 }
 
+if (pageJs.indexOf("is-continued") < 0) {
+  failed += 1;
+  console.error("FAIL chat-page must group consecutive bubbles");
+} else {
+  console.log("ok chat-page groups consecutive bubbles");
+}
+
 const css = fs.readFileSync(path.join(ROOT, "css/styles.css"), "utf8");
 if (css.indexOf("#e23c3c") < 0 || css.indexOf(".chat-unread-badge.is-on") < 0 || css.indexOf(".chat-nav-link .chat-unread-badge.is-on") < 0 || css.indexOf(".chat-conv-name-row") < 0) {
   failed += 1;
   console.error("FAIL unread badge styles");
 } else {
   console.log("ok unread badge styles");
+}
+
+if (css.indexOf("body.chat-page .chat-bubble") < 0 || css.indexOf("width: max-content") < 0 || css.indexOf("min-height: 0") < 0) {
+  failed += 1;
+  console.error("FAIL chat-page bubbles must shrink to content");
+} else {
+  console.log("ok chat-page bubbles shrink to content");
 }
 
 const configJs = fs.readFileSync(path.join(ROOT, "js/chat-config.js"), "utf8");
