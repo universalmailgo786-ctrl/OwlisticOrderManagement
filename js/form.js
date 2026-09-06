@@ -1105,20 +1105,37 @@
         renderAccountList();
       });
       item.querySelector("[data-delete]").addEventListener("click", function () {
-        if (!window.confirm("Delete this account? Existing orders will keep their saved details.")) return;
-        store.deleteAccount(account.id);
-        if (accountSelect.value === account.id) accountSelect.value = "";
-        fillAccountEditor(null);
-        populateAccounts();
-        renderAccountList();
-        showToast("Account deleted");
+        if (!window.confirm("Delete this user from logins, accounts, and their orders? This cannot be undone.")) return;
         const sheet = window.OwlisticSheet;
+        const btn = item.querySelector("[data-delete]");
+        if (btn) btn.disabled = true;
+        const finishLocal = function () {
+          store.deleteAccount(account.id);
+          if (accountSelect.value === account.id) accountSelect.value = "";
+          fillAccountEditor(null);
+          populateAccounts();
+          renderAccountList();
+        };
         if (sheet && typeof sheet.deleteUser === "function") {
           sheet.deleteUser({
             username: account.username || "",
             account: account.name || ""
-          }).catch(function () {});
+          }).then(function (result) {
+            if (result && result.ok === false) {
+              if (btn) btn.disabled = false;
+              showToast(result.error || "Could not delete this user.");
+              return;
+            }
+            finishLocal();
+            showToast("User deleted successfully.");
+          }).catch(function () {
+            if (btn) btn.disabled = false;
+            showToast("Could not delete this user.");
+          });
+          return;
         }
+        finishLocal();
+        showToast("User deleted successfully.");
       });
       accountList.appendChild(item);
     });
@@ -1143,6 +1160,7 @@
     accountModal.hidden = false;
     document.body.classList.add("modal-open");
     document.getElementById("account-name").focus();
+    window.setTimeout(unlockAccountLoginFields, 0);
     syncAccountTabs(store.getAccounts().length ? "Sheet tabs created for each account" : "");
   }
 
@@ -1902,22 +1920,25 @@
     const password = document.getElementById("account-username-password").value;
     const editId = document.getElementById("account-edit-id").value;
     const existingAccount = editId ? store.getAccount(editId) : null;
+    const isNewUser = !editId;
     if (typedRaw && reservedLoginUsername(typedRaw)) {
       showToast("SuperAdmin cannot be used as a user login. Enter that account's own username and password.");
       document.getElementById("account-username").value = "";
       document.getElementById("account-username").focus();
       return;
     }
-    if (username && !password) {
-      const hadUsername = existingAccount && typedAccountUsernameFrom(existingAccount);
-      if (!hadUsername || String(hadUsername).toLowerCase() !== username.toLowerCase()) {
-        showToast("Set a login password for this new user.");
-        document.getElementById("account-username-password").focus();
-        return;
-      }
+    if (!username) {
+      showToast("Login username is required so this user can sign in.");
+      document.getElementById("account-username").focus();
+      return;
+    }
+    if (!password && (isNewUser || !typedAccountUsernameFrom(existingAccount))) {
+      showToast("Set a login password for this new user.");
+      document.getElementById("account-username-password").focus();
+      return;
     }
     const payload = {
-      id: document.getElementById("account-edit-id").value || undefined,
+      id: editId || undefined,
       name: name,
       username: username,
       whatsapp: document.getElementById("account-whatsapp").value.trim(),
@@ -1931,48 +1952,46 @@
       showToast("That account name is reserved for SuperAdmin.");
       return;
     }
-    if (store.rememberLoginAccount) store.rememberLoginAccount(saved);
-    populateAccounts(saved.id);
-    applyAccount(saved);
-    fillAccountEditor(saved);
-    renderAccountList();
-    syncAccountTabs("Account saved. Sheet tab created.");
-    const profilePromise = pushAccountProfileToSheet(saved, {
-      username: username || saved.username || ""
-    });
-    const loginPromise = username && window.OwlisticSheet && typeof window.OwlisticSheet.upsertUser === "function"
-      ? window.OwlisticSheet.upsertUser({
-        username: username,
-        password: password,
-        account: saved.name,
-        displayName: saved.personName || saved.name,
-        personName: saved.personName || "",
-        whatsapp: saved.whatsapp || "",
-        fiverrId: saved.fiverrId || "",
-        fiverrGigUrl: saved.fiverrGigUrl || "",
-        paymentStatus: saved.paymentStatus || ""
-      })
-      : Promise.resolve(null);
-    Promise.all([profilePromise, loginPromise]).then(function (results) {
-      const profileResult = results[0];
-      const loginResult = results[1];
-      if ((profileResult && profileResult.ok === false) || (loginResult && loginResult.ok === false)) {
-        showToast((loginResult && loginResult.error) || (profileResult && profileResult.error) || "Account saved locally, but the Google Sheet was not fully updated.");
-        return loadAccountsFromSheet();
+    const sheet = window.OwlisticSheet;
+    if (!sheet || typeof sheet.upsertUser !== "function") {
+      showToast("Could not save this user.");
+      return;
+    }
+    const saveBtn = accountEditor.querySelector('button[type="submit"]');
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+    }
+    sheet.upsertUser({
+      username: username,
+      password: password,
+      account: saved.name,
+      displayName: saved.personName || saved.name,
+      personName: saved.personName || "",
+      whatsapp: saved.whatsapp || "",
+      fiverrId: saved.fiverrId || "",
+      fiverrGigUrl: saved.fiverrGigUrl || "",
+      paymentStatus: saved.paymentStatus || ""
+    }).then(function (result) {
+      if (!result || result.ok === false) {
+        showToast((result && result.error) || "Could not save this user.");
+        return;
       }
-      if (loginResult && loginResult.created) {
-        showToast("Account and login user saved to the Users sheet.");
-      } else if (loginResult && loginResult.updated) {
-        showToast("Account login updated in the Users sheet.");
-      } else if (!username) {
-        showToast("Account saved. Add a login username and password to create the user.");
-      } else if (profileResult && profileResult.ok) {
-        showToast("Account profile saved to the Accounts sheet.");
-      }
+      if (store.rememberLoginAccount) store.rememberLoginAccount(saved);
+      populateAccounts();
+      fillAccountEditor(null);
+      renderAccountList();
+      syncAccountTabs();
+      showToast(result.updated ? "User updated successfully." : "User created successfully.");
       return loadAccountsFromSheet();
     }).catch(function () {
-      showToast("Account saved locally, but the Google Sheet was not fully updated.");
-      loadAccountsFromSheet();
+      showToast("Could not save this user.");
+    }).then(function () {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save Account";
+      }
+      window.setTimeout(unlockAccountLoginFields, 0);
     });
   });
 

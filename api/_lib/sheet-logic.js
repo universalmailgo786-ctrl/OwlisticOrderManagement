@@ -887,8 +887,12 @@ async function updateRevisionsData(data) {
 async function upsertUser(data) {
   if (isRestricted(data)) return { ok: false, error: "Only Super Admin can add login users." };
   const username = trim(data.username);
-  if (!username) return { ok: false, error: "Username is required." };
-  if (isSuperAdminUsername(username)) return { ok: false, error: "SuperAdmin cannot be used as a user login." };
+  const account = tabName(data.account || data.name || "");
+  if (!account) return { ok: false, error: "Account Name is required." };
+  if (!username) return { ok: false, error: "Login username is required." };
+  if (isSuperAdminUsername(username) || isSuperAdminUsername(account)) {
+    return { ok: false, error: "SuperAdmin cannot be used as a user login." };
+  }
   return withClient(async function (client) {
     const existing = (await client.query(
       "select * from public.sheet_users where lower(username) = $1",
@@ -898,7 +902,6 @@ async function upsertUser(data) {
       ? String(data.password)
       : (existing ? existing.password : "");
     if (!password) return { ok: false, error: "Set a login password for this new user." };
-    const account = tabName(data.account || data.name || "");
     await client.query(
       `insert into public.sheet_users
         (username, password, role, account, display_name, active, whatsapp, fiverr_id, fiverr_gig_url, payment_status, updated_at)
@@ -918,33 +921,80 @@ async function upsertUser(data) {
         trim(data.whatsapp), trim(data.fiverrId), trim(data.fiverrGigUrl), trim(data.paymentStatus)
       ]
     );
-    if (account) {
-      await upsertAccountRow(client, {
-        account: account,
-        username: username,
-        personName: data.personName || data.displayName || account,
-        whatsapp: data.whatsapp,
-        fiverrId: data.fiverrId,
-        fiverrGigUrl: data.fiverrGigUrl,
-        paymentStatus: data.paymentStatus
-      });
-    }
-    return { ok: true, action: "upsertUser", username: username, account: account };
+    await upsertAccountRow(client, {
+      account: account,
+      username: username,
+      personName: data.personName || data.displayName || account,
+      whatsapp: data.whatsapp,
+      fiverrId: data.fiverrId,
+      fiverrGigUrl: data.fiverrGigUrl,
+      paymentStatus: data.paymentStatus
+    });
+    return {
+      ok: true,
+      action: "upsertUser",
+      username: username,
+      account: account,
+      created: !existing,
+      updated: Boolean(existing)
+    };
   });
 }
 
 async function deleteUser(data) {
   if (isRestricted(data)) return { ok: false, error: "Only Super Admin can delete login users." };
   const username = lower(data.username);
-  const account = lower(data.account || data.name);
-  if (!username && !account) return { ok: false, error: "Username or account is required." };
-  if (isSuperAdminUsername(username)) return { ok: false, error: "SuperAdmin cannot be deleted." };
+  const wantedAccount = lower(data.account || data.name);
+  if (!username && !wantedAccount) return { ok: false, error: "Username or account is required." };
+  if (isSuperAdminUsername(username) || isSuperAdminUsername(wantedAccount)) {
+    return { ok: false, error: "SuperAdmin cannot be deleted." };
+  }
   return withClient(async function (client) {
-    await client.query(
-      "delete from public.sheet_users where (lower(username) = $1 and $1 <> '') or (lower(account) = $2 and $2 <> '')",
-      [username, account]
-    );
-    return { ok: true, action: "deleteUser" };
+    let account = wantedAccount;
+    if (!account && username) {
+      const row = (await client.query(
+        "select account from public.sheet_users where lower(username) = $1 limit 1",
+        [username]
+      )).rows[0];
+      account = lower(row && row.account);
+    }
+    if (!username && account) {
+      const row = (await client.query(
+        "select username from public.sheet_users where lower(account) = $1 limit 1",
+        [account]
+      )).rows[0];
+      if (row && row.username) {
+        data.username = row.username;
+      }
+    }
+    const loginName = lower(data.username || username);
+    if (loginName) {
+      await client.query("delete from public.sheet_users where lower(username) = $1", [loginName]);
+    }
+    if (account) {
+      await client.query("delete from public.sheet_users where lower(account) = $1", [account]);
+      await client.query("delete from public.sheet_accounts where lower(account) = $1", [account]);
+      const orders = await client.query(
+        "select order_id from public.sheet_orders where lower(tab_name) = $1 or lower(account_name) = $1",
+        [account]
+      );
+      const ids = orders.rows.map(function (row) { return row.order_id; }).filter(Boolean);
+      await client.query(
+        "delete from public.sheet_orders where lower(tab_name) = $1 or lower(account_name) = $1",
+        [account]
+      );
+      if (ids.length) {
+        await client.query("delete from public.sheet_hanif_records where order_id = any($1::text[])", [ids]);
+      }
+      await client.query(
+        `delete from public.sheet_hanif_records
+         where lower(coalesce(payload->>'account','')) = $1
+            or lower(coalesce(payload->>'accountName','')) = $1
+            or lower(coalesce(payload->>'tabName','')) = $1`,
+        [account]
+      );
+    }
+    return { ok: true, action: "deleteUser", username: loginName, account: account };
   });
 }
 
@@ -977,6 +1027,9 @@ async function upsertAccountRow(client, item) {
 
 async function upsertAccountProfile(data) {
   if (isRestricted(data)) return { ok: false, error: "Only Super Admin can edit account profiles." };
+  if (trim(data.username) && (data.password != null && String(data.password) !== "")) {
+    return upsertUser(data);
+  }
   return withClient(async function (client) {
     await upsertAccountRow(client, data);
     return { ok: true, action: "upsertAccountProfile", account: tabName(data.account || data.name) };
