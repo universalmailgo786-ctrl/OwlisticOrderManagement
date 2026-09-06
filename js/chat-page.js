@@ -280,6 +280,9 @@
     logEl.querySelectorAll(".chat-msg-menu").forEach(function (el) {
       el.hidden = true;
     });
+    logEl.querySelectorAll(".chat-msg-actions.is-open").forEach(function (el) {
+      el.classList.remove("is-open");
+    });
   }
 
   function messageNode(message) {
@@ -296,14 +299,17 @@
     const editing = state.editingId === message.id;
     const showMenu = canEdit(message) || canDelete(message);
     const when = formatTime(message.created_at) + (message.edited_at ? " · Edited" : "");
+    const actionsHtml = showMenu
+      ? '<div class="chat-msg-actions">' +
+          '<button type="button" class="chat-msg-more" aria-label="Message actions">' +
+            '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="2.2" r="1.15" fill="currentColor"/><circle cx="6" cy="6" r="1.15" fill="currentColor"/><circle cx="6" cy="9.8" r="1.15" fill="currentColor"/></svg>' +
+          "</button>" +
+          '<div class="chat-msg-menu" hidden></div>' +
+        "</div>"
+      : "";
     item.innerHTML =
+      (mine ? "" : actionsHtml) +
       '<div class="chat-bubble">' +
-        (showMenu
-          ? '<div class="chat-msg-actions">' +
-              '<button type="button" class="chat-msg-more" aria-label="Message actions">•••</button>' +
-              '<div class="chat-msg-menu" hidden></div>' +
-            "</div>"
-          : "") +
         (imageUrl ? '<button type="button" class="chat-image-btn" data-legacy-image><img class="chat-image" alt=""></button>' : "") +
         '<div class="chat-att-images"></div>' +
         '<div class="chat-att-files"></div>' +
@@ -314,7 +320,8 @@
           '<span class="chat-bubble-when"></span>' +
           (mine ? '<span class="chat-receipt"></span>' : "") +
         "</span>" +
-      "</div>";
+      "</div>" +
+      (mine ? actionsHtml : "");
 
     if (imageUrl) {
       const img = item.querySelector(".chat-image");
@@ -396,13 +403,15 @@
     }
 
     if (showMenu) {
+      const actions = item.querySelector(".chat-msg-actions");
       const more = item.querySelector(".chat-msg-more");
       const menu = item.querySelector(".chat-msg-menu");
       if (canEdit(message)) {
         const editBtn = document.createElement("button");
         editBtn.type = "button";
         editBtn.textContent = "Edit";
-        editBtn.addEventListener("click", function () {
+        editBtn.addEventListener("click", function (event) {
+          event.stopPropagation();
           closeMenus();
           state.editingId = message.id;
           renderMessages();
@@ -413,7 +422,8 @@
         const delBtn = document.createElement("button");
         delBtn.type = "button";
         delBtn.textContent = "Delete";
-        delBtn.addEventListener("click", function () {
+        delBtn.addEventListener("click", function (event) {
+          event.stopPropagation();
           closeMenus();
           removeMessage(message);
         });
@@ -426,8 +436,13 @@
         if (!open) {
           state.openMenuId = message.id;
           menu.hidden = false;
+          if (actions) actions.classList.add("is-open");
         }
       });
+      if (state.openMenuId === message.id) {
+        menu.hidden = false;
+        if (actions) actions.classList.add("is-open");
+      }
     }
     return item;
   }
