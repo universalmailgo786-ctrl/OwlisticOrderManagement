@@ -3,14 +3,26 @@ const { POSTGRES_URL, envFlags } = require("../_lib/env");
 const { cors, send } = require("../_lib/http");
 const SQL = require("../_lib/chat-schema");
 
+function connectionConfig() {
+  let url = POSTGRES_URL;
+  if (!url) return null;
+  url = url
+    .replace(/[?&]sslmode=[^&]*/gi, "")
+    .replace(/[?&]ssl=[^&]*/gi, "")
+    .replace(/\?&/, "?")
+    .replace(/[?&]$/, "");
+  return {
+    connectionString: url,
+    ssl: { rejectUnauthorized: false }
+  };
+}
+
 async function withClient(fn) {
-  if (!POSTGRES_URL) {
+  const config = connectionConfig();
+  if (!config) {
     throw new Error("Postgres connection is not available on this deployment.");
   }
-  const client = new Client({
-    connectionString: POSTGRES_URL,
-    ssl: { rejectUnauthorized: false }
-  });
+  const client = new Client(config);
   await client.connect();
   try {
     return await fn(client);
