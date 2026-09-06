@@ -1,9 +1,8 @@
 const { verifyOwlisticLogin } = require("../_lib/owlistic-login");
 const { mintSupabaseJwt, emailForUsername, randomPassword } = require("../_lib/chat-jwt");
 const { adminClient, anonClient, SERVICE_KEY } = require("../_lib/supabase-admin");
+const { JWT_SECRET } = require("../_lib/env");
 const { cors, readJson, send } = require("../_lib/http");
-
-const JWT_SECRET = process.env.SUPABASE_JWT_SECRET || "";
 
 async function getOrCreateAuthUser(profile) {
   const admin = adminClient();
@@ -129,7 +128,7 @@ module.exports = async function handler(req, res) {
   if (!SERVICE_KEY) {
     return send(res, 503, {
       ok: false,
-      error: "Add SUPABASE_SERVICE_ROLE_KEY or SUPABASE_JWT_SECRET in Vercel environment variables to enable Messages."
+      error: "Chat secrets are not on this Vercel deployment yet. After connecting Supabase in Vercel, redeploy Production so SUPABASE_JWT_SECRET or SUPABASE_SERVICE_ROLE_KEY / SUPABASE_SECRET_KEY are available."
     });
   }
 
