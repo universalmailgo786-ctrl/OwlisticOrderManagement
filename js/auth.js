@@ -326,7 +326,8 @@
     if (!session) return payload;
     payload.role = session.role;
     payload.userAccount = session.account || "";
-    payload.username = session.username || "";
+    payload.actorUsername = session.username || "";
+    if (!payload.username) payload.username = session.username || "";
     return payload;
   }
 

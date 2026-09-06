@@ -1065,6 +1065,7 @@
     return postJsonPayload({
       action: "upsertUser",
       username: String(user.username || "").trim(),
+      loginUsername: String(user.username || "").trim(),
       password: String(user.password || ""),
       account: tabNameOf(user.account || user.accountName || ""),
       displayName: String(user.displayName || user.personName || user.name || user.username || "").trim(),
@@ -1084,6 +1085,7 @@
     return postJsonPayload({
       action: "deleteUser",
       username: String(user.username || "").trim(),
+      loginUsername: String(user.username || "").trim(),
       account: tabNameOf(user.account || user.name || user.accountName || "")
     });
   }

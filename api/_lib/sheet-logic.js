@@ -884,9 +884,18 @@ async function updateRevisionsData(data) {
   });
 }
 
+function loginUsernameOf(data) {
+  const login = trim(data.loginUsername || data.newUsername);
+  if (login) return login;
+  const name = trim(data.username);
+  const actor = trim(data.actorUsername);
+  if (actor && isSuperAdminUsername(name) && lower(name) === lower(actor)) return "";
+  return name;
+}
+
 async function upsertUser(data) {
   if (isRestricted(data)) return { ok: false, error: "Only Super Admin can add login users." };
-  const username = trim(data.username);
+  const username = loginUsernameOf(data);
   const account = tabName(data.account || data.name || "");
   if (!account) return { ok: false, error: "Account Name is required." };
   if (!username) return { ok: false, error: "Login username is required." };
@@ -943,7 +952,7 @@ async function upsertUser(data) {
 
 async function deleteUser(data) {
   if (isRestricted(data)) return { ok: false, error: "Only Super Admin can delete login users." };
-  const username = lower(data.username);
+  const username = lower(loginUsernameOf(data));
   const wantedAccount = lower(data.account || data.name);
   if (!username && !wantedAccount) return { ok: false, error: "Username or account is required." };
   if (isSuperAdminUsername(username) || isSuperAdminUsername(wantedAccount)) {
