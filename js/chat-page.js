@@ -32,6 +32,7 @@
   const toastEl = document.getElementById("chat-toast");
   const lightbox = document.getElementById("chat-image-lightbox");
   const lightboxImg = document.getElementById("chat-image-lightbox-img");
+  const confirmEl = document.getElementById("chat-confirm");
 
   const state = {
     thread: null,
@@ -45,7 +46,10 @@
     search: "",
     mobileChat: false,
     pending: [],
-    fingerprint: ""
+    fingerprint: "",
+    editingId: "",
+    openMenuId: "",
+    uploadProgress: {}
   };
 
   function escapeHtml(value) {
@@ -181,6 +185,14 @@
     return sender.toLowerCase() === String(me.username).toLowerCase();
   }
 
+  function canEdit(message) {
+    return isMine(message);
+  }
+
+  function canDelete(message) {
+    return isMine(message) || me.isSuperAdmin;
+  }
+
   function openLightbox(src) {
     if (!lightbox || !lightboxImg || !src) return;
     lightboxImg.src = src;
@@ -193,34 +205,141 @@
     if (lightboxImg) lightboxImg.removeAttribute("src");
   }
 
+  function captionOf(message) {
+    const text = String(message.message || "").trim();
+    if (!text || /^(photo|file)$/i.test(text)) return "";
+    return text;
+  }
+
+  function imageSrc(att) {
+    return att.signedUrl || att.image_url || "";
+  }
+
+  function messageAttachments(message) {
+    return Array.isArray(message.attachments) ? message.attachments : [];
+  }
+
+  function askDelete() {
+    return new Promise(function (resolve) {
+      if (!confirmEl) {
+        resolve(window.confirm("Delete this message?"));
+        return;
+      }
+      confirmEl.hidden = false;
+      const ok = confirmEl.querySelector("[data-confirm-ok]");
+      const cancels = confirmEl.querySelectorAll("[data-confirm-cancel]");
+      function finish(value) {
+        confirmEl.hidden = true;
+        ok.removeEventListener("click", onOk);
+        cancels.forEach(function (el) { el.removeEventListener("click", onCancel); });
+        resolve(value);
+      }
+      function onOk() { finish(true); }
+      function onCancel() { finish(false); }
+      ok.addEventListener("click", onOk);
+      cancels.forEach(function (el) { el.addEventListener("click", onCancel); });
+    });
+  }
+
+  function closeMenus() {
+    state.openMenuId = "";
+    logEl.querySelectorAll(".chat-msg-menu").forEach(function (el) {
+      el.hidden = true;
+    });
+  }
+
   function messageNode(message) {
     const mine = isMine(message);
     const item = document.createElement("div");
     item.className = "chat-bubble-row" + (mine ? " is-mine" : "");
     item.setAttribute("data-message-id", message.id);
     const who = mine ? "You" : (chat.isSuperAdminSender(message.sender_id) ? (config.adminName || "Ashar") : directoryName(message.sender_id));
-    const text = String(message.message || "").trim();
+    const caption = captionOf(message);
     const imageUrl = String(message.image_url || "").trim();
-    const caption = text && text.toLowerCase() !== "photo" ? text : "";
+    const atts = messageAttachments(message);
+    const images = atts.filter(function (att) { return String(att.attachment_type || "") === "image"; });
+    const files = atts.filter(function (att) { return String(att.attachment_type || "") !== "image"; });
+    const editing = state.editingId === message.id;
+    const showMenu = canEdit(message) || canDelete(message);
+    const when = formatTime(message.created_at) + (message.edited_at ? " · Edited" : "");
     item.innerHTML =
       '<div class="chat-bubble">' +
-        (imageUrl ? '<button type="button" class="chat-image-btn"><img class="chat-image" alt=""></button>' : "") +
-        (caption ? '<p class="chat-bubble-text"></p>' : "") +
+        (showMenu
+          ? '<div class="chat-msg-actions">' +
+              '<button type="button" class="chat-msg-more" aria-label="Message actions">•••</button>' +
+              '<div class="chat-msg-menu" hidden></div>' +
+            "</div>"
+          : "") +
+        (imageUrl ? '<button type="button" class="chat-image-btn" data-legacy-image><img class="chat-image" alt=""></button>' : "") +
+        '<div class="chat-att-images"></div>' +
+        '<div class="chat-att-files"></div>' +
+        (editing
+          ? '<div class="chat-edit-box"><textarea class="chat-edit-input" rows="2"></textarea><div class="chat-edit-actions"><button type="button" class="ghost-btn" data-edit-cancel>Cancel</button><button type="button" class="submit-btn" data-edit-save>Save</button></div></div>'
+          : (caption ? '<p class="chat-bubble-text"></p>' : "")) +
         '<span class="chat-bubble-meta">' +
           '<span class="chat-bubble-when"></span>' +
           (mine ? '<span class="chat-receipt"></span>' : "") +
         "</span>" +
       "</div>";
+
     if (imageUrl) {
       const img = item.querySelector(".chat-image");
       img.src = imageUrl;
       img.alt = caption || "Photo";
-      item.querySelector(".chat-image-btn").addEventListener("click", function () {
+      item.querySelector("[data-legacy-image]").addEventListener("click", function () {
         openLightbox(imageUrl);
       });
     }
-    if (caption) item.querySelector(".chat-bubble-text").textContent = caption;
-    item.querySelector(".chat-bubble-when").textContent = who + " · " + formatTime(message.created_at);
+
+    const imageWrap = item.querySelector(".chat-att-images");
+    images.forEach(function (att) {
+      const src = imageSrc(att);
+      if (!src) return;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "chat-image-btn";
+      btn.innerHTML = '<img class="chat-image" alt="">';
+      btn.querySelector("img").src = src;
+      btn.querySelector("img").alt = att.file_name || "Photo";
+      btn.addEventListener("click", function () { openLightbox(src); });
+      imageWrap.appendChild(btn);
+    });
+
+    const fileWrap = item.querySelector(".chat-att-files");
+    files.forEach(function (att) {
+      const link = document.createElement("a");
+      link.className = "chat-file-card";
+      link.href = att.signedUrl || "#";
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.innerHTML = '<span class="chat-file-icon" aria-hidden="true">📎</span><span class="chat-file-copy"><strong></strong><em></em></span>';
+      link.querySelector("strong").textContent = att.file_name || "File";
+      link.querySelector("em").textContent = chat.formatBytes(att.size_bytes || 0);
+      if (!att.signedUrl) {
+        link.addEventListener("click", function (event) {
+          event.preventDefault();
+          showError("That file is not available right now.");
+        });
+      }
+      fileWrap.appendChild(link);
+    });
+
+    if (editing) {
+      const area = item.querySelector(".chat-edit-input");
+      area.value = caption || String(message.message || "").replace(/^(photo|file)$/i, "");
+      item.querySelector("[data-edit-cancel]").addEventListener("click", function () {
+        state.editingId = "";
+        renderMessages();
+      });
+      item.querySelector("[data-edit-save]").addEventListener("click", function () {
+        saveEdit(message, area.value);
+      });
+      window.setTimeout(function () { area.focus(); }, 0);
+    } else if (caption) {
+      item.querySelector(".chat-bubble-text").textContent = caption;
+    }
+
+    item.querySelector(".chat-bubble-when").textContent = who + " · " + when;
     if (mine) {
       const receipt = item.querySelector(".chat-receipt");
       const read = Boolean(message.read_at);
@@ -228,7 +347,79 @@
       receipt.className = "chat-receipt " + (read ? "is-read" : "is-sent");
       if (read) receipt.title = "Read " + formatTime(message.read_at);
     }
+
+    if (showMenu) {
+      const more = item.querySelector(".chat-msg-more");
+      const menu = item.querySelector(".chat-msg-menu");
+      if (canEdit(message)) {
+        const editBtn = document.createElement("button");
+        editBtn.type = "button";
+        editBtn.textContent = "Edit";
+        editBtn.addEventListener("click", function () {
+          closeMenus();
+          state.editingId = message.id;
+          renderMessages();
+        });
+        menu.appendChild(editBtn);
+      }
+      if (canDelete(message)) {
+        const delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.textContent = "Delete";
+        delBtn.addEventListener("click", function () {
+          closeMenus();
+          removeMessage(message);
+        });
+        menu.appendChild(delBtn);
+      }
+      more.addEventListener("click", function (event) {
+        event.stopPropagation();
+        const open = state.openMenuId === message.id;
+        closeMenus();
+        if (!open) {
+          state.openMenuId = message.id;
+          menu.hidden = false;
+        }
+      });
+    }
     return item;
+  }
+
+  async function saveEdit(message, raw) {
+    const text = String(raw || "").trim();
+    const hasAtt = Boolean(String(message.image_url || "").trim()) || messageAttachments(message).length > 0 || message.has_files;
+    if (!text && !hasAtt) {
+      showError("Message cannot be empty.");
+      return;
+    }
+    showError("");
+    try {
+      const saved = await chat.editMessage(message.id, text || (hasAtt ? (messageAttachments(message).some(function (att) { return att.attachment_type === "image"; }) || message.image_url ? "Photo" : "File") : ""));
+      if (saved) {
+        saved.attachments = message.attachments || [];
+        upsertMessage(saved);
+      }
+      state.editingId = "";
+      renderMessages();
+      await loadInbox({ silent: true });
+    } catch (err) {
+      showError(err.message || "Could not save that edit.");
+    }
+  }
+
+  async function removeMessage(message) {
+    const ok = await askDelete();
+    if (!ok) return;
+    showError("");
+    try {
+      await chat.deleteMessage(message.id);
+      removeMessageLocal(message.id);
+      renderMessages();
+      await refreshUnread();
+      await loadInbox({ silent: true });
+    } catch (err) {
+      showError(err.message || "Could not delete that message.");
+    }
   }
 
   function setComposerEnabled(on) {
@@ -237,7 +428,7 @@
     input.disabled = !on;
     sendBtn.disabled = !on || state.sending;
     if (attachBtn) attachBtn.disabled = !on;
-    input.placeholder = on ? "Write a message or paste an image" : "Select a conversation to reply";
+    input.placeholder = on ? "Write a message or attach a file" : "Select a conversation to reply";
   }
 
   function renderMessages() {
@@ -255,7 +446,7 @@
       emptyEl.querySelector("p").textContent = "Open a user on the left to read and reply.";
     } else if (emptyEl && state.thread && !state.messages.length) {
       emptyEl.querySelector("strong").textContent = "No messages yet";
-      emptyEl.querySelector("p").textContent = "Send a message or paste an image to start this conversation.";
+      emptyEl.querySelector("p").textContent = "Send a message or attach a file to start this conversation.";
     }
     olderBtn.hidden = !state.hasMore;
     setComposerEnabled(Boolean(state.thread));
@@ -267,14 +458,35 @@
   function upsertMessage(message) {
     if (!message || !message.id) return;
     const index = state.messages.findIndex(function (item) { return item.id === message.id; });
-    if (index >= 0) state.messages[index] = message;
-    else state.messages.push(message);
+    if (index >= 0) {
+      const prev = state.messages[index];
+      if (!message.attachments && prev.attachments) message.attachments = prev.attachments;
+      state.messages[index] = message;
+    } else {
+      state.messages.push(message);
+    }
     state.messages.sort(function (a, b) {
       const at = String(a.created_at || "");
       const bt = String(b.created_at || "");
       if (at === bt) return String(a.id).localeCompare(String(b.id));
       return at < bt ? -1 : 1;
     });
+  }
+
+  function removeMessageLocal(id) {
+    state.messages = state.messages.filter(function (item) { return item.id !== id; });
+    if (state.editingId === id) state.editingId = "";
+  }
+
+  async function hydrateOne(message) {
+    if (!message || !message.id) return message;
+    try {
+      const atts = await chat.loadAttachments(message.id);
+      message.attachments = atts;
+    } catch (err) {
+      message.attachments = message.attachments || [];
+    }
+    return message;
   }
 
   function setHeader(thread) {
@@ -306,10 +518,22 @@
     previewsEl.innerHTML = "";
     state.pending.forEach(function (item, index) {
       const chip = document.createElement("div");
-      chip.className = "chat-preview-chip";
-      chip.innerHTML = '<img alt=""><button type="button" aria-label="Remove image">×</button>';
-      chip.querySelector("img").src = item.preview;
+      const progress = state.uploadProgress[index];
+      if (item.kind === "image" && item.preview) {
+        chip.className = "chat-preview-chip";
+        chip.innerHTML = '<img alt=""><button type="button" aria-label="Remove file">×</button>';
+        chip.querySelector("img").src = item.preview;
+      } else {
+        chip.className = "chat-preview-chip is-file";
+        chip.innerHTML = '<span class="chat-file-icon" aria-hidden="true">📎</span><span class="chat-file-copy"><strong></strong><em></em></span><button type="button" aria-label="Remove file">×</button>';
+        chip.querySelector("strong").textContent = item.name || "File";
+        chip.querySelector("em").textContent = progress != null
+          ? "Uploading " + Math.round(progress * 100) + "%"
+          : chat.formatBytes(item.size || 0);
+      }
+      if (progress != null) chip.classList.add("is-uploading");
       chip.querySelector("button").addEventListener("click", function () {
+        if (state.sending) return;
         state.pending.splice(index, 1);
         renderPreviews();
       });
@@ -318,18 +542,39 @@
   }
 
   async function addPendingFiles(fileList) {
-    const files = Array.prototype.slice.call(fileList || []).filter(function (file) {
-      return file && /^image\//i.test(file.type || "");
-    });
+    const files = Array.prototype.slice.call(fileList || []);
     if (!files.length) return;
     showError("");
     for (let i = 0; i < files.length; i++) {
-      if (state.pending.length >= 4) break;
+      if (state.pending.length >= chat.maxPending) {
+        showError("You can attach up to " + chat.maxPending + " files in one message.");
+        break;
+      }
+      const classified = chat.classifyClientFile(files[i]);
+      if (!classified.ok) {
+        showError(classified.error);
+        continue;
+      }
       try {
-        const compressed = await chat.compressImage(files[i]);
-        state.pending.push({ file: files[i], preview: compressed.preview });
+        if (classified.type === "image") {
+          const compressed = await chat.compressImage(files[i]);
+          state.pending.push({
+            file: files[i],
+            kind: "image",
+            preview: compressed.preview,
+            name: files[i].name,
+            size: files[i].size
+          });
+        } else {
+          state.pending.push({
+            file: files[i],
+            kind: "file",
+            name: files[i].name,
+            size: files[i].size
+          });
+        }
       } catch (err) {
-        showError(err.message || "Could not add that image.");
+        showError(err.message || "Could not add that file.");
       }
     }
     renderPreviews();
@@ -393,9 +638,22 @@
     } catch (err) {}
   }
 
+  async function handleIncoming(row) {
+    if (!row || !state.thread || row.thread_id !== state.thread.id) return;
+    upsertMessage(row);
+    renderMessages();
+    hydrateOne(row).then(function (full) {
+      upsertMessage(full);
+      renderMessages();
+    });
+    if (!isMine(row)) markOpenThreadRead();
+    else refreshUnread();
+  }
+
   async function openThread(userId, fromInbox) {
     showError("");
     state.loading = true;
+    state.editingId = "";
     setStatus("Loading…");
     try {
       const thread = await chat.getOrCreateThread(userId);
@@ -409,17 +667,29 @@
       await markOpenThreadRead();
       await chat.subscribeThread(thread.id, {
         onInsert: function (row) {
-          upsertMessage(row);
-          renderMessages();
-          if (row.thread_id === state.thread.id && !isMine(row)) {
-            markOpenThreadRead();
-          } else {
-            refreshUnread();
-          }
+          handleIncoming(row);
         },
         onUpdate: function (row) {
+          if (!row || (state.thread && row.thread_id !== state.thread.id)) return;
           upsertMessage(row);
           renderMessages();
+        },
+        onDelete: function (row) {
+          if (!row || !row.id) return;
+          removeMessageLocal(row.id);
+          renderMessages();
+          refreshUnread();
+          loadInbox({ silent: true });
+        },
+        onAttachment: function (payload) {
+          const row = (payload && (payload.new || payload.old)) || {};
+          if (!row.message_id) return;
+          const message = state.messages.find(function (item) { return item.id === row.message_id; });
+          if (!message) return;
+          hydrateOne(message).then(function (full) {
+            upsertMessage(full);
+            renderMessages();
+          });
         },
         onStatus: function (status) {
           if (status === "SUBSCRIBED") setStatus("Live");
@@ -463,30 +733,32 @@
     state.sending = true;
     sendBtn.disabled = true;
     input.value = "";
-    state.pending = [];
-    renderPreviews();
     try {
+      let saved;
       if (pending.length) {
-        for (let i = 0; i < pending.length; i++) {
-          const uploaded = await chat.uploadImage(pending[i].file);
-          const caption = i === pending.length - 1 ? text : "";
-          const saved = await chat.sendMessage(state.thread.id, caption, uploaded.url);
-          upsertMessage(saved);
-        }
+        saved = await chat.sendWithAttachments(state.thread.id, text, pending, function (index, ratio) {
+          state.uploadProgress[index] = ratio;
+          renderPreviews();
+        });
       } else {
-        const saved = await chat.sendMessage(state.thread.id, text);
-        upsertMessage(saved);
+        saved = await chat.sendMessage(state.thread.id, text);
       }
+      state.pending = [];
+      state.uploadProgress = {};
+      renderPreviews();
+      upsertMessage(saved);
       renderMessages();
       await loadInbox({ silent: true });
     } catch (err) {
       input.value = text;
-      state.pending = pending.concat(state.pending);
+      state.pending = pending;
+      state.uploadProgress = {};
       renderPreviews();
       showError(err.message || "Message was not sent.");
     }
     state.sending = false;
     sendBtn.disabled = false;
+    setComposerEnabled(Boolean(state.thread));
     input.focus();
   }
 
@@ -515,7 +787,7 @@
       if (!items || !state.thread) return;
       const files = [];
       for (let i = 0; i < items.length; i++) {
-        if (items[i].type && items[i].type.indexOf("image") === 0) {
+        if (items[i].kind === "file") {
           const file = items[i].getAsFile();
           if (file) files.push(file);
         }
@@ -578,6 +850,9 @@
       if (thread) openThread(thread.user_id, true);
     });
   }
+  document.addEventListener("click", function () {
+    closeMenus();
+  });
 
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "visible") markOpenThreadRead();
@@ -588,13 +863,26 @@
     chat.listMessages(state.thread.id).then(function (rows) {
       let changed = false;
       const before = state.messages.length;
+      const serverIds = {};
       (rows || []).forEach(function (row) {
+        serverIds[row.id] = true;
         const prev = state.messages.find(function (item) { return item.id === row.id; });
-        if (!prev || prev.read_at !== row.read_at || prev.message !== row.message || prev.image_url !== row.image_url) {
+        if (!prev || prev.read_at !== row.read_at || prev.message !== row.message || prev.image_url !== row.image_url || prev.edited_at !== row.edited_at) {
           changed = true;
         }
         upsertMessage(row);
       });
+      const oldest = rows && rows[0] ? rows[0].created_at : "";
+      const kept = state.messages.filter(function (item) {
+        if (!oldest || String(item.created_at || "") >= String(oldest)) {
+          return Boolean(serverIds[item.id]);
+        }
+        return true;
+      });
+      if (kept.length !== state.messages.length) {
+        state.messages = kept;
+        changed = true;
+      }
       if (changed || (rows || []).length !== before) renderMessages();
     }).catch(function () {});
     markOpenThreadRead();
@@ -622,11 +910,17 @@
         onThread: function () { loadInbox({ silent: true }); },
         onInsert: function () { loadInbox({ silent: true }); },
         onUpdate: function (payload) {
-          if (payload && payload.new) {
-            upsertMessage(payload.new);
-            if (state.thread) renderMessages();
+          if (payload && payload.id && state.thread && payload.thread_id === state.thread.id) {
+            upsertMessage(payload);
+            renderMessages();
           }
           refreshUnread();
+          loadInbox({ silent: true });
+        },
+        onDelete: function () {
+          refreshUnread();
+          loadInbox({ silent: true });
+          if (state.thread) syncOpenMessages();
         }
       });
       setStatus("Select a conversation");

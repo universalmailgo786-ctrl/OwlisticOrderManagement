@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node scripts/test-chat.js",
     "test:chat": "node scripts/test-chat.js",
-    "chat:migrate": "node scripts/apply-chat-migration.js"
+    "test:chat-cleanup": "node scripts/test-chat-cleanup.js",
+    "chat:migrate": "node scripts/apply-chat-migration.js --latest"
   },
   "repository": {
     "type": "git",

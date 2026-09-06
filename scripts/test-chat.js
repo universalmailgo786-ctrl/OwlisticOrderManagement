@@ -7,7 +7,14 @@ const files = [
   "api/chat/session.js",
   "api/chat/setup.js",
   "api/chat/upload.js",
+  "api/chat/signed-url.js",
+  "api/chat/purge-files.js",
+  "api/chat/delete-message.js",
+  "api/cron/chat-cleanup.js",
   "api/_lib/chat-images-sql.js",
+  "api/_lib/chat-edit-sql.js",
+  "api/_lib/chat-files.js",
+  "api/_lib/chat-cleanup.js",
   "api/_lib/env.js",
   "api/_lib/chat-schema.js",
   "api/_lib/owlistic-login.js",
@@ -26,7 +33,9 @@ const files = [
   "js/auth.js",
   "js/sheet-sync.js",
   "js/hanif-sheet.js",
-  "scripts/apply-chat-migration.js"
+  "scripts/apply-chat-migration.js",
+  "scripts/test-chat-cleanup.js",
+  "scripts/load-env.js"
 ];
 
 let failed = 0;
@@ -90,6 +99,38 @@ sheetRequired.forEach(function (token) {
     console.log("ok sheet migration has", token);
   }
 });
+
+const editSql = fs.readFileSync(path.join(ROOT, "supabase/migrations/20260907020000_chat_edit_attachments.sql"), "utf8");
+const editRequired = [
+  "edited_at",
+  "CREATE TABLE IF NOT EXISTS public.chat_attachments",
+  "chat_messages_delete",
+  "chat-attachments",
+  "chat_refresh_thread_id"
+];
+editRequired.forEach(function (token) {
+  if (editSql.indexOf(token) < 0) {
+    failed += 1;
+    console.error("FAIL edit migration missing", token);
+  } else {
+    console.log("ok edit migration has", token);
+  }
+});
+
+const filesLib = require(path.join(ROOT, "api/_lib/chat-files.js"));
+if (!filesLib.classifyFile("spec.pdf", "application/pdf").ok || filesLib.classifyFile("bad.exe", "").ok) {
+  failed += 1;
+  console.error("FAIL file allowlist");
+} else {
+  console.log("ok file allowlist");
+}
+
+if (filesLib.MAX_BYTES !== 10 * 1024 * 1024) {
+  failed += 1;
+  console.error("FAIL max attachment size");
+} else {
+  console.log("ok max attachment size");
+}
 
 if (failed) {
   console.error("chat checks failed:", failed);

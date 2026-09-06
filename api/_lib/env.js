@@ -35,6 +35,11 @@ const POSTGRES_URL = firstEnv([
   "POSTGRES_PRISMA_URL"
 ]);
 
+const CHAT_CRON_SECRET = firstEnv([
+  "CHAT_CRON_SECRET",
+  "CRON_SECRET"
+]);
+
 function envFlags() {
   return {
     hasUrl: Boolean(SUPABASE_URL),
@@ -52,5 +57,6 @@ module.exports = {
   SERVICE_KEY,
   JWT_SECRET,
   POSTGRES_URL,
+  CHAT_CRON_SECRET,
   envFlags
 };

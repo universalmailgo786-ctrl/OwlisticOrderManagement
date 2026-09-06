@@ -179,6 +179,7 @@
       await api.subscribeInbox({
         onInsert: function () { refresh(); },
         onUpdate: function () { refresh(); },
+        onDelete: function () { refresh(); },
         onThread: function () { refresh(); }
       }, "chat-nav-unread");
     } catch (err) {}

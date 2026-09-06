@@ -26,8 +26,31 @@ function send(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+function bearer(req) {
+  const header = String((req && req.headers && req.headers.authorization) || "");
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : "";
+}
+
+function queryOf(req) {
+  if (req && req.query && typeof req.query === "object") return req.query;
+  try {
+    const host = (req && req.headers && req.headers.host) || "localhost";
+    const url = new URL(req && req.url ? req.url : "/", "http://" + host);
+    const out = {};
+    url.searchParams.forEach(function (value, key) {
+      out[key] = value;
+    });
+    return out;
+  } catch (err) {
+    return {};
+  }
+}
+
 module.exports = {
   cors,
   readJson,
-  send
+  send,
+  bearer,
+  queryOf
 };

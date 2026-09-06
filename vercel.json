@@ -7,7 +7,17 @@
       "maxDuration": 60
     },
     "api/chat/setup.js": {
-      "maxDuration": 30
+      "maxDuration": 30,
+      "includeFiles": "supabase/migrations/**"
+    },
+    "api/cron/chat-cleanup.js": {
+      "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/chat-cleanup",
+      "schedule": "0 3 * * *"
+    }
+  ]
 }

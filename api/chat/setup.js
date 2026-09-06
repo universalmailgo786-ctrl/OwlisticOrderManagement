@@ -3,6 +3,7 @@ const { POSTGRES_URL, envFlags } = require("../_lib/env");
 const { cors, send } = require("../_lib/http");
 const SQL = require("../_lib/chat-schema");
 const IMAGES_SQL = require("../_lib/chat-images-sql");
+const EDIT_SQL = require("../_lib/chat-edit-sql");
 const SHEET_SQL = require("../_lib/sheet-sql");
 
 function connectionConfig() {
@@ -67,15 +68,24 @@ async function status() {
         "select 1 from information_schema.columns where table_schema = 'public' and table_name = 'chat_messages' and column_name = 'image_url'"
       )).rowCount > 0
       : false;
+    const editedCol = messages
+      ? (await client.query(
+        "select 1 from information_schema.columns where table_schema = 'public' and table_name = 'chat_messages' and column_name = 'edited_at'"
+      )).rowCount > 0
+      : false;
+    const attachments = await tableExists(client, "chat_attachments");
     return {
       ok: true,
       applied: threads && messages,
       flags: flags,
       tables: {
         chat_threads: threads,
-        chat_messages: messages
+        chat_messages: messages,
+        chat_attachments: attachments
       },
       images: imageCol,
+      editedAt: editedCol,
+      attachments: attachments,
       rls: Boolean(rls && rls.relrowsecurity),
       realtimeTables: realtime
     };
@@ -86,6 +96,7 @@ async function apply() {
   return withClient(async function (client) {
     await client.query(SQL);
     await client.query(IMAGES_SQL);
+    await client.query(EDIT_SQL);
     await client.query(SHEET_SQL);
     return status();
   });
