@@ -34,6 +34,7 @@
   const lightboxImg = document.getElementById("chat-image-lightbox-img");
   const lightboxDownload = document.getElementById("chat-image-download");
   const confirmEl = document.getElementById("chat-confirm");
+  if (confirmEl) confirmEl.hidden = true;
 
   const state = {
     thread: null,
@@ -260,12 +261,17 @@
         confirmEl.hidden = true;
         ok.removeEventListener("click", onOk);
         cancels.forEach(function (el) { el.removeEventListener("click", onCancel); });
+        document.removeEventListener("keydown", onKey);
         resolve(value);
       }
       function onOk() { finish(true); }
       function onCancel() { finish(false); }
+      function onKey(event) {
+        if (event.key === "Escape") finish(false);
+      }
       ok.addEventListener("click", onOk);
       cancels.forEach(function (el) { el.addEventListener("click", onCancel); });
+      document.addEventListener("keydown", onKey);
     });
   }
 

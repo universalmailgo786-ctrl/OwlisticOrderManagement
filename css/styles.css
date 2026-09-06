@@ -5795,6 +5795,7 @@ body.is-hanif-tab .records-tabs {
 .chat-older[hidden],
 .chat-toast[hidden],
 .chat-image-lightbox[hidden],
+.chat-confirm[hidden],
 .chat-error[hidden],
 .chat-empty[hidden] {
   display: none !important;
