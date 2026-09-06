@@ -174,15 +174,22 @@ clientRequired.forEach(function (token) {
   }
 });
 
-if (pageJs.indexOf("applyIncoming") < 0 || pageJs.indexOf("owlistic-unread") < 0) {
+if (pageJs.indexOf("applyIncoming") < 0 || pageJs.indexOf("owlistic-unread") < 0 || pageJs.indexOf("data-inbox-unread") < 0 || pageJs.indexOf("unreadCountFor") < 0) {
   failed += 1;
-  console.error("FAIL chat-page must sync realtime unread with the nav badge");
+  console.error("FAIL chat-page must show per-user realtime unread badges");
 } else {
   console.log("ok chat-page syncs realtime unread");
 }
 
+if (navJs.indexOf("lastByUser") < 0 || navJs.indexOf("byUser") < 0) {
+  failed += 1;
+  console.error("FAIL chat-nav must keep per-user unread counts");
+} else {
+  console.log("ok chat-nav has per-user unread counts");
+}
+
 const css = fs.readFileSync(path.join(ROOT, "css/styles.css"), "utf8");
-if (css.indexOf("#e23c3c") < 0 || css.indexOf(".chat-unread-badge.is-on") < 0 || css.indexOf(".chat-nav-link .chat-unread-badge.is-on") < 0) {
+if (css.indexOf("#e23c3c") < 0 || css.indexOf(".chat-unread-badge.is-on") < 0 || css.indexOf(".chat-nav-link .chat-unread-badge.is-on") < 0 || css.indexOf(".chat-conv-name-row") < 0) {
   failed += 1;
   console.error("FAIL unread badge styles");
 } else {
@@ -195,6 +202,14 @@ if (configJs.indexOf('unreadUrl: "/api/chat/unread"') < 0 || configJs.indexOf('m
   console.error("FAIL chat-config unread/mark-read urls");
 } else {
   console.log("ok chat-config unread and mark-read urls");
+}
+
+const unreadApi = fs.readFileSync(path.join(ROOT, "api/chat/unread.js"), "utf8");
+if (unreadApi.indexOf("byUser") < 0) {
+  failed += 1;
+  console.error("FAIL unread API must return per-user counts");
+} else {
+  console.log("ok unread API returns per-user counts");
 }
 
 if (failed) {

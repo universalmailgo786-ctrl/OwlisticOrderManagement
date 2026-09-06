@@ -6,6 +6,8 @@
   let started = false;
   let lastTotal = null;
   let lastByThread = {};
+  let lastByUser = {};
+  let threadUsers = {};
   let lastStamp = "";
   let originalTitle = "";
   let dismissedStamp = "";
@@ -71,6 +73,42 @@
     else link.classList.remove("is-active");
   }
 
+  function userKey(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function sumMap(map) {
+    let n = 0;
+    Object.keys(map || {}).forEach(function (key) {
+      n += Math.max(0, Number(map[key] || 0));
+    });
+    return n;
+  }
+
+  function totalFromMaps() {
+    return Math.max(sumMap(lastByUser), sumMap(lastByThread));
+  }
+
+  function rememberThreadUser(threadId, userId) {
+    const tid = String(threadId || "");
+    const uid = userKey(userId);
+    if (!tid || !uid) return;
+    if (/^(superadmin|admin)$/i.test(uid)) return;
+    threadUsers[tid] = uid;
+  }
+
+  function bumpMap(map, key, delta) {
+    if (!key) return;
+    const next = Math.max(0, Number(map[key] || 0) + delta);
+    if (next) map[key] = next;
+    else delete map[key];
+  }
+
+  function paintFromMaps(options) {
+    lastTotal = totalFromMaps();
+    renderCount(lastTotal, options);
+  }
+
   function viewingThread(threadId) {
     if (!threadId) return false;
     if (currentPage() !== "messages.html") return false;
@@ -83,14 +121,20 @@
     const opts = options || {};
     const detail = {
       total: Number(lastTotal || 0),
-      byThread: lastByThread || {}
+      byThread: lastByThread || {},
+      byUser: lastByUser || {}
     };
     try {
       document.dispatchEvent(new CustomEvent("owlistic-unread", { detail: detail }));
     } catch (err) {}
     if (!opts.fromBroadcast && broadcast) {
       try {
-        broadcast.postMessage({ type: "unread", total: detail.total, byThread: detail.byThread });
+        broadcast.postMessage({
+          type: "unread",
+          total: detail.total,
+          byThread: detail.byThread,
+          byUser: detail.byUser
+        });
       } catch (err) {}
     }
   }
@@ -122,9 +166,17 @@
   }
 
   function setSummary(summary, options) {
-    const total = summary && typeof summary.total === "number" ? summary.total : 0;
+    const opts = options || {};
     lastByThread = Object.assign({}, (summary && summary.byThread) || {});
-    renderCount(total, options);
+    lastByUser = {};
+    Object.keys((summary && summary.byUser) || {}).forEach(function (key) {
+      const uid = userKey(key);
+      const n = Number(summary.byUser[key] || 0);
+      if (uid && n > 0) lastByUser[uid] = n;
+    });
+    const total = totalFromMaps() || Number(summary && summary.total) || 0;
+    lastTotal = total;
+    renderCount(total, opts);
   }
 
   function refreshSoon() {
@@ -147,10 +199,12 @@
     if (viewingThread(row.thread_id)) return false;
     seenIncoming[row.id] = true;
     fetchGen += 1;
-    if (lastTotal == null) lastTotal = 0;
+    rememberThreadUser(row.thread_id, row.sender_id);
     lastByThread = lastByThread || {};
-    lastByThread[row.thread_id] = (lastByThread[row.thread_id] || 0) + 1;
-    renderCount((lastTotal || 0) + 1);
+    lastByUser = lastByUser || {};
+    bumpMap(lastByThread, row.thread_id, 1);
+    bumpMap(lastByUser, userKey(row.sender_id), 1);
+    paintFromMaps();
     skipNextToast = currentPage() === "messages.html";
     refreshSoon();
     return true;
@@ -164,26 +218,30 @@
     seenRead[row.id] = true;
     delete seenIncoming[row.id];
     fetchGen += 1;
-    const tid = row.thread_id;
-    if (tid && lastByThread[tid] > 0) {
-      lastByThread[tid] -= 1;
-      renderCount(Math.max(0, (lastTotal || 1) - 1));
-    }
+    rememberThreadUser(row.thread_id, row.sender_id);
+    bumpMap(lastByThread, row.thread_id, -1);
+    bumpMap(lastByUser, userKey(row.sender_id) || threadUsers[row.thread_id], -1);
+    paintFromMaps();
     refreshSoon();
     return true;
   }
 
-  function applyThreadRead(threadId) {
+  function applyThreadRead(threadId, userId) {
     const tid = String(threadId || "");
     if (!tid) return false;
-    const n = Number((lastByThread && lastByThread[tid]) || 0);
-    if (n < 1) {
+    const uid = userKey(userId) || threadUsers[tid] || "";
+    rememberThreadUser(tid, uid);
+    const threadCount = Number((lastByThread && lastByThread[tid]) || 0);
+    const userCount = uid ? Number((lastByUser && lastByUser[uid]) || 0) : 0;
+    if (threadCount < 1 && userCount < 1) {
       refreshSoon();
       return false;
     }
     fetchGen += 1;
     lastByThread[tid] = 0;
-    renderCount(Math.max(0, (lastTotal || n) - n));
+    delete lastByThread[tid];
+    if (uid) delete lastByUser[uid];
+    paintFromMaps();
     refreshSoon();
     return true;
   }
@@ -330,6 +388,9 @@
       try {
         threads = typeof api.listThreads === "function" ? await api.listThreads() : [];
       } catch (err) {}
+      (threads || []).forEach(function (thread) {
+        rememberThreadUser(thread.id, thread.user_id);
+      });
       const latest = (threads && threads[0]) || null;
       const unreadThread = (threads || []).find(function (thread) {
         return summary.byThread && summary.byThread[thread.id];
@@ -349,7 +410,7 @@
       const body = (unreadThread && unreadThread.last_message) || "You have unread messages.";
       const toastOpts = {
         userId: unreadThread && unreadThread.user_id,
-        total: summary.total
+        total: totalFromMaps()
       };
       if (currentPage() === "messages.html") {
         hideToast();
@@ -433,6 +494,12 @@
         const data = event && event.data;
         if (!data || data.type !== "unread" || typeof data.total !== "number") return;
         lastByThread = Object.assign({}, data.byThread || {});
+        lastByUser = {};
+        Object.keys(data.byUser || {}).forEach(function (key) {
+          const uid = userKey(key);
+          const n = Number(data.byUser[key] || 0);
+          if (uid && n > 0) lastByUser[uid] = n;
+        });
         renderCount(data.total, { fromBroadcast: true });
       };
     }

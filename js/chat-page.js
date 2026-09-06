@@ -56,7 +56,7 @@
     messages: [],
     threads: [],
     directory: [],
-    unread: { total: 0, byThread: {} },
+    unread: { total: 0, byThread: {}, byUser: {} },
     hasMore: false,
     loading: false,
     sending: false,
@@ -78,9 +78,10 @@
     if (!detail || typeof detail.total !== "number") return;
     state.unread = {
       total: detail.total,
-      byThread: detail.byThread || {}
+      byThread: detail.byThread || {},
+      byUser: detail.byUser || {}
     };
-    renderInbox();
+    if (!patchInboxUnread()) renderInbox();
   });
 
   function escapeHtml(value) {
@@ -247,6 +248,87 @@
     }
   }
 
+  function unreadCountFor(thread) {
+    if (!thread) return 0;
+    const byThread = (state.unread && state.unread.byThread) || {};
+    const byUser = (state.unread && state.unread.byUser) || {};
+    const fromThread = Number(byThread[thread.id] || 0);
+    if (fromThread > 0) return fromThread;
+    const uid = String(thread.user_id || "").trim().toLowerCase();
+    return Number(byUser[uid] || 0);
+  }
+
+  function unreadTotalFromState() {
+    const byUser = (state.unread && state.unread.byUser) || {};
+    const userKeys = Object.keys(byUser);
+    if (userKeys.length) {
+      return userKeys.reduce(function (sum, key) {
+        return sum + Number(byUser[key] || 0);
+      }, 0);
+    }
+    return Number((state.unread && state.unread.total) || 0);
+  }
+
+  function setInboxBadge(el, unread) {
+    if (!el) return;
+    const n = Math.max(0, Number(unread || 0));
+    el.textContent = n > 99 ? "99+" : String(n);
+    el.classList.toggle("is-on", n > 0);
+    if (n > 0) el.removeAttribute("hidden");
+    else el.setAttribute("hidden", "");
+  }
+
+  function patchInboxUnread() {
+    if (!me.isSuperAdmin || !inboxList) return false;
+    const items = inboxList.querySelectorAll("[data-chat-conv]");
+    if (!items.length) return !state.threads.length;
+    const seen = {};
+    items.forEach(function (item) {
+      const threadId = item.getAttribute("data-thread-id");
+      const userId = item.getAttribute("data-user-id");
+      const thread = state.threads.find(function (row) { return row.id === threadId; }) || {
+        id: threadId,
+        user_id: userId
+      };
+      const unread = unreadCountFor(thread);
+      seen[threadId] = true;
+      item.classList.toggle("has-unread", unread > 0);
+      item.setAttribute("data-unread", String(unread));
+      const label = directoryName(thread.user_id);
+      item.setAttribute("aria-label", unread > 0 ? label + ", " + unread + " unread" : label);
+      setInboxBadge(item.querySelector("[data-inbox-unread]"), unread);
+    });
+    const unreadIds = Object.keys((state.unread && state.unread.byThread) || {}).filter(function (id) {
+      return Number(state.unread.byThread[id] || 0) > 0;
+    });
+    for (let i = 0; i < unreadIds.length; i++) {
+      if (!seen[unreadIds[i]]) return false;
+    }
+    const total = unreadTotalFromState();
+    state.unread.total = total;
+    if (unreadFilterCount) {
+      unreadFilterCount.textContent = total > 99 ? "99+" : String(total);
+      if (total > 0) unreadFilterCount.removeAttribute("hidden");
+      else unreadFilterCount.setAttribute("hidden", "");
+    }
+    return true;
+  }
+
+  function bumpThreadFromMessage(row) {
+    if (!row || !row.thread_id) return false;
+    const idx = state.threads.findIndex(function (thread) { return thread.id === row.thread_id; });
+    if (idx < 0) return false;
+    const thread = state.threads[idx];
+    if (row.message) thread.last_message = row.message;
+    if (row.created_at) thread.updated_at = row.created_at;
+    thread.last_sender_id = row.sender_id || thread.last_sender_id;
+    if (idx > 0) {
+      state.threads.splice(idx, 1);
+      state.threads.unshift(thread);
+    }
+    return true;
+  }
+
   function setInboxFilter(next) {
     state.inboxFilter = next || "all";
     document.querySelectorAll("[data-inbox-filter]").forEach(function (btn) {
@@ -260,7 +342,7 @@
     const q = String(state.search || "").trim().toLowerCase();
     let unreadTotal = 0;
     const rows = state.threads.filter(function (thread) {
-      const unread = state.unread.byThread[thread.id] || 0;
+      const unread = unreadCountFor(thread);
       unreadTotal += unread;
       if (state.inboxFilter === "unread" && unread < 1) return false;
       if (state.inboxFilter === "active" && !isActiveThread(thread) && !(state.thread && state.thread.id === thread.id)) return false;
@@ -285,10 +367,15 @@
     }
     rows.forEach(function (thread) {
       const label = directoryName(thread.user_id);
-      const unread = state.unread.byThread[thread.id] || 0;
+      const unread = unreadCountFor(thread);
       const item = document.createElement("button");
       item.type = "button";
       item.className = "chat-conv" + (state.thread && state.thread.id === thread.id ? " is-active" : "") + (unread ? " has-unread" : "");
+      item.setAttribute("data-chat-conv", "1");
+      item.setAttribute("data-thread-id", thread.id);
+      item.setAttribute("data-user-id", String(thread.user_id || ""));
+      item.setAttribute("data-unread", String(unread));
+      item.setAttribute("aria-label", unread > 0 ? label + ", " + unread + " unread" : label);
       item.innerHTML =
         '<span class="chat-avatar-wrap">' +
           '<span class="chat-avatar" aria-hidden="true">' + escapeHtml(initials(label)) + "</span>" +
@@ -296,15 +383,18 @@
         "</span>" +
         '<span class="chat-conv-body">' +
           '<span class="chat-conv-top">' +
-            '<span class="chat-conv-name"></span>' +
+            '<span class="chat-conv-name-row">' +
+              '<span class="chat-conv-name"></span>' +
+              '<span class="chat-unread-badge" data-inbox-unread hidden>0</span>' +
+            "</span>" +
             '<span class="chat-conv-time"></span>' +
           "</span>" +
           '<span class="chat-conv-preview"></span>' +
-        "</span>" +
-        (unread ? '<span class="chat-unread-badge is-on">' + (unread > 99 ? "99+" : unread) + "</span>" : "");
+        "</span>";
       item.querySelector(".chat-conv-name").textContent = label;
       item.querySelector(".chat-conv-time").textContent = formatInboxTime(thread.updated_at);
       item.querySelector(".chat-conv-preview").textContent = previewText(thread);
+      setInboxBadge(item.querySelector("[data-inbox-unread]"), unread);
       item.addEventListener("click", function () {
         openThread(thread.user_id, true);
       });
@@ -806,18 +896,12 @@
     renderPreviews();
   }
 
-  function syncNavUnread() {
-    if (!window.OwlisticChatNav) return;
-    if (typeof window.OwlisticChatNav.setSummary === "function") {
-      window.OwlisticChatNav.setSummary(state.unread);
-    } else {
-      window.OwlisticChatNav.renderCount(state.unread.total);
-    }
-  }
-
   async function refreshUnread() {
+    if (window.OwlisticChatNav && typeof window.OwlisticChatNav.refresh === "function") {
+      await window.OwlisticChatNav.refresh();
+      return;
+    }
     state.unread = await chat.unreadSummary();
-    syncNavUnread();
     renderInbox();
   }
 
@@ -868,7 +952,7 @@
     if (!state.thread || !viewingThisChat()) return;
     window.OwlisticChatViewingThreadId = state.thread.id;
     if (window.OwlisticChatNav && typeof window.OwlisticChatNav.applyThreadRead === "function") {
-      window.OwlisticChatNav.applyThreadRead(state.thread.id);
+      window.OwlisticChatNav.applyThreadRead(state.thread.id, state.thread.user_id);
     }
     try {
       await chat.markRead(state.thread.id);
@@ -1011,7 +1095,7 @@
 
   function newestUnreadThread() {
     return state.threads.find(function (thread) {
-      return state.unread.byThread[thread.id];
+      return unreadCountFor(thread) > 0;
     }) || null;
   }
 
@@ -1288,9 +1372,12 @@
       chat.subscribeInbox({
         onThread: function () { loadInbox({ silent: true }); },
         onInsert: function (row) {
+          const moved = bumpThreadFromMessage(row);
           if (window.OwlisticChatNav && typeof window.OwlisticChatNav.applyIncoming === "function") {
             window.OwlisticChatNav.applyIncoming(row);
           }
+          if (moved) renderInbox();
+          else if (!patchInboxUnread()) renderInbox();
           loadInbox({ silent: true });
         },
         onUpdate: function (payload, oldRow) {

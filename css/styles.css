@@ -6579,15 +6579,27 @@ body.chat-page .chat-conv.is-active {
 }
 
 body.chat-page .chat-conv .chat-unread-badge.is-on {
-  position: absolute;
-  right: 12px;
-  bottom: 10px;
-  min-width: 18px;
-  height: 18px;
-  background: #5c6b52;
-  box-shadow: none;
+  position: static;
+  right: auto;
+  bottom: auto;
   top: auto;
   margin: 0;
+  min-width: 18px;
+  height: 18px;
+  background: #e23c3c;
+  box-shadow: none;
+}
+
+.chat-conv-name-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+body.chat-page .chat-conv-name-row .chat-unread-badge.is-on {
+  flex: none;
 }
 
 .chat-avatar-wrap {

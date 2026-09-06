@@ -235,14 +235,19 @@
 
   function unreadFor(rows, me) {
     const byThread = {};
+    const byUser = {};
     let total = 0;
     (rows || []).forEach(function (row) {
       if (row && row.read_at) return;
       if (!isIncomingRow(row, me)) return;
       byThread[row.thread_id] = (byThread[row.thread_id] || 0) + 1;
+      const sender = String(row.sender_id || "").trim().toLowerCase();
+      if (me && me.isSuperAdmin && sender && !isSuperAdminSender(sender)) {
+        byUser[sender] = (byUser[sender] || 0) + 1;
+      }
       total += 1;
     });
-    return { total: total, byThread: byThread };
+    return { total: total, byThread: byThread, byUser: byUser };
   }
 
   function fileToDataUrl(file) {
@@ -732,7 +737,7 @@
         });
         const data = await response.json().catch(function () { return null; });
         if (data && data.ok && typeof data.total === "number") {
-          return { total: data.total, byThread: data.byThread || {} };
+          return { total: data.total, byThread: data.byThread || {}, byUser: data.byUser || {} };
         }
       } catch (err) {}
     }

@@ -8,15 +8,18 @@ function unreadFor(rows, user) {
   const mine = String((user && user.username) || "").toLowerCase();
   const admin = Boolean(user && user.isSuperAdmin);
   const byThread = {};
+  const byUser = {};
   let total = 0;
   (rows || []).forEach(function (row) {
-    const sender = String(row.sender_id || "").toLowerCase();
-    const incoming = admin ? !isSuperAdminSender(sender) : sender !== mine;
+    const sender = String(row.sender_id || "").trim();
+    const senderKey = sender.toLowerCase();
+    const incoming = admin ? !isSuperAdminSender(sender) : senderKey !== mine;
     if (!incoming) return;
     byThread[row.thread_id] = (byThread[row.thread_id] || 0) + 1;
+    if (admin && senderKey) byUser[senderKey] = (byUser[senderKey] || 0) + 1;
     total += 1;
   });
-  return { total: total, byThread: byThread };
+  return { total: total, byThread: byThread, byUser: byUser };
 }
 
 module.exports = async function handler(req, res) {
@@ -34,11 +37,11 @@ module.exports = async function handler(req, res) {
   const payload = verifySupabaseJwt(bearer(req), JWT_SECRET);
   const user = chatUserFromJwt(payload);
   if (!payload || !user.username) {
-    return send(res, 401, { ok: false, total: 0, byThread: {} });
+    return send(res, 401, { ok: false, total: 0, byThread: {}, byUser: {} });
   }
   const admin = adminClient();
   if (!admin) {
-    return send(res, 503, { ok: false, total: 0, byThread: {} });
+    return send(res, 503, { ok: false, total: 0, byThread: {}, byUser: {} });
   }
   try {
     let allowedIds = null;
@@ -51,7 +54,7 @@ module.exports = async function handler(req, res) {
         return String(row.user_id || "").toLowerCase() === wanted;
       }).map(function (row) { return row.id; });
       if (!allowedIds.length) {
-        return send(res, 200, { ok: true, total: 0, byThread: {} });
+        return send(res, 200, { ok: true, total: 0, byThread: {}, byUser: {} });
       }
       query = query.in("thread_id", allowedIds);
     }
@@ -66,8 +69,8 @@ module.exports = async function handler(req, res) {
       return true;
     });
     const summary = unreadFor(rows, user);
-    return send(res, 200, { ok: true, total: summary.total, byThread: summary.byThread });
+    return send(res, 200, { ok: true, total: summary.total, byThread: summary.byThread, byUser: summary.byUser });
   } catch (err) {
-    return send(res, 500, { ok: false, total: 0, byThread: {}, error: err.message || "Could not load unread count." });
+    return send(res, 500, { ok: false, total: 0, byThread: {}, byUser: {}, error: err.message || "Could not load unread count." });
   }
 };
