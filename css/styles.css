@@ -2644,6 +2644,49 @@ body.modal-open {
   background: #f6d4c6;
 }
 
+.records-table tbody tr.records-row.is-duplicate-business td,
+.records-table tbody tr.records-row.has-open-revision.is-duplicate-business td,
+.records-table tbody tr.records-row.is-schedule-overdue.is-duplicate-business td {
+  background: #f8d7da;
+  color: #842029;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.records-table tbody tr.records-row.is-duplicate-business:hover td,
+.records-table tbody tr.records-row.has-open-revision.is-duplicate-business:hover td,
+.records-table tbody tr.records-row.is-schedule-overdue.is-duplicate-business:hover td {
+  background: #f5c2c7;
+}
+
+.records-table tbody tr.records-row.is-duplicate-business td:first-child {
+  box-shadow: inset 3px 0 0 #c1121f;
+}
+
+.records-name-block {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.records-duplicate-note {
+  display: block;
+  color: #842029;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.records-table.is-revision-board tbody tr.records-row.is-duplicate-business td,
+.records-table.is-ready-board tbody tr.records-row.is-duplicate-business td,
+.records-table.is-completed-board tbody tr.records-row.is-duplicate-business td {
+  height: auto;
+  max-height: none;
+}
+
 .records-table tbody tr.records-row.has-open-revision .records-stack span,
 .records-table tbody tr.records-row.has-open-revision .muted,
 .records-table tbody tr.records-row.has-open-revision .records-revisions-summary {

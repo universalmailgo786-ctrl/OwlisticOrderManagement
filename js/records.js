@@ -562,16 +562,43 @@
     "</div>";
   }
 
+  function normalizeBusinessName(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+      .replace(/\s+/g, " ");
+  }
+
+  function isDuplicateBusinessName(order) {
+    const name = normalizeBusinessName(order && order.businessName);
+    if (!name) return false;
+    const id = String((order && order.id) || "");
+    const pool = store.getOrders ? store.getOrders() : [];
+    return pool.some(function (item) {
+      if (!item || String(item.id || "") === id) return false;
+      return normalizeBusinessName(item.businessName) === name;
+    });
+  }
+
+  function duplicateRowClass(order) {
+    return isDuplicateBusinessName(order) ? " is-duplicate-business" : "";
+  }
+
   function editableNameCell(order, field, placeholder, label) {
     const value = String(order[field] || "").trim();
     const display = value
       ? '<span class="records-clip" title="' + escapeHtml(value) + '">' + escapeHtml(value) + "</span>"
       : '<span class="muted records-name-placeholder">' + escapeHtml(placeholder) + "</span>";
-    return '<div class="records-cell-with-copy records-editable">' +
+    const duplicate = field === "businessName" && isDuplicateBusinessName(order);
+    const html = '<div class="records-cell-with-copy records-editable">' +
       '<div class="records-cell-value" title="' + escapeHtml(value) + '">' + display + "</div>" +
       '<button type="button" class="records-edit-btn" data-edit-field="' + field + '" data-edit-order="' + escapeHtml(order.id) + '" title="Edit ' + escapeHtml(label) + '" aria-label="Edit ' + escapeHtml(label) + '">' + PENCIL_ICON + "</button>" +
       copyButton(value, label) +
     "</div>";
+    if (!duplicate) return html;
+    return '<div class="records-name-block">' + html +
+      '<span class="records-duplicate-note">business requirements is duplicated</span></div>';
   }
 
   function tabOf(order) {
@@ -1199,7 +1226,7 @@
       const actions = orderActionCells(order);
       const rowAttrs = ' data-order-id="' + escapeHtml(order.id) + '" data-order-account="' + escapeHtml(order.tabName || order.accountName || "") + '"';
       if (activeTab === "ready-to-approve") {
-        return '<tr class="records-row is-' + status + '"' + rowAttrs + ">" +
+        return '<tr class="records-row is-' + status + duplicateRowClass(order) + '"' + rowAttrs + ">" +
           "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
           "<td>" + withCopy(escapeHtml(order.fiverrId || "—"), order.fiverrId || "", "Fiverr ID name") + "</td>" +
           "<td>" + editableNameCell(order, "clientName", "Add client name", "client name") + "</td>" +
@@ -1211,7 +1238,7 @@
         "</tr>";
       }
       if (activeTab === "completed") {
-        return '<tr class="records-row is-' + status + '"' + rowAttrs + ">" +
+        return '<tr class="records-row is-' + status + duplicateRowClass(order) + '"' + rowAttrs + ">" +
           "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
           "<td>" + withCopy(escapeHtml(order.fiverrId || "—"), order.fiverrId || "", "Fiverr ID name") + "</td>" +
           "<td>" + editableNameCell(order, "clientName", "Add client name", "client name") + "</td>" +
@@ -1222,7 +1249,7 @@
         "</tr>";
       }
       if (activeTab === "on-revision") {
-        return '<tr class="records-row is-' + status + ' is-revision-board"' + rowAttrs + ">" +
+        return '<tr class="records-row is-' + status + ' is-revision-board' + duplicateRowClass(order) + '"' + rowAttrs + ">" +
           "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
           "<td>" + withCopy(escapeHtml(order.fiverrId || "—"), order.fiverrId || "", "Fiverr ID name") + "</td>" +
           "<td>" + editableNameCell(order, "clientName", "Add client name", "client name") + "</td>" +
@@ -1247,7 +1274,7 @@
             mediaCell(revisionRoleHtml(round, "seller"), sellerText, revLabel + " seller", revisionRoleHasFiles(round, "seller"));
         }
       }
-      return '<tr class="' + scheduleRowClass(order, status, "") + '"' + rowAttrs + ">" +
+      return '<tr class="' + scheduleRowClass(order, status, isDuplicateBusinessName(order) ? "is-duplicate-business" : "") + '"' + rowAttrs + ">" +
         "<td>" + withCopy(stack(order.id, store.formatDate(order.createdAt)), order.id || "", "order ID") + "</td>" +
         "<td>" + withCopy(escapeHtml(order.whatsapp || "—"), order.whatsapp || "", "WhatsApp number") + "</td>" +
         "<td>" + withCopy(escapeHtml(order.name || "—"), order.name || "", "name") + "</td>" +
@@ -1980,24 +2007,31 @@
     if (field === "businessName") order.businessName = next;
     store.upsertOrder(order);
     render();
+    const duplicated = field === "businessName" && isDuplicateBusinessName(order);
+    const savedLabel = duplicated
+      ? "business requirements is duplicated"
+      : (field === "clientName" ? "Client name saved" : "Business name saved");
+    const sheetLabel = duplicated
+      ? "business requirements is duplicated"
+      : (field === "clientName" ? "Client name saved to Google Sheet" : "Business name saved to Google Sheet");
     const sheet = window.OwlisticSheet;
     const send = sheet && (typeof sheet.updateOrderNames === "function"
       ? sheet.updateOrderNames
       : (typeof sheet.sync === "function" ? function (item) { return sheet.sync(item, { skipUploads: true }); } : null));
     if (!send) {
-      showToast(field === "clientName" ? "Client name saved" : "Business name saved");
+      showToast(savedLabel);
       return;
     }
     send.call(sheet, order).then(function (result) {
       if (result && result.skipped) {
-        showToast(field === "clientName" ? "Client name saved" : "Business name saved");
+        showToast(savedLabel);
         return;
       }
       if (result && result.ok === false) {
         showToast(result.error || "Name saved here, but not on the Google Sheet.");
         return;
       }
-      showToast(field === "clientName" ? "Client name saved to Google Sheet" : "Business name saved to Google Sheet");
+      showToast(sheetLabel);
     }).catch(function () {
       showToast("Name saved here, but not on the Google Sheet.");
     });
