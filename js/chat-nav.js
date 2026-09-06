@@ -58,12 +58,15 @@
   }
 
   function renderCount(total) {
+    if (!link) ensureLink();
     if (!badge) badge = document.querySelector("[data-chat-badge]");
     const n = Number(total || 0);
     const label = countLabel(n);
     if (badge) {
-      badge.hidden = n < 1;
       badge.textContent = label;
+      badge.classList.toggle("is-on", n > 0);
+      if (n > 0) badge.removeAttribute("hidden");
+      else badge.setAttribute("hidden", "");
     }
     if (link) {
       link.setAttribute("data-unread", String(n));
@@ -206,12 +209,17 @@
     const api = chat();
     const session = auth() && auth().getSession();
     if (!api || !session || !session.chatAccessToken) {
-      renderCount(0);
+      if (lastTotal == null) renderCount(0);
       return;
     }
     try {
       const summary = await api.unreadSummary();
-      const threads = typeof api.listThreads === "function" ? await api.listThreads() : [];
+      renderCount(summary.total);
+      lastTotal = summary.total;
+      let threads = [];
+      try {
+        threads = typeof api.listThreads === "function" ? await api.listThreads() : [];
+      } catch (err) {}
       const latest = (threads && threads[0]) || null;
       const unreadThread = (threads || []).find(function (thread) {
         return summary.byThread && summary.byThread[thread.id];
@@ -223,8 +231,7 @@
           ? api.isSuperAdminSender(latest.last_sender_id)
           : String(latest.last_sender_id || "").toLowerCase() === String(me.username || "").toLowerCase()
       );
-      const first = lastTotal == null;
-      renderCount(summary.total);
+      const first = lastStamp === "";
       const who = me && me.isSuperAdmin
         ? ((unreadThread && unreadThread.user_id) || "A user")
         : (config.adminName || "Ashar");
@@ -243,7 +250,6 @@
           showToast(title, body, toastOpts);
         }
       }
-      lastTotal = summary.total;
       lastStamp = stamp;
     } catch (err) {
       if (lastTotal == null) renderCount(0);

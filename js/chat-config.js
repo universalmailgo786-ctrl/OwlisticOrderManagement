@@ -4,6 +4,7 @@ window.OwlisticChatConfig = {
   sessionUrl: "/api/chat/session",
   uploadUrl: "/api/chat/upload",
   signedUrl: "/api/chat/signed-url",
+  unreadUrl: "/api/chat/unread",
   deleteUrl: "/api/chat/delete-message",
   purgeUrl: "/api/chat/purge-files",
   pageSize: 40,

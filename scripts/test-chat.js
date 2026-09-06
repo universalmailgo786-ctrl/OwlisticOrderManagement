@@ -6,6 +6,7 @@ const ROOT = path.join(__dirname, "..");
 const files = [
   "api/chat/session.js",
   "api/chat/setup.js",
+  "api/chat/unread.js",
   "api/chat/upload.js",
   "api/chat/signed-url.js",
   "api/chat/purge-files.js",
@@ -130,6 +131,33 @@ if (filesLib.MAX_BYTES !== 10 * 1024 * 1024) {
   console.error("FAIL max attachment size");
 } else {
   console.log("ok max attachment size");
+}
+
+const navJs = fs.readFileSync(path.join(ROOT, "js/chat-nav.js"), "utf8");
+const navRequired = ["is-on", "unreadSummary", "data-chat-badge"];
+navRequired.forEach(function (token) {
+  if (navJs.indexOf(token) < 0) {
+    failed += 1;
+    console.error("FAIL chat-nav missing", token);
+  } else {
+    console.log("ok chat-nav has", token);
+  }
+});
+
+const css = fs.readFileSync(path.join(ROOT, "css/styles.css"), "utf8");
+if (css.indexOf("#e23c3c") < 0 || css.indexOf(".chat-unread-badge.is-on") < 0) {
+  failed += 1;
+  console.error("FAIL unread badge styles");
+} else {
+  console.log("ok unread badge styles");
+}
+
+const configJs = fs.readFileSync(path.join(ROOT, "js/chat-config.js"), "utf8");
+if (configJs.indexOf('unreadUrl: "/api/chat/unread"') < 0) {
+  failed += 1;
+  console.error("FAIL chat-config unreadUrl");
+} else {
+  console.log("ok chat-config unreadUrl");
 }
 
 if (failed) {

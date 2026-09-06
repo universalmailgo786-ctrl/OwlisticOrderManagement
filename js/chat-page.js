@@ -156,7 +156,7 @@
           "</span>" +
           '<span class="chat-conv-preview"></span>' +
         "</span>" +
-        (unread ? '<span class="chat-unread-badge">' + (unread > 99 ? "99+" : unread) + "</span>" : "");
+        (unread ? '<span class="chat-unread-badge is-on">' + (unread > 99 ? "99+" : unread) + "</span>" : "");
       item.querySelector(".chat-conv-name").textContent = label;
       item.querySelector(".chat-conv-time").textContent = formatTime(thread.updated_at);
       item.querySelector(".chat-conv-preview").textContent = previewText(thread);

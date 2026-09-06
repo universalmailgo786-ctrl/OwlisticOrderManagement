@@ -203,9 +203,13 @@
 
   async function unreadRows() {
     const db = await ensureClient();
-    const result = await db.from("chat_messages").select("id, thread_id, sender_id, read_at").is("read_at", null);
-    if (result.error) throw result.error;
-    return result.data || [];
+    const result = await db.from("chat_messages").select("id, thread_id, sender_id, read_at").is("read_at", null).limit(500);
+    if (!result.error) {
+      return (result.data || []).filter(function (row) { return !row.read_at; });
+    }
+    const fallback = await db.from("chat_messages").select("id, thread_id, sender_id, read_at").order("created_at", { ascending: false }).limit(500);
+    if (fallback.error) throw result.error;
+    return (fallback.data || []).filter(function (row) { return !row.read_at; });
   }
 
   function unreadFor(rows, me) {
@@ -679,6 +683,19 @@
   }
 
   async function unreadSummary() {
+    const token = currentAccessToken();
+    if (token) {
+      try {
+        const response = await fetch(config.unreadUrl || "/api/chat/unread", {
+          cache: "no-store",
+          headers: { Authorization: "Bearer " + token }
+        });
+        const data = await response.json().catch(function () { return null; });
+        if (data && data.ok && typeof data.total === "number") {
+          return { total: data.total, byThread: data.byThread || {} };
+        }
+      } catch (err) {}
+    }
     const me = sessionUser();
     const rows = await unreadRows();
     return unreadFor(rows, me);
