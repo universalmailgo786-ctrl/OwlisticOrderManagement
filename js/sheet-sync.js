@@ -594,7 +594,24 @@
     });
   }
 
+  function sheetApiCapabilities() {
+    return {
+      ok: true,
+      url: getWebAppUrl(),
+      sheetColumns: EXPECTED_SHEET_COLUMNS,
+      scheduleSupported: true,
+      expectedColumns: EXPECTED_SHEET_COLUMNS,
+      needsDeploy: false,
+      authorized: true
+    };
+  }
+
   function tryMigrateWebApp() {
+    if (isSheetApiUrl(getWebAppUrl())) {
+      capabilitiesCache = sheetApiCapabilities();
+      saveStoredCapabilities(capabilitiesCache);
+      return Promise.resolve(capabilitiesCache);
+    }
     const stored = capabilitiesCache || loadStoredCapabilities();
     if (stored && stored.scheduleSupported && stored.url === getWebAppUrl()) {
       capabilitiesCache = stored;
@@ -1678,7 +1695,8 @@
         ok: true,
         action: "ensureScheduleColumns",
         sheetColumns: capabilitiesCache.sheetColumns || EXPECTED_SHEET_COLUMNS,
-        tabs: storedWorkbookTabs()
+        tabs: storedWorkbookTabs(),
+        needsDeploy: false
       });
     }
     const stored = loadStoredCapabilities();

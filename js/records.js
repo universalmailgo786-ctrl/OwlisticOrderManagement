@@ -59,6 +59,13 @@
 
   function refreshSheetUpgradeBanner(caps) {
     if (!sheetUpgradeBanner) return;
+    if (window.OwlisticSheet && typeof window.OwlisticSheet.isConfigured === "function" && window.OwlisticSheet.isConfigured()) {
+      const url = String(window.OwlisticSheet.getWebAppUrl && window.OwlisticSheet.getWebAppUrl() || "");
+      if (/\/api\/sheet\/?$/i.test(url) || url.indexOf("/api/sheet") === 0) {
+        sheetUpgradeBanner.hidden = true;
+        return;
+      }
+    }
     const needsDeploy = caps && caps.needsDeploy;
     sheetUpgradeBanner.hidden = !needsDeploy;
   }
