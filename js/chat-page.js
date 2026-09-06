@@ -65,11 +65,9 @@
     if (!value) return "";
     const date = new Date(value);
     if (isNaN(date.getTime())) return "";
-    const now = new Date();
-    const sameDay = date.toDateString() === now.toDateString();
+    const day = date.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
     const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    if (sameDay) return time;
-    return date.toLocaleDateString([], { month: "short", day: "numeric" }) + " · " + time;
+    return day + " · " + time;
   }
 
   function setStatus(text, isError) {
@@ -208,7 +206,10 @@
       '<div class="chat-bubble">' +
         (imageUrl ? '<button type="button" class="chat-image-btn"><img class="chat-image" alt=""></button>' : "") +
         (caption ? '<p class="chat-bubble-text"></p>' : "") +
-        '<span class="chat-bubble-meta"></span>' +
+        '<span class="chat-bubble-meta">' +
+          '<span class="chat-bubble-when"></span>' +
+          (mine ? '<span class="chat-receipt"></span>' : "") +
+        "</span>" +
       "</div>";
     if (imageUrl) {
       const img = item.querySelector(".chat-image");
@@ -219,7 +220,14 @@
       });
     }
     if (caption) item.querySelector(".chat-bubble-text").textContent = caption;
-    item.querySelector(".chat-bubble-meta").textContent = who + " · " + formatTime(message.created_at);
+    item.querySelector(".chat-bubble-when").textContent = who + " · " + formatTime(message.created_at);
+    if (mine) {
+      const receipt = item.querySelector(".chat-receipt");
+      const read = Boolean(message.read_at);
+      receipt.textContent = read ? "Read" : "Sent";
+      receipt.className = "chat-receipt " + (read ? "is-read" : "is-sent");
+      if (read) receipt.title = "Read " + formatTime(message.read_at);
+    }
     return item;
   }
 
@@ -372,6 +380,19 @@
     }
   }
 
+  function viewingThisChat() {
+    return Boolean(state.thread) && document.visibilityState === "visible";
+  }
+
+  async function markOpenThreadRead() {
+    if (!state.thread || !viewingThisChat()) return;
+    window.OwlisticChatViewingThreadId = state.thread.id;
+    try {
+      await chat.markRead(state.thread.id);
+      await refreshUnread();
+    } catch (err) {}
+  }
+
   async function openThread(userId, fromInbox) {
     showError("");
     state.loading = true;
@@ -379,25 +400,26 @@
     try {
       const thread = await chat.getOrCreateThread(userId);
       state.thread = thread;
+      window.OwlisticChatViewingThreadId = thread.id;
       const messages = await chat.listMessages(thread.id);
       state.messages = messages;
       state.hasMore = messages.length >= chat.pageSize;
       setHeader(thread);
       renderMessages();
-      await chat.markRead(thread.id);
-      await refreshUnread();
+      await markOpenThreadRead();
       await chat.subscribeThread(thread.id, {
         onInsert: function (row) {
           upsertMessage(row);
           renderMessages();
-          if (state.thread && row.thread_id === state.thread.id && !isMine(row)) {
-            chat.markRead(state.thread.id).then(refreshUnread);
+          if (row.thread_id === state.thread.id && !isMine(row)) {
+            markOpenThreadRead();
           } else {
             refreshUnread();
           }
         },
         onUpdate: function (row) {
           upsertMessage(row);
+          renderMessages();
         },
         onStatus: function (status) {
           if (status === "SUBSCRIBED") setStatus("Live");
@@ -557,6 +579,27 @@
     });
   }
 
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") markOpenThreadRead();
+  });
+
+  function syncOpenMessages() {
+    if (!state.thread) return;
+    chat.listMessages(state.thread.id).then(function (rows) {
+      let changed = false;
+      const before = state.messages.length;
+      (rows || []).forEach(function (row) {
+        const prev = state.messages.find(function (item) { return item.id === row.id; });
+        if (!prev || prev.read_at !== row.read_at || prev.message !== row.message || prev.image_url !== row.image_url) {
+          changed = true;
+        }
+        upsertMessage(row);
+      });
+      if (changed || (rows || []).length !== before) renderMessages();
+    }).catch(function () {});
+    markOpenThreadRead();
+  }
+
   async function boot() {
     layout.classList.toggle("is-admin", me.isSuperAdmin);
     layout.classList.toggle("is-user", !me.isSuperAdmin);
@@ -578,23 +621,22 @@
       chat.subscribeInbox({
         onThread: function () { loadInbox({ silent: true }); },
         onInsert: function () { loadInbox({ silent: true }); },
-        onUpdate: function () { refreshUnread(); }
+        onUpdate: function (payload) {
+          if (payload && payload.new) {
+            upsertMessage(payload.new);
+            if (state.thread) renderMessages();
+          }
+          refreshUnread();
+        }
       });
-      const unreadThread = newestUnreadThread();
-      if (unreadThread) openThread(unreadThread.user_id, false);
-      else setStatus("Select a conversation");
-      window.setInterval(function () { loadInbox({ silent: true }); }, Number(config.pollMs || 4000));
+      setStatus("Select a conversation");
     } else {
       await openThread(me.username, false);
-      window.setInterval(function () {
-        if (!state.thread) return;
-        chat.listMessages(state.thread.id).then(function (rows) {
-          const before = state.messages.length;
-          rows.forEach(upsertMessage);
-          if (state.messages.length !== before) renderMessages();
-        }).catch(function () {});
-      }, Number(config.pollMs || 4000));
     }
+    window.setInterval(function () {
+      if (me.isSuperAdmin) loadInbox({ silent: true });
+      syncOpenMessages();
+    }, Number(config.pollMs || 4000));
   }
 
   boot();

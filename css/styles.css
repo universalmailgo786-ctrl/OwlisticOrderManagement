@@ -5723,8 +5723,24 @@ body.is-hanif-tab .records-tabs {
 }
 
 .chat-bubble-meta {
-  display: block;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
   margin-top: 6px;
+}
+
+.chat-receipt {
+  font-weight: 600;
+}
+
+.chat-receipt.is-sent {
+  color: var(--text-soft);
+  font-weight: 500;
+}
+
+.chat-receipt.is-read {
+  color: #5c6b52;
 }
 
 .chat-error {

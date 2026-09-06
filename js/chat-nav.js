@@ -73,7 +73,6 @@
   function desktopNotify(title, body) {
     if (!("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
-    if (!document.hidden && currentPage() === "messages.html") return;
     try {
       const note = new Notification(title || "New message", {
         body: body || "You have a new private message.",
@@ -91,15 +90,43 @@
   function askPermission() {
     if (!("Notification" in window)) return;
     if (Notification.permission !== "default") return;
-    try { Notification.requestPermission(); } catch (err) {}
+    try { Notification.requestPermission();     } catch (err) {}
+  }
+
+  function ensureToast() {
+    let el = document.getElementById("chat-toast");
+    if (el) return el;
+    el = document.createElement("button");
+    el.type = "button";
+    el.id = "chat-toast";
+    el.className = "chat-toast";
+    el.hidden = true;
+    el.innerHTML = "<strong>New message</strong><span></span>";
+    el.addEventListener("click", function () {
+      el.hidden = true;
+      if (currentPage() !== "messages.html") window.location.href = "messages.html";
+    });
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function showToast(title, body) {
+    const el = ensureToast();
+    el.hidden = false;
+    const strong = el.querySelector("strong");
+    const span = el.querySelector("span");
+    if (strong) strong.textContent = title || "New message";
+    if (span) span.textContent = body || "";
+    window.clearTimeout(showToast.timer);
+    showToast.timer = window.setTimeout(function () {
+      el.hidden = true;
+    }, 6000);
   }
 
   function notifyNew(title, body) {
     playPing();
     desktopNotify(title, body);
-    if (typeof global.OwlisticChatNotify === "function") {
-      global.OwlisticChatNotify(title, body);
-    }
+    showToast(title, body);
   }
 
   async function refresh() {
@@ -122,11 +149,20 @@
           ? api.isSuperAdminSender(latest.last_sender_id)
           : String(latest.last_sender_id || "").toLowerCase() === String(me.username || "").toLowerCase()
       );
-      if (!first && stamp && stamp !== lastStamp && !fromMe) {
+      const viewingOpen = Boolean(
+        latest &&
+        global.OwlisticChatViewingThreadId === latest.id &&
+        !document.hidden &&
+        currentPage() === "messages.html"
+      );
+      if (!first && stamp && stamp !== lastStamp && !fromMe && !viewingOpen) {
         const who = me && me.isSuperAdmin
           ? ((latest && latest.user_id) || "A user")
           : (config.adminName || "Ashar");
-        notifyNew(who, (latest && latest.last_message) || "New message");
+        notifyNew(
+          "Message from " + who,
+          (latest && latest.last_message) || "You have a new message."
+        );
       }
       lastTotal = summary.total;
       lastStamp = stamp;
