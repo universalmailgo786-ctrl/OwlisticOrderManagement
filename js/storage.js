@@ -2298,6 +2298,12 @@
       rememberOrderNumber(hydrated.id);
       next.push(hydrated);
     });
+    previousAll.forEach(function (item) {
+      if (!item || !item.id) return;
+      if (isDeletedOrder(item.id)) return;
+      const already = next.some(function (row) { return sameOrderIdentity(row, item); });
+      if (!already) next.push(item);
+    });
     saveOrders(next);
     return getOrders();
   }

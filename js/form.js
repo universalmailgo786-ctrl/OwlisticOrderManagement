@@ -1360,6 +1360,32 @@
     }).catch(function () {});
   }
 
+  let lastClaimedOrderId = "";
+
+  function claimFreeOrderId(saved) {
+    const sheet = window.OwlisticSheet;
+    if (!sheet || !saved) return Promise.resolve(saved);
+    const nextIdPromise = typeof sheet.fetchNextOrderId === "function"
+      ? sheet.fetchNextOrderId()
+      : Promise.resolve("");
+    const hasPromise = typeof sheet.hasOrder === "function"
+      ? sheet.hasOrder(saved)
+      : Promise.resolve({ skipped: true, found: false });
+    return Promise.all([nextIdPromise, hasPromise]).then(function (parts) {
+      const remoteId = String(parts[0] || "").trim();
+      const has = parts[1] || {};
+      if (has.found || has.skipped) return saved;
+      if (!remoteId || remoteId === saved.id) return saved;
+      if (store.adoptOrderId) store.adoptOrderId(saved.id, remoteId, saved);
+      saved.id = remoteId;
+      saved.isNewOrder = true;
+      applySavedOrder(saved);
+      return saved;
+    }).catch(function () {
+      return saved;
+    });
+  }
+
   function writeOrderToSheet(saved) {
     const sheet = window.OwlisticSheet;
     if (!sheet || typeof sheet.sync !== "function") {
@@ -1443,11 +1469,12 @@
         return { saved: saved, silent: true };
       }
       if (submitBtn) {
-        const sheet = window.OwlisticSheet;
-        const pending = sheet && sheet.filesNeedingDrive ? sheet.filesNeedingDrive(saved) : [];
         submitBtn.textContent = "Saving…";
       }
-      return writeOrderToSheet(saved);
+      return claimFreeOrderId(saved).then(function (ready) {
+        if (ready && ready.id) lastClaimedOrderId = ready.id;
+        return writeOrderToSheet(ready);
+      });
     });
   }
 
@@ -1480,6 +1507,12 @@
     if (window.history && window.history.replaceState) {
       const tab = saved.tabName || saved.accountName || "";
       window.history.replaceState({}, "", "index.html?order=" + encodeURIComponent(saved.id) + (tab ? "&tab=" + encodeURIComponent(tab) : ""));
+    }
+    if (lastClaimedOrderId !== saved.id) {
+      lastClaimedOrderId = saved.id;
+      claimFreeOrderId(saved).then(function (next) {
+        if (next && next.id) lastClaimedOrderId = next.id;
+      });
     }
     return saved;
   }
@@ -2385,8 +2418,11 @@
         return;
       }
       if (outcome.confirmed) {
-        goToDefaultPage();
-        showToast("Order saved.", 5000);
+        const saved = (outcome.saved && outcome.saved.id)
+          ? outcome.saved
+          : (store.getOrder(document.getElementById("order-id").value) || null);
+        if (saved) applySavedOrder(saved);
+        showToast("Order saved" + (saved && saved.id ? " as " + saved.id : "") + ".", 5000);
         return;
       }
       showToast((outcome.sheet && outcome.sheet.error) || "Could not save this order. Try Save again.", 5000);
