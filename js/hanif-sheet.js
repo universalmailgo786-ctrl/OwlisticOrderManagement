@@ -143,15 +143,18 @@
       ? pricing.parseMoney(prev.paidAmount || financials.hanifCost)
       : 0;
     const store = global.OwlisticStore;
-    const orderStatus = (store && store.boardStatusLabel && store.boardStatusOf)
-      ? store.boardStatusLabel(store.boardStatusOf(order))
+    const boardTab = (store && store.boardStatusOf) ? store.boardStatusOf(order) : "";
+    const orderStatus = (store && store.boardStatusLabel && boardTab)
+      ? store.boardStatusLabel(boardTab)
       : (order.overallStatus || "In Progress");
+    const accountName = String(order.accountName || order.tabName || "").trim();
+    const fiverrId = String(order.fiverrId || "").trim();
     return {
       orderId: order.id,
       createdDate: order.createdAt || prev.createdDate || "",
       orderNumber: pricing.orderNumberFromId(order.id),
-      account: [order.accountName || order.tabName, order.fiverrId].filter(Boolean).join(" \u00B7 "),
-      fiverrId: order.fiverrId || "",
+      account: accountName,
+      fiverrId: fiverrId,
       clientName: order.clientName || "",
       businessName: order.businessName || "",
       orderValue: financials.orderValue,
@@ -162,6 +165,7 @@
       pkrRate: financials.pkrRate,
       totalLossPkr: financials.totalLossPkr,
       orderStatus: orderStatus,
+      orderPlaced: Boolean(boardTab && boardTab !== "in-progress"),
       hanifPaymentStatus: paymentStatus,
       paidAmount: paidAmount,
       paidAt: paymentStatus === "paid" ? (prev.paidAt || "") : "",

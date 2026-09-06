@@ -4492,8 +4492,8 @@ body.is-hanif-tab .records-tabs {
 }
 
 .hanif-table td:nth-child(4),
-.hanif-table td:nth-child(5),
-.hanif-table td:nth-child(6) {
+.hanif-table td:nth-child(6),
+.hanif-table td:nth-child(7) {
   white-space: normal;
   max-width: 160px;
 }

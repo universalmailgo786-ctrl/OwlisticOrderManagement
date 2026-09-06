@@ -51,6 +51,60 @@
     return String(record && record.orderId || "").trim();
   }
 
+  function uniqueLabelParts() {
+    const seen = {};
+    const parts = [];
+    Array.prototype.forEach.call(arguments, function (value) {
+      String(value == null ? "" : value).split(/\s*[·•|]\s*/).forEach(function (chunk) {
+        const text = String(chunk || "").trim();
+        if (!text || text === "—") return;
+        const key = text.toLowerCase();
+        if (seen[key]) return;
+        seen[key] = true;
+        parts.push(text);
+      });
+    });
+    return parts;
+  }
+
+  function accountDisplay(record) {
+    return uniqueLabelParts(record && record.account, record && record.fiverrId).join(" · ") || "—";
+  }
+
+  function recordMatchesAccount(record, wanted) {
+    const needle = String(wanted || "").trim().toLowerCase();
+    if (!needle) return true;
+    return uniqueLabelParts(record.account, record.fiverrId).some(function (part) {
+      const key = part.toLowerCase();
+      return key === needle || key.indexOf(needle + " ") === 0 || needle.indexOf(key + " ") === 0;
+    });
+  }
+
+  function orderIsPlaced(record) {
+    if (!record) return false;
+    if (record.orderPlaced === true || record.orderPlaced === "yes" || record.orderPlaced === "Yes") return true;
+    if (record.orderPlaced === false || record.orderPlaced === "no" || record.orderPlaced === "No") return false;
+    const status = String(record.orderStatus || record.boardStatus || "").toLowerCase();
+    if (/orders?\s*placed|^placed$/.test(status)) return true;
+    if (/on revision|ready to approve|completed/.test(status)) return true;
+    if (/new order|in progress|in-progress/.test(status)) return false;
+    if (store && typeof store.getOrder === "function" && record.orderId) {
+      const order = store.getOrder(record.orderId, {
+        accountName: uniqueLabelParts(record.account)[0] || "",
+        tabName: uniqueLabelParts(record.account)[0] || ""
+      });
+      if (order && store.boardStatusOf) {
+        const tab = store.boardStatusOf(order);
+        return Boolean(tab && tab !== "in-progress");
+      }
+    }
+    return false;
+  }
+
+  function orderPlacedLabel(record) {
+    return orderIsPlaced(record) ? "Yes" : "No";
+  }
+
   function getFilters() {
     const monthEl = el("hanif-filter-month");
     const yearEl = el("hanif-filter-year");
@@ -87,12 +141,7 @@
     const parts = recordCreatedParts(record);
     if (filters.year && parts.year && parts.year !== filters.year) return false;
     if (filters.month && parts.month !== filters.month) return false;
-    if (filters.account) {
-      const account = String(record.account || "").toLowerCase();
-      const fiverr = String(record.fiverrId || "").toLowerCase();
-      const wanted = filters.account.toLowerCase();
-      if (account !== wanted && fiverr !== wanted) return false;
-    }
+    if (filters.account && !recordMatchesAccount(record, filters.account)) return false;
     if (filters.payment === "paid" && pricing.normalizeHanifPaymentStatus(record.hanifPaymentStatus) !== "paid") return false;
     if (filters.payment === "unpaid" && pricing.normalizeHanifPaymentStatus(record.hanifPaymentStatus) !== "unpaid") return false;
     if (filters.date) {
@@ -161,22 +210,28 @@
     const select = el("hanif-filter-account");
     if (!select) return;
     const previous = select.value;
-    const accounts = {};
-    records.forEach(function (record) {
-      if (record.account) accounts[record.account] = true;
-      if (record.fiverrId) accounts[record.fiverrId] = true;
-    });
-    select.innerHTML = '<option value="">All Accounts</option>';
-    const allowed = {};
-    if (window.OwlisticAuth && typeof window.OwlisticAuth.visibleAccounts === "function") {
-      window.OwlisticAuth.visibleAccounts().forEach(function (account) {
-        if (account && account.name) allowed[String(account.name).trim().toLowerCase()] = true;
-        if (account && account.personName) allowed[String(account.personName).trim().toLowerCase()] = true;
+    const seen = {};
+    const names = [];
+    function add(name) {
+      uniqueLabelParts(name).forEach(function (part) {
+        if (/^(superadmin|admin|ashar)$/i.test(part)) return;
+        const key = part.toLowerCase();
+        if (seen[key]) return;
+        seen[key] = true;
+        names.push(part);
       });
     }
-    Object.keys(accounts).sort().forEach(function (name) {
-      if (/^(superadmin|admin|ashar)$/i.test(name)) return;
-      if (Object.keys(allowed).length && !allowed[String(name).trim().toLowerCase()]) return;
+    if (auth && typeof auth.visibleAccounts === "function") {
+      auth.visibleAccounts().forEach(function (account) {
+        add(account && (account.name || account.accountName));
+      });
+    }
+    records.forEach(function (record) {
+      add(uniqueLabelParts(record.account)[0] || "");
+    });
+    names.sort(function (a, b) { return a.localeCompare(b); });
+    select.innerHTML = '<option value="">All Accounts</option>';
+    names.forEach(function (name) {
       const option = document.createElement("option");
       option.value = name;
       option.textContent = name;
@@ -256,22 +311,23 @@
       else count.textContent = list.length + (list.length === 1 ? " record" : " records");
     }
     if (loading && !records.length) {
-      body.innerHTML = '<tr><td colspan="13"><div class="empty-state"><strong>Loading Hanif costing records…</strong><p>Fetching data from Google Sheet.</p></div></td></tr>';
+      body.innerHTML = '<tr><td colspan="14"><div class="empty-state"><strong>Loading Hanif costing records…</strong><p>Fetching data from Google Sheet.</p></div></td></tr>';
       return;
     }
     if (!list.length) {
-      body.innerHTML = '<tr><td colspan="13"><div class="empty-state"><strong>No Hanif costing records</strong><p>Try another filter or wait for orders to sync.</p></div></td></tr>';
+      body.innerHTML = '<tr><td colspan="14"><div class="empty-state"><strong>No Hanif costing records</strong><p>Try another filter or wait for orders to sync.</p></div></td></tr>';
       return;
     }
     body.innerHTML = list.map(function (record) {
       const id = escapeHtml(record.orderId);
       const checked = selected[record.orderId] ? " checked" : "";
-      const accountLabel = [record.account, record.fiverrId].filter(Boolean).join(" · ") || "—";
+      const accountLabel = accountDisplay(record);
       return '<tr class="hanif-row' + (sheet.costChangedAfterPaid(record) ? " has-cost-warning" : "") + '">' +
         '<td><input type="checkbox" class="hanif-select-row" data-hanif-select="' + id + '"' + checked + " /></td>" +
         "<td>" + id + "</td>" +
         "<td>" + escapeHtml(formatDate(record.createdDate)) + "</td>" +
         "<td>" + escapeHtml(accountLabel) + "</td>" +
+        "<td>" + escapeHtml(orderPlacedLabel(record)) + "</td>" +
         "<td>" + escapeHtml(record.clientName || "—") + "</td>" +
         "<td>" + escapeHtml(record.businessName || "—") + "</td>" +
         '<td class="hanif-money">' + formatUsd(record.orderValue) + "</td>" +
@@ -434,7 +490,7 @@
 
   function buildExportRows(list) {
     const header = [
-      "Order ID", "Created Date", "Account", "Client Name", "Business Name",
+      "Order ID", "Created Date", "Account / Fiverr ID", "Order Placed", "Client Name", "Business Name",
       "Order Value", "Hanif Cost", "Fiverr Fee", "Return After Fee", "Total Loss",
       "Order Status", "Hanif Payment", "Paid Date"
     ];
@@ -442,7 +498,8 @@
       return [
         record.orderId,
         formatDate(record.createdDate),
-        record.account,
+        accountDisplay(record),
+        orderPlacedLabel(record),
         record.clientName,
         record.businessName,
         formatUsd(record.orderValue),
@@ -458,8 +515,18 @@
     return { header: header, rows: rows };
   }
 
+  function exportFileSlug() {
+    const account = getFilters().account;
+    if (!account) return "all-records";
+    return String(account).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "filtered";
+  }
+
+  function exportList() {
+    return filteredRecords();
+  }
+
   function exportCsv() {
-    const list = allRecordsSorted();
+    const list = exportList();
     if (!list.length) {
       if (deps && deps.showToast) deps.showToast("No records to export.");
       return;
@@ -475,7 +542,7 @@
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = "hanif-costing-all-records.csv";
+    link.download = "hanif-costing-" + exportFileSlug() + ".csv";
     link.click();
     URL.revokeObjectURL(link.href);
     if (deps && deps.showToast) deps.showToast("Exported " + list.length + " records to Excel.");
@@ -544,7 +611,7 @@
   }
 
   function exportPdf() {
-    const list = allRecordsSorted();
+    const list = exportList();
     if (!list.length) {
       if (deps && deps.showToast) deps.showToast("No records to export.");
       return;
@@ -553,6 +620,7 @@
     const stats = summarize(list);
     const pkrRate = pricing.DEFAULT_PKR_RATE || 275;
     const lossPkr = Math.round(stats.totalLoss * pkrRate);
+    const account = getFilters().account;
     const exportBtn = el("hanif-export-pdf-btn");
     const previousLabel = exportBtn ? exportBtn.textContent : "";
     if (exportBtn) {
@@ -579,7 +647,11 @@
       doc.setFontSize(10);
       doc.setTextColor(muted[0], muted[1], muted[2]);
       y += 18;
-      doc.text("Exported " + new Date().toLocaleString(), margin, y);
+      doc.text(
+        "Exported " + new Date().toLocaleString() + (account ? "  ·  Account: " + account : "  ·  All accounts"),
+        margin,
+        y
+      );
 
       y += 16;
       const summaryLine = [
@@ -619,13 +691,14 @@
           fillColor: [247, 243, 236]
         },
         columnStyles: {
-          0: { cellWidth: 52 },
-          1: { cellWidth: 58 },
-          5: { halign: "right" },
+          0: { cellWidth: 48 },
+          1: { cellWidth: 54 },
+          3: { cellWidth: 48, halign: "center" },
           6: { halign: "right" },
           7: { halign: "right" },
           8: { halign: "right" },
-          9: { halign: "right" }
+          9: { halign: "right" },
+          10: { halign: "right" }
         },
         margin: { left: margin, right: margin }
       });
@@ -638,7 +711,7 @@
         margin,
         finalY
       );
-      doc.save("hanif-costing-all-records.pdf");
+      doc.save("hanif-costing-" + exportFileSlug() + ".pdf");
       if (deps && deps.showToast) deps.showToast("PDF downloaded (" + list.length + " records).");
     }).catch(function (err) {
       if (deps && deps.showToast) {

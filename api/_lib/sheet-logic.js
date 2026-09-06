@@ -653,11 +653,13 @@ async function touchHanif(client, order) {
   const prev = (existing && existing.payload) || {};
   const fin = hanifFinancials(order.orderValue, rate);
   const paymentStatus = prev.hanifPaymentStatus || "unpaid";
+  const board = parseBoardStatus(order.boardStatus || order.overallStatus);
   const merged = {
     orderId: order.id,
     createdDate: prev.createdDate || order.createdAt || "",
     orderNumber: orderIdNumber(order.id),
     account: trim(order.accountName || order.tabName),
+    fiverrId: trim(order.fiverrId || prev.fiverrId),
     clientName: trim(order.clientName),
     businessName: trim(order.businessName),
     orderValue: fin.orderValue,
@@ -668,6 +670,7 @@ async function touchHanif(client, order) {
     pkrRate: rate,
     totalLossPkr: fin.totalLossPkr,
     orderStatus: trim(order.overallStatus || prev.orderStatus),
+    orderPlaced: Boolean(board && board !== "in-progress"),
     hanifPaymentStatus: paymentStatus,
     paidAmount: paymentStatus === "paid" ? (prev.paidAmount || fin.hanifCost) : 0,
     paidAt: prev.paidAt || "",
