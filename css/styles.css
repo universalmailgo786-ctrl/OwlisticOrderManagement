@@ -2519,6 +2519,14 @@ body.modal-open {
   box-shadow: inset 3px 0 0 #d93025;
 }
 
+.records-table tbody tr.records-row.is-schedule-today td {
+  background: #e7f3df;
+}
+
+.records-table tbody tr.records-row.is-schedule-today:hover td {
+  background: #dce8d4;
+}
+
 .schedule-modal[hidden] {
   display: none;
 }

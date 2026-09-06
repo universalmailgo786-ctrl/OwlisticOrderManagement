@@ -991,6 +991,9 @@
     if (activeTab === "in-progress" && store.isScheduleOverdue && store.isScheduleOverdue(order)) {
       cls += " is-schedule-overdue";
     }
+    if (activeTab === "in-progress" && (store.placementStatusOf ? store.placementStatusOf(order) : "") === "Place Today") {
+      cls += " is-schedule-today";
+    }
     return cls;
   }
 
