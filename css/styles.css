@@ -5470,16 +5470,20 @@ body.is-hanif-tab .records-tabs {
   gap: 8px;
 }
 
+.chat-nav-link.has-unread {
+  font-weight: 600;
+}
+
 .chat-unread-badge {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
   border-radius: 999px;
   background: var(--terracotta);
   color: #fff;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  line-height: 18px;
+  line-height: 20px;
   text-align: center;
 }
 
@@ -5887,10 +5891,12 @@ body.is-hanif-tab .records-tabs {
   bottom: 20px;
   z-index: 40;
   display: grid;
-  gap: 2px;
-  min-width: 220px;
-  max-width: min(360px, calc(100vw - 32px));
-  padding: 12px 14px;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 2px;
+  min-width: 240px;
+  max-width: min(380px, calc(100vw - 32px));
+  padding: 12px 34px 12px 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: #fff;
@@ -5899,14 +5905,69 @@ body.is-hanif-tab .records-tabs {
   cursor: pointer;
 }
 
+.chat-toast-count {
+  grid-row: 1 / span 4;
+  align-self: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--terracotta);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 28px;
+  text-align: center;
+}
+
+.chat-toast-count[hidden] {
+  display: none !important;
+}
+
 .chat-toast strong,
-.chat-toast span {
+.chat-toast span,
+.chat-toast em {
   display: block;
 }
 
 .chat-toast span {
   color: var(--text-soft);
   font-size: 13px;
+}
+
+.chat-toast-qty,
+.chat-toast-hint {
+  font-style: normal;
+  font-size: 12px;
+}
+
+.chat-toast-qty {
+  color: #5c6b52;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.chat-toast-hint {
+  color: var(--text-soft);
+}
+
+.chat-toast-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  line-height: 24px;
+}
+
+.chat-toast-close:hover {
+  background: #f3eee6;
+  color: var(--text);
 }
 
 .chat-image-lightbox {

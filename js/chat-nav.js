@@ -7,6 +7,8 @@
   let lastTotal = null;
   let lastStamp = "";
   let originalTitle = "";
+  let dismissedStamp = "";
+  let toastUserId = "";
 
   function auth() {
     return global.OwlisticAuth;
@@ -20,11 +22,25 @@
     return (window.location.pathname.split("/").pop() || "index.html").split("?")[0];
   }
 
+  function messagesUrl(userId) {
+    const id = String(userId || "").trim();
+    return id ? "messages.html?user=" + encodeURIComponent(id) : "messages.html";
+  }
+
+  function countLabel(total) {
+    const n = Number(total || 0);
+    if (n < 1) return "0";
+    return n > 99 ? "99+" : String(n);
+  }
+
   function ensureLink() {
     const nav = document.querySelector(".app-nav-links");
     if (!nav) return null;
     link = nav.querySelector("[data-chat-nav]");
-    if (link) return link;
+    if (link) {
+      badge = link.querySelector("[data-chat-badge]");
+      return link;
+    }
     link = document.createElement("a");
     link.className = "app-nav-link chat-nav-link";
     link.href = "messages.html";
@@ -43,12 +59,21 @@
 
   function renderCount(total) {
     if (!badge) badge = document.querySelector("[data-chat-badge]");
-    if (!badge) return;
     const n = Number(total || 0);
-    badge.hidden = n < 1;
-    badge.textContent = n > 99 ? "99+" : String(n);
+    const label = countLabel(n);
+    if (badge) {
+      badge.hidden = n < 1;
+      badge.textContent = label;
+    }
+    if (link) {
+      link.setAttribute("data-unread", String(n));
+      link.setAttribute("aria-label", n > 0 ? "Messages, " + label + " unread" : "Messages");
+      link.classList.toggle("has-unread", n > 0);
+    }
     if (!originalTitle) originalTitle = document.title.replace(/^\(\d+\+?\)\s+/, "");
-    document.title = n > 0 ? "(" + (n > 99 ? "99+" : n) + ") " + originalTitle : originalTitle;
+    document.title = n > 0 ? "(" + label + ") " + originalTitle : originalTitle;
+    updateToastCount(n);
+    if (n < 1) hideToast();
   }
 
   function playPing() {
@@ -70,7 +95,17 @@
     } catch (err) {}
   }
 
-  function desktopNotify(title, body) {
+  function openMessages(userId) {
+    const url = messagesUrl(userId);
+    if (currentPage() === "messages.html" && typeof global.OwlisticChatOpenUser === "function") {
+      global.OwlisticChatOpenUser(userId);
+      return;
+    }
+    const opened = window.open(url, "owlistic-messages");
+    if (!opened) window.location.href = url;
+  }
+
+  function desktopNotify(title, body, userId) {
     if (!("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
     try {
@@ -80,8 +115,7 @@
         silent: false
       });
       note.onclick = function () {
-        window.focus();
-        if (currentPage() !== "messages.html") window.location.href = "messages.html";
+        openMessages(userId);
         note.close();
       };
     } catch (err) {}
@@ -93,40 +127,79 @@
     try { Notification.requestPermission();     } catch (err) {}
   }
 
+  function hideToast() {
+    const el = document.getElementById("chat-toast");
+    if (el) el.hidden = true;
+  }
+
+  function updateToastCount(total) {
+    const el = document.getElementById("chat-toast");
+    if (!el) return;
+    const n = Number(total || 0);
+    const count = el.querySelector("[data-chat-toast-count]");
+    const qty = el.querySelector("[data-chat-toast-qty]");
+    const label = countLabel(n);
+    if (count) {
+      count.hidden = n < 1;
+      count.textContent = label;
+    }
+    if (qty) {
+      qty.textContent = n === 1 ? "1 unread message" : label + " unread messages";
+    }
+  }
+
   function ensureToast() {
     let el = document.getElementById("chat-toast");
-    if (el) return el;
-    el = document.createElement("button");
-    el.type = "button";
-    el.id = "chat-toast";
-    el.className = "chat-toast";
-    el.hidden = true;
-    el.innerHTML = "<strong>New message</strong><span></span>";
-    el.addEventListener("click", function () {
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "chat-toast";
+      el.className = "chat-toast";
       el.hidden = true;
-      if (currentPage() !== "messages.html") window.location.href = "messages.html";
-    });
-    document.body.appendChild(el);
+      document.body.appendChild(el);
+    }
+    if (!el.getAttribute("data-chat-toast-bound")) {
+      el.setAttribute("data-chat-toast-bound", "1");
+      el.setAttribute("role", "status");
+      el.innerHTML =
+        '<span class="chat-toast-count" data-chat-toast-count hidden>0</span>' +
+        "<strong>New message</strong>" +
+        "<span data-chat-toast-body></span>" +
+        '<em class="chat-toast-qty" data-chat-toast-qty></em>' +
+        '<span class="chat-toast-hint">Click to open messages</span>' +
+        '<button type="button" class="chat-toast-close" data-chat-toast-close aria-label="Dismiss">×</button>';
+      el.addEventListener("click", function (event) {
+        if (event.target && event.target.closest && event.target.closest("[data-chat-toast-close]")) {
+          event.preventDefault();
+          event.stopPropagation();
+          dismissedStamp = lastStamp;
+          hideToast();
+          return;
+        }
+        hideToast();
+        openMessages(toastUserId);
+      });
+    }
     return el;
   }
 
-  function showToast(title, body) {
+  function showToast(title, body, options) {
+    const opts = options || {};
     const el = ensureToast();
+    toastUserId = String(opts.userId || "");
     el.hidden = false;
+    el.setAttribute("data-user-id", toastUserId);
     const strong = el.querySelector("strong");
-    const span = el.querySelector("span");
+    const span = el.querySelector("[data-chat-toast-body]") || el.querySelector("span:not(.chat-toast-count):not(.chat-toast-hint)");
     if (strong) strong.textContent = title || "New message";
     if (span) span.textContent = body || "";
-    window.clearTimeout(showToast.timer);
-    showToast.timer = window.setTimeout(function () {
-      el.hidden = true;
-    }, 6000);
+    updateToastCount(opts.total != null ? opts.total : lastTotal);
   }
 
-  function notifyNew(title, body) {
-    playPing();
-    desktopNotify(title, body);
-    showToast(title, body);
+  function notifyNew(title, body, options) {
+    const opts = options || {};
+    if (opts.sound !== false) playPing();
+    desktopNotify(title, body, opts.userId);
+    showToast(title, body, opts);
   }
 
   async function refresh() {
@@ -140,29 +213,35 @@
       const summary = await api.unreadSummary();
       const threads = typeof api.listThreads === "function" ? await api.listThreads() : [];
       const latest = (threads && threads[0]) || null;
+      const unreadThread = (threads || []).find(function (thread) {
+        return summary.byThread && summary.byThread[thread.id];
+      }) || latest;
       const stamp = latest ? String(latest.id) + ":" + String(latest.updated_at || "") + ":" + String(latest.last_message || "") : "";
-      renderCount(summary.total);
-      const first = lastTotal == null;
       const me = api.sessionUser && api.sessionUser();
       const fromMe = latest && me && (
         me.isSuperAdmin
           ? api.isSuperAdminSender(latest.last_sender_id)
           : String(latest.last_sender_id || "").toLowerCase() === String(me.username || "").toLowerCase()
       );
-      const viewingOpen = Boolean(
-        latest &&
-        global.OwlisticChatViewingThreadId === latest.id &&
-        !document.hidden &&
-        currentPage() === "messages.html"
-      );
-      if (!first && stamp && stamp !== lastStamp && !fromMe && !viewingOpen) {
-        const who = me && me.isSuperAdmin
-          ? ((latest && latest.user_id) || "A user")
-          : (config.adminName || "Ashar");
-        notifyNew(
-          "Message from " + who,
-          (latest && latest.last_message) || "You have a new message."
-        );
+      const first = lastTotal == null;
+      renderCount(summary.total);
+      const who = me && me.isSuperAdmin
+        ? ((unreadThread && unreadThread.user_id) || "A user")
+        : (config.adminName || "Ashar");
+      const title = "Message from " + who;
+      const body = (unreadThread && unreadThread.last_message) || "You have unread messages.";
+      const toastOpts = {
+        userId: unreadThread && unreadThread.user_id,
+        total: summary.total
+      };
+      if (currentPage() === "messages.html") {
+        hideToast();
+      } else if (summary.total > 0 && stamp !== dismissedStamp) {
+        if (!first && stamp && stamp !== lastStamp && !fromMe) {
+          notifyNew(title, body, toastOpts);
+        } else {
+          showToast(title, body, toastOpts);
+        }
       }
       lastTotal = summary.total;
       lastStamp = stamp;
@@ -209,7 +288,9 @@
     mount: mount,
     refresh: refresh,
     renderCount: renderCount,
-    notifyNew: notifyNew
+    notifyNew: notifyNew,
+    showToast: showToast,
+    openMessages: openMessages
   };
 
   if (document.readyState === "loading") {

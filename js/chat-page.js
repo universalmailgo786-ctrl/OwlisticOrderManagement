@@ -99,6 +99,10 @@
   }
 
   window.OwlisticChatNotify = function (title, body) {
+    if (window.OwlisticChatNav && typeof window.OwlisticChatNav.showToast === "function") {
+      window.OwlisticChatNav.showToast(title, body, { total: state.unread.total });
+      return;
+    }
     showToast(title, body);
   };
 
@@ -843,13 +847,23 @@
       openThread(userId, true);
     });
   }
-  if (toastEl) {
-    toastEl.addEventListener("click", function () {
-      toastEl.hidden = true;
-      const thread = newestUnreadThread();
-      if (thread) openThread(thread.user_id, true);
-    });
+  function requestedUser() {
+    try {
+      return String(new URLSearchParams(window.location.search).get("user") || "").trim();
+    } catch (err) {
+      return "";
+    }
   }
+
+  window.OwlisticChatOpenUser = function (userId) {
+    const id = String(userId || requestedUser() || "").trim();
+    if (id) {
+      openThread(id, true);
+      return;
+    }
+    const thread = newestUnreadThread();
+    if (thread) openThread(thread.user_id, true);
+  };
   document.addEventListener("click", function () {
     closeMenus();
   });
@@ -924,6 +938,8 @@
         }
       });
       setStatus("Select a conversation");
+      const wanted = requestedUser();
+      if (wanted) await openThread(wanted, true);
     } else {
       await openThread(me.username, false);
     }

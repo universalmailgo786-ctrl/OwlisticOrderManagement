@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=chat6" />
+  <link rel="stylesheet" href="css/styles.css?v=chat7" />
 </head>
 <body class="records-page chat-page">
   <nav class="app-nav">
@@ -80,10 +80,14 @@
     </div>
   </div>
 
-  <button type="button" class="chat-toast" id="chat-toast" hidden>
+  <div class="chat-toast" id="chat-toast" hidden role="status">
+    <span class="chat-toast-count" data-chat-toast-count hidden>0</span>
     <strong>New message</strong>
-    <span></span>
-  </button>
+    <span data-chat-toast-body></span>
+    <em class="chat-toast-qty" data-chat-toast-qty></em>
+    <span class="chat-toast-hint">Click to open messages</span>
+    <button type="button" class="chat-toast-close" data-chat-toast-close aria-label="Dismiss">×</button>
+  </div>
 
   <div class="chat-image-lightbox" id="chat-image-lightbox" hidden>
     <div class="chat-image-lightbox-backdrop" data-close-lightbox></div>
@@ -106,9 +110,9 @@
   <script src="js/sheet-sync.js?v=accountsave2"></script>
   <script src="js/auth.js?v=accountsave2"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.min.js"></script>
-  <script src="js/chat-config.js?v=chat6"></script>
+  <script src="js/chat-config.js?v=chat7"></script>
   <script src="js/chat-client.js?v=chat6"></script>
-  <script src="js/chat-nav.js?v=chat6"></script>
-  <script src="js/chat-page.js?v=chat6"></script>
+  <script src="js/chat-nav.js?v=chat7"></script>
+  <script src="js/chat-page.js?v=chat7"></script>
 </body>
 </html>
