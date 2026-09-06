@@ -45,7 +45,7 @@
     link.className = "app-nav-link chat-nav-link";
     link.href = "messages.html";
     link.setAttribute("data-chat-nav", "1");
-    link.innerHTML = 'Messages <span class="chat-unread-badge" data-chat-badge hidden>0</span>';
+    link.innerHTML = '<span class="chat-nav-label">Messages</span><span class="chat-unread-badge" data-chat-badge hidden>0</span>';
     nav.appendChild(link);
     badge = link.querySelector("[data-chat-badge]");
     return link;
@@ -65,6 +65,7 @@
     if (badge) {
       badge.textContent = label;
       badge.classList.toggle("is-on", n > 0);
+      badge.setAttribute("aria-hidden", n > 0 ? "false" : "true");
       if (n > 0) badge.removeAttribute("hidden");
       else badge.setAttribute("hidden", "");
     }
@@ -287,6 +288,9 @@
     timer = window.setInterval(refresh, pollMs);
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) refresh();
+    });
+    window.addEventListener("focus", function () {
+      refresh();
     });
   }
 

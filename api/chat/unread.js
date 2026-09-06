@@ -44,9 +44,12 @@ module.exports = async function handler(req, res) {
     let allowedIds = null;
     let query = admin.from("chat_messages").select("id, thread_id, sender_id, read_at").is("read_at", null).limit(500);
     if (!user.isSuperAdmin) {
-      const threads = await admin.from("chat_threads").select("id").ilike("user_id", user.username);
+      const threads = await admin.from("chat_threads").select("id, user_id");
       if (threads.error) throw threads.error;
-      allowedIds = (threads.data || []).map(function (row) { return row.id; });
+      const wanted = String(user.username || "").toLowerCase();
+      allowedIds = (threads.data || []).filter(function (row) {
+        return String(row.user_id || "").toLowerCase() === wanted;
+      }).map(function (row) { return row.id; });
       if (!allowedIds.length) {
         return send(res, 200, { ok: true, total: 0, byThread: {} });
       }

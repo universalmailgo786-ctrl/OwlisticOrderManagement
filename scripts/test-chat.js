@@ -7,6 +7,7 @@ const files = [
   "api/chat/session.js",
   "api/chat/setup.js",
   "api/chat/unread.js",
+  "api/chat/mark-read.js",
   "api/chat/upload.js",
   "api/chat/signed-url.js",
   "api/chat/purge-files.js",
@@ -142,7 +143,7 @@ if (pageJs.indexOf("document.hasFocus()") < 0) {
 }
 
 const navJs = fs.readFileSync(path.join(ROOT, "js/chat-nav.js"), "utf8");
-const navRequired = ["is-on", "unreadSummary", "data-chat-badge"];
+const navRequired = ["is-on", "unreadSummary", "data-chat-badge", "chat-nav-label"];
 navRequired.forEach(function (token) {
   if (navJs.indexOf(token) < 0) {
     failed += 1;
@@ -153,7 +154,7 @@ navRequired.forEach(function (token) {
 });
 
 const css = fs.readFileSync(path.join(ROOT, "css/styles.css"), "utf8");
-if (css.indexOf("#e23c3c") < 0 || css.indexOf(".chat-unread-badge.is-on") < 0) {
+if (css.indexOf("#e23c3c") < 0 || css.indexOf(".chat-unread-badge.is-on") < 0 || css.indexOf(".chat-nav-link .chat-unread-badge.is-on") < 0) {
   failed += 1;
   console.error("FAIL unread badge styles");
 } else {
@@ -161,11 +162,11 @@ if (css.indexOf("#e23c3c") < 0 || css.indexOf(".chat-unread-badge.is-on") < 0) {
 }
 
 const configJs = fs.readFileSync(path.join(ROOT, "js/chat-config.js"), "utf8");
-if (configJs.indexOf('unreadUrl: "/api/chat/unread"') < 0) {
+if (configJs.indexOf('unreadUrl: "/api/chat/unread"') < 0 || configJs.indexOf('markReadUrl: "/api/chat/mark-read"') < 0) {
   failed += 1;
-  console.error("FAIL chat-config unreadUrl");
+  console.error("FAIL chat-config unread/mark-read urls");
 } else {
-  console.log("ok chat-config unreadUrl");
+  console.log("ok chat-config unread and mark-read urls");
 }
 
 if (failed) {

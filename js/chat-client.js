@@ -594,20 +594,41 @@
   }
 
   async function markRead(threadId) {
-    const db = await ensureClient();
     const me = sessionUser();
     if (!me || !threadId) return;
-    let query = db.from("chat_messages")
-      .update({ read_at: new Date().toISOString() })
-      .eq("thread_id", threadId)
-      .is("read_at", null);
-    if (me.isSuperAdmin) {
-      query = query.not("sender_id", "ilike", "superadmin").not("sender_id", "ilike", "admin");
-    } else {
-      query = query.not("sender_id", "ilike", me.username);
+    const token = currentAccessToken();
+    if (token) {
+      try {
+        const response = await fetch(config.markReadUrl || "/api/chat/mark-read", {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            Authorization: "Bearer " + token,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ threadId: threadId })
+        });
+        const data = await response.json().catch(function () { return null; });
+        if (data && data.ok) return data;
+        if (response.status && response.status < 500) {
+          throw new Error((data && data.error) || "Could not mark messages as read.");
+        }
+      } catch (err) {
+        if (err && err.message && /mark messages as read/i.test(err.message)) throw err;
+      }
     }
-    const result = await query;
+    const db = await ensureClient();
+    const listed = await db.from("chat_messages").select("id, sender_id, read_at").eq("thread_id", threadId).is("read_at", null);
+    if (listed.error) throw listed.error;
+    const mine = String(me.username || "").toLowerCase();
+    const ids = (listed.data || []).filter(function (row) {
+      const sender = String(row.sender_id || "").toLowerCase();
+      return me.isSuperAdmin ? !isSuperAdminSender(sender) : sender !== mine;
+    }).map(function (row) { return row.id; });
+    if (!ids.length) return { ok: true, marked: 0 };
+    const result = await db.from("chat_messages").update({ read_at: new Date().toISOString() }).in("id", ids);
     if (result.error) throw result.error;
+    return { ok: true, marked: ids.length };
   }
 
   async function replaceChannel(name, builder) {
