@@ -4,6 +4,7 @@ const { spawnSync } = require("child_process");
 
 const ROOT = path.join(__dirname, "..");
 const files = [
+  "api/chat/session.js",
   "api/chat/setup.js",
   "api/_lib/env.js",
   "api/_lib/chat-schema.js",

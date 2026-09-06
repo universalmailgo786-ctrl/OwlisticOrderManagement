@@ -61,31 +61,39 @@
     return data;
   }
 
+  function currentAccessToken() {
+    const current = auth() && auth().getSession();
+    return current && current.chatAccessToken ? current.chatAccessToken : "";
+  }
+
   async function createClientFromSession() {
     const lib = supabaseLib();
     if (!lib || typeof lib.createClient !== "function") {
       throw new Error("Chat library failed to load.");
     }
-    const current = auth() && auth().getSession();
-    if (!current || !current.chatAccessToken) {
+    const accessToken = currentAccessToken();
+    if (!accessToken) {
       throw new Error("Messages is not connected for this sign-in. Sign out and sign in again.");
     }
+    // JWT mode mints a signed token without creating auth.users. Do not call
+    // setSession — GoTrue would look up the `sub` claim and fail.
     const next = lib.createClient(config.supabaseUrl, config.supabasePublishableKey, {
       auth: {
-        persistSession: true,
-        autoRefreshToken: true,
+        persistSession: false,
+        autoRefreshToken: false,
         detectSessionInUrl: false
+      },
+      global: {
+        headers: {
+          Authorization: "Bearer " + accessToken
+        }
+      },
+      accessToken: function () {
+        return Promise.resolve(currentAccessToken() || accessToken);
       }
     });
-    const result = await next.auth.setSession({
-      access_token: current.chatAccessToken,
-      refresh_token: current.chatRefreshToken || current.chatAccessToken
-    });
-    if (result.error) {
-      throw new Error(result.error.message || "Chat session expired. Sign in again.");
-    }
-    if (result.data && result.data.session) {
-      saveTokens(result.data.session);
+    if (next.realtime && typeof next.realtime.setAuth === "function") {
+      next.realtime.setAuth(accessToken);
     }
     return next;
   }
@@ -125,14 +133,21 @@
     const wanted = String(userId || (me && !me.isSuperAdmin ? me.username : "")).trim();
     if (!wanted) throw new Error("No chat user selected.");
     if (/^(superadmin|admin)$/i.test(wanted)) throw new Error("Cannot open a chat as SuperAdmin.");
-    const existing = await db.from("chat_threads").select("*").eq("user_id", wanted).maybeSingle();
-    if (existing.error && existing.error.code !== "PGRST116") throw existing.error;
-    if (existing.data) return existing.data;
+    const listed = await db.from("chat_threads").select("*");
+    if (listed.error) throw listed.error;
+    const existing = (listed.data || []).find(function (row) {
+      return String(row.user_id || "").toLowerCase() === wanted.toLowerCase();
+    });
+    if (existing) return existing;
     const created = await db.from("chat_threads").insert({ user_id: wanted }).select("*").single();
     if (created.error && (created.error.code === "23505" || /duplicate/i.test(created.error.message || ""))) {
-      const retry = await db.from("chat_threads").select("*").eq("user_id", wanted).single();
+      const retry = await db.from("chat_threads").select("*");
       if (retry.error) throw retry.error;
-      return retry.data;
+      const found = (retry.data || []).find(function (row) {
+        return String(row.user_id || "").toLowerCase() === wanted.toLowerCase();
+      });
+      if (!found) throw created.error;
+      return found;
     }
     if (created.error) throw created.error;
     return created.data;

@@ -22,12 +22,16 @@ async function withClient(fn) {
   if (!config) {
     throw new Error("Postgres connection is not available on this deployment.");
   }
+  const previousTls = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
   const client = new Client(config);
-  await client.connect();
   try {
+    await client.connect();
     return await fn(client);
   } finally {
     await client.end().catch(function () {});
+    if (previousTls == null) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    else process.env.NODE_TLS_REJECT_UNAUTHORIZED = previousTls;
   }
 }
 
