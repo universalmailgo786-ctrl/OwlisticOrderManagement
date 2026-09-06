@@ -256,8 +256,14 @@
 
   function visibleAccounts(session) {
     if (!store) return [];
+    if (typeof store.pruneStaffAccounts === "function") store.pruneStaffAccounts();
     const current = session || getSession();
-    const accounts = store.getAccounts();
+    const accounts = store.getAccounts().filter(function (account) {
+      if (!account) return false;
+      if (store.isStaffAccount && store.isStaffAccount(account)) return false;
+      if (store.loginAccountAllowed && !store.loginAccountAllowed(account)) return false;
+      return true;
+    });
     if (isSuperAdmin(current)) return accounts;
     const wanted = accountName(current);
     return accounts.filter(function (account) {

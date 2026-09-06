@@ -789,8 +789,9 @@
       const field = document.getElementById("filter-account-field");
       if (field) field.hidden = true;
       accountFilter.value = "";
-    } else if (previous) {
-      accountFilter.value = previous;
+    } else {
+      const stillThere = accounts.some(function (account) { return account.id === previous; });
+      accountFilter.value = stillThere ? previous : "";
     }
   }
 

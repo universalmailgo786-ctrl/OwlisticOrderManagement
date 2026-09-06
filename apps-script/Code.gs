@@ -91,6 +91,9 @@ function doGet(e) {
   if (action === "listAccounts") {
     return json_(listAccountProfiles_(params));
   }
+  if (action === "listUsers") {
+    return json_(listLoginUsers_(params));
+  }
   if (action === "getAccountProfile") {
     return json_(getAccountProfile_(params));
   }
@@ -174,6 +177,12 @@ function doPost(e) {
         return json_({ ok: false, error: "Only Super Admin can add login users." });
       }
       return json_(upsertUser_(data));
+    }
+    if (data.action === "deleteUser") {
+      if (isRestrictedUser_(data)) {
+        return json_({ ok: false, error: "Only Super Admin can delete login users." });
+      }
+      return json_(deleteUser_(data));
     }
     if (data.action === "upsertAccountProfile") {
       if (isRestrictedUser_(data)) {
@@ -1982,6 +1991,18 @@ function isSuperAdminUsername_(username) {
   return String(username || "").trim().toLowerCase() === String(SUPERADMIN_USERNAME || "").trim().toLowerCase();
 }
 
+function isStaffAccountName_(value) {
+  var raw = String(value || "").trim().toLowerCase();
+  if (!raw) return false;
+  if (isSuperAdminUsername_(raw) || raw === "admin") return true;
+  return raw === String(SUPERADMIN_DISPLAY_NAME || "").trim().toLowerCase();
+}
+
+function isActiveUserRow_(row) {
+  var active = String((row && row[5]) || "Yes").trim().toLowerCase();
+  return active !== "no" && active !== "false" && active !== "0";
+}
+
 function superAdminLoginResponse_() {
   return {
     ok: true,
@@ -2228,6 +2249,109 @@ function padUserRow_(row) {
   var next = (row || []).slice();
   while (next.length < USER_HEADERS.length) next.push("");
   return next.slice(0, USER_HEADERS.length);
+}
+
+function listLoginUsers_(params) {
+  setupUsersSheetIfNeeded_();
+  var ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
+  var sheet = usersLoginSheet_(ss);
+  var last = Math.max(sheet.getLastRow(), 1);
+  var users = [];
+  if (last < 2) {
+    return { ok: true, action: "listUsers", users: users, count: 0 };
+  }
+  var values = sheet.getRange(2, 1, last, USER_HEADERS.length).getValues();
+  var role = String((params && params.role) || "").toLowerCase().replace(/\s+/g, "");
+  var forced = "";
+  var reqUser = String((params && params.username) || "").trim().toLowerCase();
+  if (role === "user" || role === "account") {
+    forced = tabName_((params && (params.userAccount || params.account)) || "");
+  }
+  var i;
+  for (i = 0; i < values.length; i++) {
+    var row = padUserRow_(values[i]);
+    var username = String(row[0] || "").trim();
+    var account = tabName_(row[3] || "");
+    var displayName = String(row[4] || "").trim();
+    var userRole = normalizeUserRole_(row[2]);
+    if (!username && !account) continue;
+    if (isSuperAdminUsername_(username) || userRole === "superadmin") continue;
+    if (isStaffAccountName_(account) || isStaffAccountName_(username)) continue;
+    if (!isActiveUserRow_(row)) continue;
+    if (!account) continue;
+    if (forced) {
+      if (String(account).toLowerCase() !== forced.toLowerCase() && username.toLowerCase() !== reqUser) continue;
+    }
+    var profile = userProfileFromRow_(row);
+    users.push({
+      username: username,
+      account: account,
+      name: account,
+      displayName: displayName || account,
+      personName: profile.personName || displayName || account,
+      role: "user",
+      active: true,
+      whatsapp: profile.whatsapp,
+      fiverrId: profile.fiverrId,
+      fiverrGigUrl: profile.fiverrGigUrl,
+      paymentStatus: profile.paymentStatus
+    });
+  }
+  return { ok: true, action: "listUsers", users: users, count: users.length };
+}
+
+function deleteUser_(data) {
+  setupUsersSheetIfNeeded_();
+  var username = String((data && data.username) || "").trim().toLowerCase();
+  var account = tabName_((data && (data.account || data.name)) || "").toLowerCase();
+  if (!username && !account) {
+    return { ok: false, action: "deleteUser", error: "Username or account is required." };
+  }
+  if (isSuperAdminUsername_(username) || isStaffAccountName_(username) || isStaffAccountName_(account)) {
+    return { ok: false, action: "deleteUser", error: "SuperAdmin cannot be deleted." };
+  }
+  var ss = SpreadsheetApp.openById(USERS_SPREADSHEET_ID);
+  var sheet = usersLoginSheet_(ss);
+  var last = Math.max(sheet.getLastRow(), 1);
+  var removed = 0;
+  if (last >= 2) {
+    var values = sheet.getRange(2, 1, last, USER_HEADERS.length).getValues();
+    var i;
+    for (i = values.length - 1; i >= 0; i--) {
+      var row = padUserRow_(values[i]);
+      var rowUser = String(row[0] || "").trim().toLowerCase();
+      var rowAccount = tabName_(row[3] || "").toLowerCase();
+      if (isSuperAdminUsername_(rowUser) || normalizeUserRole_(row[2]) === "superadmin") continue;
+      var match = (username && rowUser === username) || (account && rowAccount === account);
+      if (!match) continue;
+      sheet.deleteRow(i + 2);
+      removed += 1;
+    }
+  }
+  removeAccountProfileFromDirectory_(account, username);
+  return { ok: true, action: "deleteUser", removed: removed, account: account, username: username };
+}
+
+function removeAccountProfileFromDirectory_(account, username) {
+  var wantedAccount = tabName_(account || "").toLowerCase();
+  var wantedUser = String(username || "").trim().toLowerCase();
+  if (!wantedAccount && !wantedUser) return;
+  try {
+    var ss = accountsSpreadsheet_();
+    var directory = usersDirectorySheet_(ss);
+    var last = Math.max(directory.getLastRow(), 1);
+    if (last < 2) return;
+    var values = directory.getRange(2, 1, last, 2).getValues();
+    var i;
+    for (i = values.length - 1; i >= 0; i--) {
+      var existingUser = String(values[i][0] || "").trim().toLowerCase();
+      var existingAccount = String(values[i][1] || "").trim().toLowerCase();
+      if (isSuperAdminUsername_(existingUser) || isStaffAccountName_(existingAccount)) continue;
+      var match = (wantedAccount && existingAccount === wantedAccount) ||
+        (wantedUser && existingUser === wantedUser);
+      if (match) directory.deleteRow(i + 2);
+    }
+  } catch (err) {}
 }
 
 function findLoginUserProfile_(username) {
@@ -2623,13 +2747,28 @@ function listAccountProfiles_(params) {
     directory = usersDirectorySheet_(ss);
   }
   var accounts = listAccountProfilesFromSheet_(directory);
+  var loginResult = listLoginUsers_(params || {});
+  var loginKeys = {};
+  var u;
+  var loginUsers = (loginResult && loginResult.users) || [];
+  for (u = 0; u < loginUsers.length; u++) {
+    if (loginUsers[u] && loginUsers[u].account) {
+      loginKeys[String(loginUsers[u].account).toLowerCase()] = true;
+    }
+    if (loginUsers[u] && loginUsers[u].username) {
+      loginKeys[String(loginUsers[u].username).toLowerCase()] = true;
+    }
+  }
   var cleaned = [];
   var c;
   for (c = 0; c < accounts.length; c++) {
     var profile = accounts[c];
     if (!profile) continue;
-    if (isSuperAdminUsername_(profile.account) || isSuperAdminUsername_(profile.name)) continue;
+    if (isStaffAccountName_(profile.account) || isStaffAccountName_(profile.name) || isStaffAccountName_(profile.username)) continue;
     if (isSuperAdminUsername_(profile.username)) profile.username = profile.account || "";
+    var accKey = String(profile.account || profile.name || "").toLowerCase();
+    var userKey = String(profile.username || "").toLowerCase();
+    if (loginUsers.length && !loginKeys[accKey] && !loginKeys[userKey]) continue;
     cleaned.push(profile);
   }
   accounts = cleaned;
@@ -2784,7 +2923,7 @@ function upsertAccountProfile_(data) {
   if (isSuperAdminUsername_(profile.username)) profile.username = "";
   if (!profile.username) profile.username = profile.account;
   if (!profile.account) profile.account = tabName_(profile.username);
-  if (isSuperAdminUsername_(profile.username) || isSuperAdminUsername_(profile.account)) {
+  if (isSuperAdminUsername_(profile.username) || isSuperAdminUsername_(profile.account) || isStaffAccountName_(profile.account) || isStaffAccountName_(profile.username)) {
     return { ok: false, action: "upsertAccountProfile", error: "SuperAdmin cannot be saved as an account." };
   }
   var saved = upsertAccountProfileRow_(directory, profile);

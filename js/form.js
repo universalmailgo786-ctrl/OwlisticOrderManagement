@@ -1043,10 +1043,13 @@
   }
 
   function reservedLoginUsername(value) {
+    if (store && typeof store.isStaffAccountName === "function") {
+      return store.isStaffAccountName(value);
+    }
     if (store && typeof store.isReservedLoginUsername === "function") {
       return store.isReservedLoginUsername(value);
     }
-    return /^(superadmin|admin)$/i.test(String(value || "").trim());
+    return /^(superadmin|admin|ashar)$/i.test(String(value || "").trim());
   }
 
   function typedAccountUsername() {
@@ -1086,6 +1089,7 @@
       return;
     }
     accounts.forEach(function (account) {
+      if (!account || (store.isStaffAccount && store.isStaffAccount(account))) return;
       const item = document.createElement("div");
       item.className = "account-item" + (account.id === editingId ? " is-active" : "");
       item.innerHTML =
@@ -1108,6 +1112,13 @@
         populateAccounts();
         renderAccountList();
         showToast("Account deleted");
+        const sheet = window.OwlisticSheet;
+        if (sheet && typeof sheet.deleteUser === "function") {
+          sheet.deleteUser({
+            username: account.username || "",
+            account: account.name || ""
+          }).catch(function () {});
+        }
       });
       accountList.appendChild(item);
     });
@@ -1651,21 +1662,9 @@
     }
     store.getAccounts().forEach(function (account) {
       if (!account || !account.name) return;
+      if (store.isStaffAccount && store.isStaffAccount(account)) return;
       if (!(account.username || account.whatsapp || account.personName || account.fiverrId || account.fiverrGigUrl || account.paymentStatus)) return;
       pushAccountProfileToSheet(account).catch(function () {});
-      const username = typedAccountUsernameFrom(account);
-      if (!username || typeof sheet.upsertUser !== "function") return;
-      sheet.upsertUser({
-        username: username,
-        password: "",
-        account: account.name,
-        displayName: account.personName || account.name,
-        personName: account.personName || "",
-        whatsapp: account.whatsapp || "",
-        fiverrId: account.fiverrId || "",
-        fiverrGigUrl: account.fiverrGigUrl || "",
-        paymentStatus: account.paymentStatus || ""
-      }).catch(function () {});
     });
   }
 
@@ -1887,6 +1886,11 @@
       document.getElementById("account-name").focus();
       return;
     }
+    if (store.isStaffAccountName && store.isStaffAccountName(name)) {
+      showToast("SuperAdmin cannot be added as a filter account.");
+      document.getElementById("account-name").focus();
+      return;
+    }
     const username = typedAccountUsername();
     const typedRaw = document.getElementById("account-username").value.trim();
     const password = document.getElementById("account-username-password").value;
@@ -1917,6 +1921,11 @@
       fiverrGigUrl: document.getElementById("account-fiverr-url").value.trim()
     };
     const saved = store.upsertAccount(payload);
+    if (!saved) {
+      showToast("That account name is reserved for SuperAdmin.");
+      return;
+    }
+    if (store.rememberLoginAccount) store.rememberLoginAccount(saved);
     populateAccounts(saved.id);
     applyAccount(saved);
     fillAccountEditor(saved);

@@ -1,5 +1,6 @@
 (function (global) {
   const ACC_KEY = "owlistic.accounts";
+  const LOGIN_ACCOUNTS_KEY = "owlistic.loginAccounts";
   const ORD_KEY = "owlistic.orders";
   const CTR_KEY = "owlistic.orderCounter";
   const DEL_KEY = "owlistic.deletedOrders";
@@ -217,9 +218,113 @@
     return /^(superadmin|admin)$/i.test(String(username || "").trim());
   }
 
+  function isStaffAccountName(value) {
+    const raw = accountFieldKey(value);
+    if (!raw) return false;
+    if (isReservedLoginUsername(raw)) return true;
+    return raw === "ashar";
+  }
+
+  function isStaffAccount(account) {
+    if (!account) return true;
+    return isStaffAccountName(account.name) || isStaffAccountName(account.username);
+  }
+
+  function getLoginAccounts() {
+    try {
+      const raw = localStorage.getItem(LOGIN_ACCOUNTS_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      return Array.isArray(data && data.users) ? data.users : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function setLoginAccounts(users) {
+    try {
+      localStorage.setItem(LOGIN_ACCOUNTS_KEY, JSON.stringify({ at: Date.now(), users: users || [] }));
+    } catch (err) {}
+  }
+
+  function loginAccountKey(user) {
+    return accountFieldKey((user && (user.account || user.name)) || "");
+  }
+
+  function rememberLoginAccount(account) {
+    if (!account || isStaffAccount(account)) return;
+    const users = getLoginAccounts() || [];
+    const name = String(account.name || "").trim();
+    if (!name) return;
+    const next = users.filter(function (user) {
+      return loginAccountKey(user) !== accountFieldKey(name) &&
+        accountFieldKey(user && user.username) !== accountFieldKey(account.username);
+    });
+    next.push({
+      username: sanitizeAccountUsername(account.username),
+      account: name,
+      name: name,
+      displayName: account.personName || name,
+      personName: account.personName || name
+    });
+    setLoginAccounts(next);
+  }
+
+  function loginAccountAllowed(account) {
+    const users = getLoginAccounts();
+    if (!users) return true;
+    if (!account || isStaffAccount(account)) return false;
+    return users.some(function (user) {
+      const accountName = loginAccountKey(user);
+      const username = accountFieldKey(user && user.username);
+      return accountFieldKey(account.name) === accountName ||
+        accountFieldKey(account.username) === username ||
+        accountFieldKey(accountLabel(account)) === accountName;
+    });
+  }
+
+  function pruneStaffAccounts() {
+    const accounts = getAccounts();
+    const next = accounts.filter(function (account) {
+      return account && !isStaffAccount(account);
+    });
+    if (next.length !== accounts.length) saveAccounts(next);
+    return next;
+  }
+
+  function syncAccountsFromLogins(users) {
+    const list = users || [];
+    setLoginAccounts(list);
+    const allowed = {};
+    list.forEach(function (user) {
+      const name = String((user && (user.account || user.name)) || "").trim();
+      if (!name || isStaffAccountName(name) || isStaffAccountName(user && user.username)) return;
+      allowed[accountFieldKey(name)] = user;
+      if (user && user.username) allowed[accountFieldKey(user.username)] = user;
+      upsertAccount({
+        username: sanitizeAccountUsername(user.username),
+        name: name,
+        personName: user.personName || user.displayName || "",
+        whatsapp: user.whatsapp || "",
+        fiverrId: user.fiverrId || "",
+        fiverrGigUrl: user.fiverrGigUrl || "",
+        paymentStatus: user.paymentStatus || ""
+      });
+    });
+    const next = getAccounts().filter(function (acc) {
+      if (!acc || isStaffAccount(acc)) return false;
+      return allowed[accountFieldKey(acc.name)] ||
+        allowed[accountFieldKey(acc.username)] ||
+        allowed[accountFieldKey(accountLabel(acc))];
+    });
+    saveAccounts(next);
+    collapseDuplicateAccounts();
+    return getAccounts();
+  }
+
   function sanitizeAccountUsername(username) {
     const value = String(username || "").trim();
-    if (!value || isReservedLoginUsername(value)) return "";
+    if (!value || isReservedLoginUsername(value) || isStaffAccountName(value)) return "";
     return value;
   }
 
@@ -325,6 +430,9 @@
     const stamp = nowIso();
     const incoming = Object.assign({}, account || {});
     incoming.username = sanitizeAccountUsername(incoming.username);
+    if (isStaffAccountName(incoming.name) || isStaffAccountName(incoming.username)) {
+      return null;
+    }
     let index = findAccountIndex(accounts, incoming);
     if (index === -1) {
       incoming.id = incoming.id || uid("acc");
@@ -377,7 +485,14 @@
   }
 
   function deleteAccount(id) {
+    const removed = getAccount(id);
     saveAccounts(getAccounts().filter(function (item) { return item.id !== id; }));
+    const users = getLoginAccounts();
+    if (!users || !removed) return;
+    setLoginAccounts(users.filter(function (user) {
+      return loginAccountKey(user) !== accountFieldKey(removed.name) &&
+        accountFieldKey(user && user.username) !== accountFieldKey(removed.username);
+    }));
   }
 
   function getAccount(id) {
@@ -1864,11 +1979,15 @@
   function accountForName(name) {
     const wanted = String(name || "").trim();
     if (!wanted) return null;
+    if (isStaffAccountName(wanted)) return null;
     const accounts = getAccounts();
     let match = accounts.find(function (account) {
       return sameAccountName(account.name, wanted) || sameAccountName(accountLabel(account), wanted);
     });
     if (match) return match;
+    if (getLoginAccounts() && !loginAccountAllowed({ name: wanted, personName: wanted })) {
+      return null;
+    }
     return upsertAccount({
       name: wanted,
       personName: wanted
@@ -2234,6 +2353,14 @@
     collapseDuplicateAccounts: collapseDuplicateAccounts,
     sanitizeAccountUsername: sanitizeAccountUsername,
     isReservedLoginUsername: isReservedLoginUsername,
+    isStaffAccountName: isStaffAccountName,
+    isStaffAccount: isStaffAccount,
+    getLoginAccounts: getLoginAccounts,
+    setLoginAccounts: setLoginAccounts,
+    rememberLoginAccount: rememberLoginAccount,
+    loginAccountAllowed: loginAccountAllowed,
+    pruneStaffAccounts: pruneStaffAccounts,
+    syncAccountsFromLogins: syncAccountsFromLogins,
     deleteAccount: deleteAccount,
     getOrders: getOrders,
     getOrder: getOrder,

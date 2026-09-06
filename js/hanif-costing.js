@@ -167,13 +167,24 @@
       if (record.fiverrId) accounts[record.fiverrId] = true;
     });
     select.innerHTML = '<option value="">All Accounts</option>';
+    const allowed = {};
+    if (window.OwlisticAuth && typeof window.OwlisticAuth.visibleAccounts === "function") {
+      window.OwlisticAuth.visibleAccounts().forEach(function (account) {
+        if (account && account.name) allowed[String(account.name).trim().toLowerCase()] = true;
+        if (account && account.personName) allowed[String(account.personName).trim().toLowerCase()] = true;
+      });
+    }
     Object.keys(accounts).sort().forEach(function (name) {
+      if (/^(superadmin|admin|ashar)$/i.test(name)) return;
+      if (Object.keys(allowed).length && !allowed[String(name).trim().toLowerCase()]) return;
       const option = document.createElement("option");
       option.value = name;
       option.textContent = name;
       select.appendChild(option);
     });
-    if (previous) select.value = previous;
+    if (previous && Array.prototype.some.call(select.options, function (option) { return option.value === previous; })) {
+      select.value = previous;
+    }
   }
 
   function populateMonthYearFilters() {

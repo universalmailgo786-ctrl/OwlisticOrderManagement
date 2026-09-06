@@ -823,6 +823,13 @@
     });
   }
 
+  function isStaffProfileName(value) {
+    if (store && typeof store.isStaffAccountName === "function") {
+      return store.isStaffAccountName(value);
+    }
+    return /^(superadmin|admin|ashar)$/i.test(String(value || "").trim());
+  }
+
   function applyAccountProfiles(list) {
     const accounts = list || [];
     accounts.forEach(function (item) {
@@ -831,7 +838,12 @@
         ? store.sanitizeAccountUsername(item.username)
         : String(item.username || "").trim();
       const name = item.name || item.account || "";
-      if (!name || /^(superadmin|admin)$/i.test(name)) return;
+      if (!name || isStaffProfileName(name) || isStaffProfileName(username) || isStaffProfileName(item.username)) return;
+      if (store && typeof store.loginAccountAllowed === "function" &&
+          store.getLoginAccounts && store.getLoginAccounts() &&
+          !store.loginAccountAllowed({ name: name, username: username })) {
+        return;
+      }
       if (store && typeof store.upsertAccount === "function") {
         store.upsertAccount({
           username: username,
@@ -847,13 +859,90 @@
     if (store && typeof store.collapseDuplicateAccounts === "function") {
       store.collapseDuplicateAccounts();
     }
+    if (store && typeof store.pruneStaffAccounts === "function") {
+      store.pruneStaffAccounts();
+    }
     return accounts;
   }
 
+  function fetchLoginUsers() {
+    if (!isConfigured()) {
+      return Promise.resolve({ ok: false, users: [] });
+    }
+    const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+    const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+    const url = getWebAppUrl() + join +
+      "action=listUsers" +
+      "&role=" + encodeURIComponent((session && session.role) || "") +
+      "&userAccount=" + encodeURIComponent((session && session.account) || "") +
+      "&username=" + encodeURIComponent((session && session.username) || "") +
+      "&_=" + Date.now();
+    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 8000).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      const data = parseJson(text);
+      if (data && data.ok && data.action === "listUsers") {
+        return { ok: true, users: data.users || [] };
+      }
+      if (store && typeof store.pruneStaffAccounts === "function") store.pruneStaffAccounts();
+      return { ok: false, users: [] };
+    }).catch(function () {
+      if (store && typeof store.pruneStaffAccounts === "function") store.pruneStaffAccounts();
+      return { ok: false, users: [] };
+    });
+  }
+
   function fetchAccounts() {
+    const loginPromise = fetchLoginUsers().catch(function () {
+      return { ok: false, users: [] };
+    });
+    const directoryPromise = fetchAccountDirectory();
+    return Promise.all([loginPromise, directoryPromise]).then(function (parts) {
+      const loginResult = parts[0] || { ok: false, users: [] };
+      const dirResult = parts[1] || { ok: false, accounts: [] };
+      const users = (loginResult.ok && loginResult.users) || null;
+      const directory = dirResult.accounts || [];
+      if (users) {
+        const merged = mergeLoginAndDirectory(users, directory);
+        applyAccountProfiles(merged);
+        if (store && typeof store.syncAccountsFromLogins === "function") {
+          store.syncAccountsFromLogins(merged);
+        }
+        return { ok: true, accounts: (store && store.getAccounts && store.getAccounts()) || merged };
+      }
+      applyAccountProfiles(directory);
+      return dirResult;
+    });
+  }
+
+  function mergeLoginAndDirectory(users, directory) {
+    const byKey = {};
+    (directory || []).forEach(function (item) {
+      if (!item) return;
+      const accKey = String(item.account || item.name || "").trim().toLowerCase();
+      const userKey = String(item.username || "").trim().toLowerCase();
+      if (accKey) byKey[accKey] = item;
+      if (userKey) byKey[userKey] = item;
+    });
+    return (users || []).map(function (user) {
+      const name = String((user && (user.account || user.name)) || "").trim();
+      const extra = byKey[name.toLowerCase()] || byKey[String((user && user.username) || "").trim().toLowerCase()] || {};
+      return {
+        username: (user && user.username) || extra.username || "",
+        name: name,
+        account: name,
+        personName: extra.personName || (user && (user.personName || user.displayName)) || "",
+        whatsapp: extra.whatsapp || (user && user.whatsapp) || "",
+        fiverrId: extra.fiverrId || (user && user.fiverrId) || "",
+        fiverrGigUrl: extra.fiverrGigUrl || (user && user.fiverrGigUrl) || "",
+        paymentStatus: extra.paymentStatus || (user && user.paymentStatus) || ""
+      };
+    });
+  }
+
+  function fetchAccountDirectory() {
     if (!isConfigured()) {
       return fetchPublishedAccounts("Users").then(function (result) {
-        if (result.ok) applyAccountProfiles(result.accounts);
         return result;
       });
     }
@@ -870,7 +959,6 @@
     }).then(function (text) {
       const data = parseJson(text);
       if (data && data.ok && data.action === "listAccounts") {
-        applyAccountProfiles(data.accounts || []);
         return { ok: true, accounts: data.accounts || [] };
       }
       return fetchPublishedAccounts("Users").then(function (fallback) {
@@ -879,12 +967,10 @@
         }
         return fallback;
       }).then(function (fallback) {
-        if (fallback && fallback.ok) applyAccountProfiles(fallback.accounts);
         return fallback || { ok: false, accounts: [] };
       });
     }).catch(function () {
       return fetchPublishedAccounts("Users").then(function (fallback) {
-        if (fallback && fallback.ok) applyAccountProfiles(fallback.accounts);
         return fallback;
       });
     });
@@ -930,8 +1016,11 @@
     if (!user || !user.username) {
       return Promise.resolve({ skipped: true, empty: true });
     }
-    if (/^(superadmin|admin)$/i.test(String(user.username || "").trim())) {
+    if (/^(superadmin|admin|ashar)$/i.test(String(user.username || "").trim())) {
       return Promise.resolve({ ok: false, error: "SuperAdmin cannot be used as an account login username." });
+    }
+    if (/^(superadmin|admin|ashar)$/i.test(String(user.account || user.accountName || "").trim())) {
+      return Promise.resolve({ ok: false, error: "SuperAdmin cannot be saved as an account." });
     }
     return postJsonPayload({
       action: "upsertUser",
@@ -948,14 +1037,25 @@
     });
   }
 
+  function deleteUser(user) {
+    if (!user || (!user.username && !user.account && !user.name)) {
+      return Promise.resolve({ skipped: true, empty: true });
+    }
+    return postJsonPayload({
+      action: "deleteUser",
+      username: String(user.username || "").trim(),
+      account: tabNameOf(user.account || user.name || user.accountName || "")
+    });
+  }
+
   function upsertAccountProfile(profile) {
     if (!profile) {
       return Promise.resolve({ skipped: true, empty: true });
     }
     const account = tabNameOf(profile.account || profile.name || profile.accountName || "");
     const username = String(profile.username || "").trim();
-    if (/^(superadmin|admin)$/i.test(username)) {
-      profile = Object.assign({}, profile, { username: "" });
+    if (/^(superadmin|admin|ashar)$/i.test(username) || /^(superadmin|admin|ashar)$/i.test(account)) {
+      return Promise.resolve({ ok: false, error: "SuperAdmin cannot be saved as an account." });
     }
     if (!account && !profile.username) {
       return Promise.resolve({ skipped: true, empty: true });
@@ -1863,8 +1963,10 @@
     removeOrder: removeOrder,
     ensureTabs: ensureTabs,
     upsertUser: upsertUser,
+    deleteUser: deleteUser,
     upsertAccountProfile: upsertAccountProfile,
     fetchAccounts: fetchAccounts,
+    fetchLoginUsers: fetchLoginUsers,
     fetchAccountProfile: fetchAccountProfile,
     ACCOUNTS_SHEET_ID: ACCOUNTS_SHEET_ID,
     toRow: toRow,
