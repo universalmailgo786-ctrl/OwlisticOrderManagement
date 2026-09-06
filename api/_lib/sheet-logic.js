@@ -690,11 +690,16 @@ async function upsertOrder(data) {
     let row = Array.isArray(data.row) ? data.row.slice() : [];
     let orderId = trim(data.orderId || row[0]);
     let tab = tabName(forced || data.tabName || data.accountName || data.tab || "");
-    const existing = orderId
+    let existing = orderId
       ? (await client.query("select * from public.sheet_orders where order_id = $1", [orderId])).rows[0]
       : null;
     if (existing && forced && !tabMatches(existing.tab_name, forced) && !tabMatches(existing.account_name, forced)) {
-      return { ok: false, error: "You can only save orders for " + forced + "." };
+      // Local drafts pick ORD-00N from that user's browser only. Another
+      // account may already own that ID (e.g. Block saving ORD-002 while
+      // jd Designs already has it). Allocate a new ID instead of failing.
+      existing = null;
+      orderId = await nextOrderIdValue(client);
+      if (row.length) row[0] = orderId;
     }
     if (!orderId) orderId = await nextOrderIdValue(client);
     if (!tab && existing) tab = existing.tab_name;

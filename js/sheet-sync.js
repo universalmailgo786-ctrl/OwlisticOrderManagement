@@ -1282,10 +1282,6 @@
       : Object.assign({}, incoming, stored);
     const forceNew = Boolean(incoming.isNewOrder || incoming._isNewOrder);
 
-    if (isSheetApiUrl(getWebAppUrl())) {
-      return Promise.resolve(current);
-    }
-
     return fetchNextOrderId().then(function (remoteId) {
       return hasOrder(current).then(function (result) {
         if (result && result.found) {
@@ -1294,11 +1290,13 @@
           }
           return current;
         }
-        if (remoteId && (!current.id || orderIdNumber(remoteId) > orderIdNumber(current.id))) {
+        if (remoteId && (!current.id || forceNew || orderIdNumber(remoteId) > orderIdNumber(current.id))) {
           return adoptId(current, remoteId);
         }
         return current;
       });
+    }).catch(function () {
+      return current;
     });
   }
 
@@ -1881,7 +1879,11 @@
               });
             }
             if (result && result.ok === false) {
+              const err = String((result && result.error) || "");
+              const idTaken = /you can only save orders for/i.test(err) ||
+                /could not allocate a unique order id/i.test(err);
               if (isSheetApiUrl(getWebAppUrl())) {
+                if (idTaken && attempt < 6) return retry();
                 result.confirmed = false;
                 return result;
               }
