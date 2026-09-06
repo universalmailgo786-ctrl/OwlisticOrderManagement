@@ -338,9 +338,18 @@
       byId[record.orderId] = record;
     });
     const next = [];
+    const seen = {};
     (orders || []).forEach(function (order) {
       const built = sheet.recordFromOrder(order, byId[order.id]);
-      if (built) next.push(built);
+      if (built) {
+        next.push(built);
+        seen[built.orderId] = true;
+      }
+    });
+    (existingRecords || []).forEach(function (record) {
+      if (!record || !record.orderId || seen[record.orderId]) return;
+      next.push(record);
+      seen[record.orderId] = true;
     });
     return next;
   }
