@@ -964,7 +964,11 @@ let schemaReady = false;
 async function ensureSchema() {
   if (schemaReady) return;
   await withClient(async function (client) {
-    await client.query(SHEET_SQL);
+    try {
+      await client.query("select 1 from public.sheet_settings limit 1");
+    } catch (err) {
+      await client.query(SHEET_SQL);
+    }
   });
   schemaReady = true;
 }

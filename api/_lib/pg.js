@@ -1,5 +1,7 @@
-const { Client } = require("pg");
+const { Pool } = require("pg");
 const { POSTGRES_URL } = require("./env");
+
+let pool = null;
 
 function connectionConfig() {
   let url = POSTGRES_URL;
@@ -11,23 +13,32 @@ function connectionConfig() {
     .replace(/[?&]$/, "");
   return {
     connectionString: url,
-    ssl: { rejectUnauthorized: false }
+    ssl: { rejectUnauthorized: false },
+    max: 4,
+    idleTimeoutMillis: 15000,
+    connectionTimeoutMillis: 8000
   };
 }
 
-async function withClient(fn) {
+function getPool() {
   const config = connectionConfig();
-  if (!config) {
+  if (!config) return null;
+  if (!pool) pool = new Pool(config);
+  return pool;
+}
+
+async function withClient(fn) {
+  const active = getPool();
+  if (!active) {
     throw new Error("Postgres connection is not available on this deployment.");
   }
   const previousTls = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-  const client = new Client(config);
+  const client = await active.connect();
   try {
-    await client.connect();
     return await fn(client);
   } finally {
-    await client.end().catch(function () {});
+    client.release();
     if (previousTls == null) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
     else process.env.NODE_TLS_REJECT_UNAUTHORIZED = previousTls;
   }

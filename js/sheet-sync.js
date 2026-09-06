@@ -549,6 +549,7 @@
 
   function verifyScheduleOnSheet(order) {
     if (!order || !order.id) return Promise.resolve({ ok: true, skipped: true });
+    if (isSheetApiUrl(getWebAppUrl())) return Promise.resolve({ ok: true, skipped: true, verified: true });
     return fetchOrder(order).then(function (result) {
       if (!result || result.unsupported) {
         return { ok: false, needsDeploy: true, error: scheduleDeployError().error };
@@ -1266,6 +1267,16 @@
       : Object.assign({}, incoming, stored);
     const forceNew = Boolean(incoming.isNewOrder || incoming._isNewOrder);
 
+    if (isSheetApiUrl(getWebAppUrl())) {
+      if (current.id && !forceNew) return Promise.resolve(current);
+      return fetchNextOrderId().then(function (remoteId) {
+        if (remoteId && (forceNew || !current.id || orderIdNumber(remoteId) > orderIdNumber(current.id))) {
+          return adoptId(current, remoteId);
+        }
+        return current;
+      });
+    }
+
     return fetchNextOrderId().then(function (remoteId) {
       return hasOrder(current).then(function (result) {
         if (result && result.found) {
@@ -1392,15 +1403,15 @@
             error: (data && (data.error || data.driveLastError)) || "Drive upload timed out."
           };
         }
-        return delay(700).then(attempt);
+        return delay(250).then(attempt);
       }).catch(function () {
         if (Date.now() - started >= timeout) {
           return { status: "error", error: "Could not reach Drive." };
         }
-        return delay(700).then(attempt);
+        return delay(250).then(attempt);
       });
     }
-    return delay(400).then(attempt);
+    return attempt();
   }
 
   function stampUploadedFile(file, result) {
@@ -1509,14 +1520,12 @@
 
   function uploadOrderFiles(order) {
     const pending = filesNeedingDrive(order);
-    return pending.reduce(function (chain, file) {
-      return chain.then(function (results) {
-        return uploadFile(file, order && order.id).then(function (result) {
-          results.push({ file: file, result: result });
-          return results;
-        });
+    if (!pending.length) return Promise.resolve([]);
+    return Promise.all(pending.map(function (file) {
+      return uploadFile(file, order && order.id).then(function (result) {
+        return { file: file, result: result };
       });
-    }, Promise.resolve([]));
+    }));
   }
 
   function fetchOrder(order) {
@@ -1858,6 +1867,12 @@
               });
             }
             if (result && result.ok === false) return retry();
+            if (isSheetApiUrl(getWebAppUrl())) {
+              result.ok = true;
+              result.confirmed = true;
+              result.orderId = current.id;
+              return result;
+            }
             return confirmSheetWrite(current, { timeout: 2500 }).then(function (confirm) {
               if (confirm && confirm.found) {
                 result.ok = true;
