@@ -4,9 +4,11 @@
   const ACCOUNTS_SHEET_ID = "19hiEAgjNTcfDwEU1NsKJ2as90thmaIMzAXpHBWXKRrc";
   const LEGACY_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbytKcOqCtxVNXpPWmD6hQ7inpefem-MIf2ThOQEmCqKKgDLQVk1IlHIfIXstFznpwwM/exec";
   const NEXT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwlWvSU1b8SJ42_3xdrrl1w7GhUiezAjBN85w9MvD-uFc-jg8m6OGJdGJRLm-fLIdl2/exec";
-  const DEFAULT_WEB_APP_URL = NEXT_WEB_APP_URL;
+  const DRIVE_WEB_APP_URL = NEXT_WEB_APP_URL;
+  const DEFAULT_WEB_APP_URL = "/api/sheet";
   const STALE_WEB_APP_URLS = [
     LEGACY_WEB_APP_URL,
+    NEXT_WEB_APP_URL,
     "https://script.google.com/macros/s/AKfycbx-XBKX5WcoBIHgHss2uQ_RXRodMLoCO8qjBbDql32XO2RdfFSsBphKBUHgkf0SUdC7/exec",
     "https://script.google.com/macros/s/AKfycbxc9UyzIdr73zkuzHH-8R2tWxOmr3Rc88ApfrVA2RnKObATD3J8PSCJuwtF9FahSmIq/exec",
     "https://script.google.com/macros/s/AKfycbyLFBc8mr5QL_Hz3wpIfelJfyv_SbDUfbu1plPvzmUbClJzXF_MuHbPijOwzl9wPLuELw/exec",
@@ -109,11 +111,31 @@
     return undefined;
   }
 
+  function isSheetApiUrl(url) {
+    const raw = String(url || "").trim();
+    if (!raw) return false;
+    if (/^\/api\/sheet\/?$/i.test(raw)) return true;
+    try {
+      const parsed = new URL(raw, (typeof location !== "undefined" && location.origin) || "https://owlistic-order-management.vercel.app");
+      return /\/api\/sheet\/?$/i.test(parsed.pathname);
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function isStaleWebAppUrl(url) {
+    const raw = String(url || "").trim();
+    if (!raw) return true;
+    if (STALE_WEB_APP_URLS.indexOf(raw) >= 0) return true;
+    if (/^https:\/\/script\.google\.com\//i.test(raw)) return true;
+    return false;
+  }
+
   function getWebAppUrl() {
     try {
       const stored = (localStorage.getItem(URL_KEY) || "").trim();
-      if (!stored || STALE_WEB_APP_URLS.indexOf(stored) >= 0) {
-        if (stored) localStorage.setItem(URL_KEY, DEFAULT_WEB_APP_URL);
+      if (!stored || isStaleWebAppUrl(stored)) {
+        if (stored && stored !== DEFAULT_WEB_APP_URL) localStorage.setItem(URL_KEY, DEFAULT_WEB_APP_URL);
         return DEFAULT_WEB_APP_URL;
       }
       return stored;
@@ -122,13 +144,16 @@
     }
   }
 
+  function getDriveWebAppUrl() {
+    return DRIVE_WEB_APP_URL;
+  }
+
   function setWebAppUrl(url) {
     localStorage.setItem(URL_KEY, String(url || "").trim());
   }
 
   function isConfigured() {
-    const url = getWebAppUrl();
-    return /^https:\/\/script\.google\.com\/(?:macros\/s|a\/macros\/s)\/.+/i.test(url) && /\/exec\/?$/i.test(url);
+    return isSheetApiUrl(getWebAppUrl());
   }
 
   function formatDate(iso) {
@@ -389,7 +414,7 @@
     }
     return fetchWithTimeout(getWebAppUrl(), {
       method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       credentials: "omit",
       cache: "no-store",
@@ -582,9 +607,9 @@
         saveStoredCapabilities(currentCaps);
         return currentCaps;
       }
-      return probeWebAppUrl(NEXT_WEB_APP_URL).then(function (nextCaps) {
+      return probeWebAppUrl(DEFAULT_WEB_APP_URL).then(function (nextCaps) {
         if (nextCaps && nextCaps.scheduleSupported) {
-          setWebAppUrl(NEXT_WEB_APP_URL);
+          setWebAppUrl(DEFAULT_WEB_APP_URL);
           capabilitiesCache = nextCaps;
           saveStoredCapabilities(nextCaps);
           return nextCaps;
@@ -644,22 +669,19 @@
   }
 
   function postPayload(payload, timeoutMs) {
-    if (!isConfigured()) {
-      return Promise.resolve({ skipped: true });
+    if (payload && payload.action === "uploadFile") {
+      return fetchWithTimeout(getDriveWebAppUrl(), {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload)
+      }, timeoutMs || 120000).then(function () {
+        return { ok: true };
+      }).catch(function () {
+        return { ok: false, error: "Could not reach Drive." };
+      });
     }
-    if (global.OwlisticAuth && typeof global.OwlisticAuth.sheetAuth === "function") {
-      payload = global.OwlisticAuth.sheetAuth(payload);
-    }
-    return fetchWithTimeout(getWebAppUrl(), {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payload)
-    }, timeoutMs || 60000).then(function () {
-      return { ok: true };
-    }).catch(function () {
-      return { ok: false, error: "Could not reach Google Sheet." };
-    });
+    return postJsonPayload(payload, timeoutMs);
   }
 
   function ensureTabs(accounts) {
@@ -1336,8 +1358,8 @@
     const timeout = 90000;
     const started = Date.now();
     function attempt() {
-      const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
-      const url = getWebAppUrl() + join +
+      const join = getDriveWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+      const url = getDriveWebAppUrl() + join +
         "action=getUpload" +
         "&uploadId=" + encodeURIComponent(uploadId) +
         "&_=" + Date.now();
@@ -1972,6 +1994,7 @@
     toRow: toRow,
     isConfigured: isConfigured,
     getWebAppUrl: getWebAppUrl,
+    getDriveWebAppUrl: getDriveWebAppUrl,
     setWebAppUrl: setWebAppUrl,
     getNextWebAppUrl: function () { return NEXT_WEB_APP_URL; },
     probeWebAppUrl: probeWebAppUrl,

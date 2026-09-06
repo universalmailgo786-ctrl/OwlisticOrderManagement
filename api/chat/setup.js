@@ -3,6 +3,7 @@ const { POSTGRES_URL, envFlags } = require("../_lib/env");
 const { cors, send } = require("../_lib/http");
 const SQL = require("../_lib/chat-schema");
 const IMAGES_SQL = require("../_lib/chat-images-sql");
+const SHEET_SQL = require("../_lib/sheet-sql");
 
 function connectionConfig() {
   let url = POSTGRES_URL;
@@ -85,6 +86,7 @@ async function apply() {
   return withClient(async function (client) {
     await client.query(SQL);
     await client.query(IMAGES_SQL);
+    await client.query(SHEET_SQL);
     return status();
   });
 }

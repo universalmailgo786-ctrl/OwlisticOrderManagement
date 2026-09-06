@@ -14,11 +14,18 @@ const files = [
   "api/_lib/chat-jwt.js",
   "api/_lib/supabase-admin.js",
   "api/_lib/http.js",
+  "api/_lib/pg.js",
+  "api/_lib/sheet-sql.js",
+  "api/_lib/sheet-logic.js",
+  "api/sheet.js",
+  "api/sheet-import.js",
   "js/chat-config.js",
   "js/chat-client.js",
   "js/chat-nav.js",
   "js/chat-page.js",
   "js/auth.js",
+  "js/sheet-sync.js",
+  "js/hanif-sheet.js",
   "scripts/apply-chat-migration.js"
 ];
 
@@ -66,6 +73,23 @@ if (!verified || jwt.chatUserFromJwt(verified).username !== "block") {
 } else {
   console.log("ok jwt verify");
 }
+
+const sheetSql = fs.readFileSync(path.join(ROOT, "supabase/migrations/20260907010000_sheet_tables.sql"), "utf8");
+const sheetRequired = [
+  "CREATE TABLE IF NOT EXISTS public.sheet_users",
+  "CREATE TABLE IF NOT EXISTS public.sheet_accounts",
+  "CREATE TABLE IF NOT EXISTS public.sheet_orders",
+  "CREATE TABLE IF NOT EXISTS public.sheet_hanif_records",
+  "CREATE TABLE IF NOT EXISTS public.sheet_settings"
+];
+sheetRequired.forEach(function (token) {
+  if (sheetSql.indexOf(token) < 0) {
+    failed += 1;
+    console.error("FAIL sheet migration missing", token);
+  } else {
+    console.log("ok sheet migration has", token);
+  }
+});
 
 if (failed) {
   console.error("chat checks failed:", failed);

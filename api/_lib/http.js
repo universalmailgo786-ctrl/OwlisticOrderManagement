@@ -6,10 +6,13 @@ function cors(req, res) {
 }
 
 function readJson(req) {
-  if (req.body && typeof req.body === "object") return req.body;
-  if (typeof req.body === "string" && req.body.trim()) {
+  if (req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)) return req.body;
+  const raw = Buffer.isBuffer(req.body)
+    ? req.body.toString("utf8")
+    : (typeof req.body === "string" ? req.body : "");
+  if (raw && String(raw).trim()) {
     try {
-      return JSON.parse(req.body);
+      return JSON.parse(raw);
     } catch (err) {
       return {};
     }

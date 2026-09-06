@@ -51,13 +51,16 @@
     payload.username = auth.username;
     return fetch(base, {
       method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payload)
-    }).then(function () {
-      return { ok: true };
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      credentials: "omit",
+      cache: "no-store"
+    }).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      return parseJson(text) || { ok: true };
     }).catch(function () {
-      return { ok: false, error: "Could not reach Google Sheet." };
+      return { ok: false, error: "Could not reach Hanif Costing." };
     });
   }
 

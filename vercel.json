@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/sheet.js": {
+      "maxDuration": 30
+    },
+    "api/sheet-import.js": {
+      "maxDuration": 60
+    },
+    "api/chat/setup.js": {
+      "maxDuration": 30
+    }
+  }
+}

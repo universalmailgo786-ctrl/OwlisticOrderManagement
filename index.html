@@ -88,11 +88,11 @@
 
     <section class="sheet-connect admin-only" id="sheet-connect" aria-labelledby="sheet-connect-title">
       <div class="sheet-connect-copy">
-        <h2 id="sheet-connect-title">Google Sheet</h2>
-        <p id="sheet-connect-status">Connected to Ashar Orders Management System. Each account gets its own tab; submitted orders go to that tab.</p>
+        <h2 id="sheet-connect-title">Order database</h2>
+        <p id="sheet-connect-status">Connected to Ashar Orders Management System. Orders, users, and Hanif Costing save to the database. Requirement files still go to Google Drive.</p>
       </div>
       <div class="sheet-connect-controls">
-        <input class="account-select" type="url" id="sheet-web-app-url" placeholder="https://script.google.com/macros/s/.../exec" />
+        <input class="account-select" type="text" id="sheet-web-app-url" placeholder="/api/sheet" />
         <button type="button" class="ghost-btn" id="copy-sheet-script">Copy Script</button>
         <button type="button" class="ghost-btn" id="save-sheet-url">Connect</button>
       </div>

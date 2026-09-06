@@ -68,8 +68,8 @@
 
   function login(username, password) {
     const url = loginUrl(username, password);
-    if (!url || url.indexOf("http") !== 0) {
-      return Promise.resolve({ ok: false, error: "Google Sheet login is not connected." });
+    if (!url || (url.indexOf("http") !== 0 && url.charAt(0) !== "/")) {
+      return Promise.resolve({ ok: false, error: "Login is not connected." });
     }
     return fetch(url, { method: "GET", credentials: "omit" }).then(function (response) {
       return response.text();
@@ -210,7 +210,7 @@
       return Promise.resolve({ skipped: true });
     }
     const base = (global.OwlisticSheet && global.OwlisticSheet.getWebAppUrl()) || "";
-    if (!base || base.indexOf("http") !== 0) {
+    if (!base || (base.indexOf("http") !== 0 && base.charAt(0) !== "/")) {
       return Promise.resolve({ skipped: true });
     }
     const join = base.indexOf("?") >= 0 ? "&" : "?";

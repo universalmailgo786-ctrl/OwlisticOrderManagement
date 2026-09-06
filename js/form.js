@@ -2251,8 +2251,8 @@
     panel.classList.toggle("is-connected", connected);
     input.value = window.OwlisticSheet.getWebAppUrl();
     status.textContent = connected
-      ? "Connected to Ashar Orders Management System. Each account gets its own tab; submitted orders go to that tab."
-      : "Google needs a one-time Apps Script deploy. Copy the script, deploy it as a web app, then paste the URL here.";
+      ? "Connected to Ashar Orders Management System. Orders, users, and Hanif Costing save to the database. Requirement files still go to Google Drive."
+      : "Paste /api/sheet to connect the database API.";
   }
 
   refreshSheetConnect();
@@ -2260,7 +2260,7 @@
   document.getElementById("save-sheet-url").addEventListener("click", function () {
     window.OwlisticSheet.setWebAppUrl(document.getElementById("sheet-web-app-url").value);
     refreshSheetConnect();
-    showToast(window.OwlisticSheet.isConfigured() ? "Google Sheet connected" : "Paste the Apps Script web app URL ending in /exec");
+    showToast(window.OwlisticSheet.isConfigured() ? "Database connected" : "Paste /api/sheet to connect");
   });
 
   urlFields.forEach(function (el) {
