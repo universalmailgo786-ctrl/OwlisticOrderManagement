@@ -1180,7 +1180,7 @@
     requirementFiles = [];
     revisions = [];
     editMeta.hidden = true;
-    submitBtn.textContent = "Save to Google Sheet";
+    submitBtn.textContent = "Save";
     if (deleteOrderBtn) deleteOrderBtn.hidden = true;
     refreshRequirementFiles();
     renderMessageThread();
@@ -1350,7 +1350,7 @@
     }
     const pendingFiles = sheet.filesNeedingDrive ? sheet.filesNeedingDrive(saved) : [];
     if (isSubmitting && submitBtn) {
-      submitBtn.textContent = pendingFiles.length ? "Uploading images to Drive…" : "Saving to Google Sheet…";
+      submitBtn.textContent = "Saving…";
     }
     return sheet.sync(saved, { skipUploads: !pendingFiles.length }).then(function (syncResult) {
       const live = store.getOrder((syncResult && syncResult.orderId) || saved.id) || saved;
@@ -1421,7 +1421,7 @@
       if (submitBtn) {
         const sheet = window.OwlisticSheet;
         const pending = sheet && sheet.filesNeedingDrive ? sheet.filesNeedingDrive(saved) : [];
-        submitBtn.textContent = pending.length ? "Uploading images to Drive…" : "Saving to Google Sheet…";
+        submitBtn.textContent = "Saving…";
       }
       return writeOrderToSheet(saved);
     });
@@ -1552,7 +1552,7 @@
     if (isSubmitting) return;
     if (!submitBtn) return;
     submitBtn.disabled = false;
-    submitBtn.textContent = "Save to Google Sheet";
+    submitBtn.textContent = "Save";
   }
 
   function saveFilesToDrive() {
@@ -1566,7 +1566,7 @@
       const hasDriveLink = saved && orderHasDriveLinks(saved);
       const missing = result && result.sheet && result.sheet.missingDriveFiles;
       if (result && result.sheetFailed) {
-        showToast("Image saved on the form. Click Save to Google Sheet to store it in Drive.", 4500);
+        showToast("Image saved on the form. Click Save to store it in Drive.", 4500);
       } else if (missing && missing.length) {
         warnMissingDriveFiles(result.sheet, saved);
       } else if (hasDriveLink) {
@@ -1624,7 +1624,7 @@
     requirementFiles = (order.requirementFiles || []).slice();
     revisions = store.normalizeRevisions(order.revisions || []);
     fileInput.value = "";
-    submitBtn.textContent = "Save to Google Sheet";
+    submitBtn.textContent = "Save";
     editMeta.hidden = false;
     if (deleteOrderBtn) deleteOrderBtn.hidden = false;
     editMeta.textContent = "Editing " + order.id + " · Created " + store.formatDateTime(order.createdAt) + " · Last updated " + store.formatDateTime(order.updatedAt);
@@ -2345,13 +2345,7 @@
     window.clearTimeout(persistTimer);
     persistTimer = null;
     submitBtn.disabled = true;
-    const sheet = window.OwlisticSheet;
-    const pendingNow = sheet && sheet.filesNeedingDrive
-      ? sheet.filesNeedingDrive(collectOrder())
-      : [];
-    submitBtn.textContent = (pendingNow.length || filesStillUploading())
-      ? "Uploading images to Drive…"
-      : "Saving to Google Sheet…";
+    submitBtn.textContent = "Saving…";
     saveOrder(false).then(function (outcome) {
       if (!outcome || outcome.empty || (outcome.sheet && outcome.sheet.skipped)) {
         if (outcome && outcome.empty) {
@@ -2361,16 +2355,16 @@
       }
       if (outcome.confirmed) {
         goToDefaultPage();
-        showToast("Order is filled in the Google Sheet.", 5000);
+        showToast("Order saved.", 5000);
         return;
       }
-      showToast("Could not save this order to the Google Sheet. Check the sheet and try Save again.", 5000);
+      showToast("Could not save this order. Try Save again.", 5000);
     }).catch(function () {
       showToast("Could not save this order");
     }).then(function () {
       isSubmitting = false;
       submitBtn.disabled = false;
-      submitBtn.textContent = "Save to Google Sheet";
+      submitBtn.textContent = "Save";
     });
   });
 })();
