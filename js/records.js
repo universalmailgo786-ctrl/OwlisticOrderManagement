@@ -29,6 +29,86 @@
   const scheduleModalOrder = document.getElementById("schedule-modal-order");
   const scheduleModalTitle = document.getElementById("schedule-modal-title");
 
+  const ACCOUNT_FILTER_KEY = "owlistic.recordsAccountFilter";
+
+  function accountNamesMatch(left, right) {
+    if (auth.sameAccount) return auth.sameAccount(left, right);
+    return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
+  }
+
+  function selectedAccountRecord() {
+    if (!accountFilter || !accountFilter.value) return null;
+    const accounts = auth.visibleAccounts() || [];
+    return accounts.find(function (item) { return item.id === accountFilter.value; }) || null;
+  }
+
+  function selectedAccountName() {
+    if (!accountFilter || !accountFilter.value) return "";
+    const account = selectedAccountRecord();
+    if (account && account.name) return String(account.name).trim();
+    if (account && store.accountLabel) return String(store.accountLabel(account) || "").trim();
+    return "";
+  }
+
+  function rememberedAccountName() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const fromUrl = String(params.get("account") || "").trim();
+      if (fromUrl && !/^(all|all accounts)$/i.test(fromUrl)) return fromUrl;
+      return String(localStorage.getItem(ACCOUNT_FILTER_KEY) || "").trim();
+    } catch (err) {
+      return "";
+    }
+  }
+
+  function persistAccountFilter(options) {
+    if (!auth.isSuperAdmin() || !accountFilter) return;
+    const name = selectedAccountName();
+    const clear = Boolean(options && options.clear) || !name;
+    try {
+      if (clear) localStorage.removeItem(ACCOUNT_FILTER_KEY);
+      else localStorage.setItem(ACCOUNT_FILTER_KEY, name);
+    } catch (err) {}
+    try {
+      const url = new URL(window.location.href);
+      if (clear) url.searchParams.delete("account");
+      else url.searchParams.set("account", name);
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+      }
+    } catch (err) {}
+  }
+
+  function applyRememberedAccountFilter() {
+    if (!auth.isSuperAdmin() || !accountFilter) return false;
+    const wanted = rememberedAccountName();
+    if (!wanted) {
+      accountFilter.value = "";
+      return false;
+    }
+    const accounts = auth.visibleAccounts() || [];
+    const match = accounts.find(function (item) {
+      return accountNamesMatch(item.name, wanted) ||
+        accountNamesMatch(store.accountLabel(item), wanted);
+    });
+    accountFilter.value = match ? match.id : "";
+    return Boolean(match);
+  }
+
+  function orderMatchesSelectedAccount(order) {
+    if (!accountFilter || !accountFilter.value) return true;
+    if (order.accountId && order.accountId === accountFilter.value) return true;
+    const account = selectedAccountRecord();
+    const names = [];
+    if (account) {
+      names.push(account.name, store.accountLabel(account));
+    }
+    names.push(selectedAccountName());
+    return names.filter(Boolean).some(function (name) {
+      return accountNamesMatch(order.accountName, name) || accountNamesMatch(order.tabName, name);
+    });
+  }
+
   function resolveOrder(id, el) {
     const row = el && el.closest ? el.closest("[data-order-account]") : null;
     const account = (row && row.getAttribute("data-order-account")) || "";
@@ -796,10 +876,13 @@
       const field = document.getElementById("filter-account-field");
       if (field) field.hidden = true;
       accountFilter.value = "";
-    } else {
+      return;
+    }
+    if (!applyRememberedAccountFilter() && previous) {
       const stillThere = accounts.some(function (account) { return account.id === previous; });
       accountFilter.value = stillThere ? previous : "";
     }
+    if (accountFilter.value) persistAccountFilter();
   }
 
   function scheduleOwnerName(order) {
@@ -894,7 +977,7 @@
     const query = (search.value || "").trim().toLowerCase();
     const created = order.createdAt ? order.createdAt.slice(0, 10) : "";
     if (dateFilter.value && created !== dateFilter.value) return false;
-    if (accountFilter.value && order.accountId !== accountFilter.value) return false;
+    if (!orderMatchesSelectedAccount(order)) return false;
     if (paymentFilter.value && order.paymentStatus !== paymentFilter.value) return false;
     const revisionRounds = store.normalizeRevisions(order.revisions || []);
     const hasRevisions = revisionRounds.length > 0;
@@ -989,7 +1072,7 @@
     });
     const label = account ? store.accountLabel(account) : accountFilter.options[accountFilter.selectedIndex].text;
     const scoped = (inProgress || []).filter(function (order) {
-      return order.accountId === accountFilter.value;
+      return orderMatchesSelectedAccount(order);
     });
     const counts = { today: 0, tomorrow: 0, later: 0, unscheduled: 0, hold: 0 };
     scoped.forEach(function (order) {
@@ -2124,11 +2207,17 @@
     setActiveTab(tabOf(order));
     persistBoardStatus(order, label);
   });
-  [search, dateFilter, accountFilter, paymentFilter, revisionFilter, readyFilter, placeOnFilter].forEach(function (input) {
+  [search, dateFilter, paymentFilter, revisionFilter, readyFilter, placeOnFilter].forEach(function (input) {
     if (!input) return;
     input.addEventListener("input", render);
     input.addEventListener("change", render);
   });
+  if (accountFilter) {
+    accountFilter.addEventListener("change", function () {
+      persistAccountFilter({ clear: !accountFilter.value });
+      render();
+    });
+  }
   if (scheduleSave) {
     scheduleSave.addEventListener("click", function () {
       saveScheduleModal();
@@ -2140,6 +2229,7 @@
       if (search) search.value = "";
       if (dateFilter) dateFilter.value = "";
       if (accountFilter) accountFilter.value = "";
+      persistAccountFilter({ clear: true });
       if (paymentFilter) paymentFilter.value = "";
       if (revisionFilter) revisionFilter.value = "";
       if (readyFilter) readyFilter.value = "";
