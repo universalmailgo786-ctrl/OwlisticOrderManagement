@@ -1220,7 +1220,7 @@
     if (account) accountSelect.value = account.id;
     syncMessageTextField();
     const session = auth.getSession ? auth.getSession() : null;
-    const accountName = (account && store.accountLabel(account))
+    const accountName = (account && (account.name || account.accountName || store.accountLabel(account)))
       || (session && session.role !== "superadmin" && session.account)
       || "";
     const existing = existingId && store.getOrder(existingId, { accountName: accountName, tabName: accountName });
@@ -1363,19 +1363,22 @@
       if (syncResult && (syncResult.ok === false || syncResult.confirmed === false)) {
         return { saved: saved, sheet: syncResult, confirmed: false, sheetFailed: true };
       }
-      if (!pendingFiles.length && syncResult) {
-        syncResult.missingDriveFiles = [];
+      if (syncResult && syncResult.missingDriveFiles && syncResult.missingDriveFiles.length) {
+        return { saved: saved, sheet: syncResult, confirmed: false, sheetFailed: true };
       }
-      mergeDriveLinksInBackground(saved, syncResult);
       return {
         saved: saved,
         sheet: syncResult,
         confirmed: Boolean(syncResult && syncResult.confirmed),
         duplicate: false
       };
-    }).catch(function () {
-      showToast("Order " + (saved && saved.id ? saved.id : "") + " saved locally, but Google Sheet sync failed");
-      return { saved: saved, sheetFailed: true, confirmed: false };
+    }).catch(function (err) {
+      return {
+        saved: saved,
+        sheetFailed: true,
+        confirmed: false,
+        sheet: { error: (err && err.message) || "Could not save this order." }
+      };
     });
   }
 
@@ -1398,6 +1401,9 @@
     return ready.then(function () {
       if (!canSaveOrderContent()) {
         return { empty: true };
+      }
+      if (!silent && isAdmin() && !lockedAccount()) {
+        return { empty: true, sheet: { error: "Select an account before saving." } };
       }
       const isNewOrder = !String(document.getElementById("order-id").value || "").trim();
       const saved = store.upsertOrder(collectOrder());
@@ -2352,7 +2358,9 @@
     submitBtn.textContent = "Saving…";
     saveOrder(false).then(function (outcome) {
       if (!outcome || outcome.empty || (outcome.sheet && outcome.sheet.skipped)) {
-        if (outcome && outcome.empty) {
+        if (outcome && outcome.sheet && outcome.sheet.error) {
+          showToast(outcome.sheet.error, 4500);
+        } else if (outcome && outcome.empty) {
           showToast(saveBlockedMessage(), 4500);
         }
         return;

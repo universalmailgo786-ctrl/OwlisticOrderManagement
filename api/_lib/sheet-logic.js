@@ -330,22 +330,103 @@ async function pkrRate(client) {
 }
 
 async function nextOrderIdValue(client) {
-  const result = await client.query("select order_id from public.sheet_orders");
-  let max = 0;
-  result.rows.forEach(function (row) {
-    const n = orderIdNumber(row.order_id);
-    if (n > max) max = n;
+  const result = await client.query(`
+    select greatest(
+      coalesce((select max(cast(substring(order_id from '[0-9]+') as int)) from public.sheet_orders), 0),
+      coalesce((select max(cast(substring(order_id from '[0-9]+') as int)) from public.sheet_hanif_records), 0)
+    ) as max_n
+  `);
+  return padOrderId(Number((result.rows[0] && result.rows[0].max_n) || 0) + 1);
+}
+
+function fileKey(file) {
+  return lower(trim((file && (file.id || file.driveId || file.driveFileId || file.name || file.fileName)) || ""));
+}
+
+function hasFileUrl(file) {
+  return Boolean(trim((file && (file.url || file.imageUrl || file.link)) || ""));
+}
+
+function mergeFileLists(prev, next) {
+  const old = {};
+  (prev || []).forEach(function (file) {
+    const key = fileKey(file);
+    if (key && hasFileUrl(file)) old[key] = file;
   });
-  const hanif = await client.query("select order_id from public.sheet_hanif_records");
-  hanif.rows.forEach(function (row) {
-    const n = orderIdNumber(row.order_id);
-    if (n > max) max = n;
+  return (next || []).map(function (file) {
+    if (!file || hasFileUrl(file)) return file;
+    const prevFile = old[fileKey(file)];
+    if (!prevFile) return file;
+    return Object.assign({}, file, {
+      url: prevFile.url || prevFile.imageUrl || prevFile.link,
+      imageUrl: prevFile.imageUrl || prevFile.url || prevFile.link,
+      previewUrl: file.previewUrl || prevFile.previewUrl,
+      thumbnailUrl: file.thumbnailUrl || prevFile.thumbnailUrl,
+      driveId: file.driveId || prevFile.driveId || prevFile.driveFileId,
+      driveFileId: file.driveFileId || prevFile.driveFileId || prevFile.driveId
+    });
   });
-  return padOrderId(max + 1);
+}
+
+function mergeStoredFiles(prev, payload) {
+  if (!prev || !payload) return payload;
+  payload.requirementFiles = mergeFileLists(prev.requirementFiles, payload.requirementFiles);
+  if (Array.isArray(payload.messageThread) && Array.isArray(prev.messageThread)) {
+    const prevById = {};
+    prev.messageThread.forEach(function (msg) {
+      if (msg && msg.id) prevById[msg.id] = msg;
+    });
+    payload.messageThread = payload.messageThread.map(function (msg, i) {
+      if (!msg) return msg;
+      const old = prevById[msg.id] || prev.messageThread[i];
+      if (old) msg.files = mergeFileLists(old.files, msg.files);
+      return msg;
+    });
+  }
+  if (Array.isArray(payload.revisions) && Array.isArray(prev.revisions)) {
+    payload.revisions = payload.revisions.map(function (round, i) {
+      if (!round) return round;
+      const oldRound = prev.revisions.find(function (item) {
+        return item && (item.id === round.id || item.number === round.number);
+      }) || prev.revisions[i];
+      if (!oldRound) return round;
+      if (Array.isArray(round.messages) && Array.isArray(oldRound.messages)) {
+        round.messages = round.messages.map(function (msg, j) {
+          const oldMsg = (oldRound.messages || []).find(function (item) {
+            return item && item.id === (msg && msg.id);
+          }) || oldRound.messages[j];
+          if (oldMsg && msg) msg.files = mergeFileLists(oldMsg.files, msg.files);
+          return msg;
+        });
+      }
+      if (Array.isArray(round.subRevisions) && Array.isArray(oldRound.subRevisions)) {
+        round.subRevisions = round.subRevisions.map(function (sub, j) {
+          const oldSub = oldRound.subRevisions[j];
+          if (oldSub && sub) sub.attachments = mergeFileLists(oldSub.attachments, sub.attachments);
+          return sub;
+        });
+      }
+      return round;
+    });
+  }
+  return payload;
+}
+
+function sanitizeClientOrder(order) {
+  let copy;
+  try {
+    copy = JSON.parse(JSON.stringify(order || {}));
+  } catch (err) {
+    copy = Object.assign({}, order || {});
+  }
+  delete copy.pendingBlob;
+  delete copy.blob;
+  delete copy.isNewOrder;
+  delete copy._isNewOrder;
+  return copy;
 }
 
 async function login(data) {
-  await ensureSchema();
   const wantedUser = lower(data.username);
   const wantedPass = String(data.password || "");
   if (!wantedUser || !wantedPass) {
@@ -488,18 +569,16 @@ async function listOrders(data) {
   const allowed = forced
     ? [forced]
     : String(data.tabs || "").split(",").map(tabName).filter(Boolean);
-  if (!allowed.length) {
-    return { ok: true, action: "listOrders", count: 0, orders: [], workbookTabs: [], sheetColumns: HEADERS_LEN };
-  }
   return withClient(async function (client) {
     const result = await client.query("select * from public.sheet_orders order by order_id");
     const orders = [];
     const tabs = {};
+    const filter = forced ? allowed : null;
     result.rows.forEach(function (row) {
       const payload = row.payload || {};
       const tab = row.tab_name || payload.tabName || "";
       const account = row.account_name || payload.accountName || tab;
-      if (!sheetMatchesAny(tab, allowed) && !sheetMatchesAny(account, allowed)) return;
+      if (filter && !sheetMatchesAny(tab, filter) && !sheetMatchesAny(account, filter)) return;
       tabs[tab] = true;
       payload.id = row.order_id;
       payload.tabName = tab;
@@ -509,7 +588,7 @@ async function listOrders(data) {
     });
     const known = await workbookTabs(client);
     known.forEach(function (name) {
-      if (sheetMatchesAny(name, allowed)) tabs[name] = true;
+      if (!filter || sheetMatchesAny(name, filter)) tabs[name] = true;
     });
     return {
       ok: true,
@@ -621,7 +700,13 @@ async function upsertOrder(data) {
     }
     if (forced) tab = forced;
     let payload;
-    if (row.length) {
+    if (data.order && typeof data.order === "object" && !Array.isArray(data.order)) {
+      payload = Object.assign({}, existing && existing.payload, sanitizeClientOrder(data.order), {
+        id: orderId,
+        tabName: tab,
+        accountName: tabName(data.accountName || data.order.accountName || (existing && existing.account_name) || tab)
+      });
+    } else if (row.length) {
       while (row.length < HEADERS_LEN) row.push("");
       row[0] = orderId;
       if (forced) row[5] = tab;
@@ -650,6 +735,7 @@ async function upsertOrder(data) {
       if ((!payload.messageThread || !payload.messageThread.length) && prev.messageThread) {
         payload.messageThread = prev.messageThread;
       }
+      mergeStoredFiles(prev, payload);
     }
     if (data.uploads && data.uploads.length) {
       payload.requirementFiles = (payload.requirementFiles || []).concat(data.uploads);
@@ -659,16 +745,36 @@ async function upsertOrder(data) {
     payload.accountName = payload.accountName || tab;
     payload.updatedAt = new Date().toISOString();
     if (!payload.createdAt) payload.createdAt = (existing && existing.payload && existing.payload.createdAt) || new Date().toISOString();
-    await client.query(
-      `insert into public.sheet_orders (order_id, tab_name, account_name, payload, created_at, updated_at)
-       values ($1,$2,$3,$4::jsonb,$5,now())
-       on conflict (order_id) do update set
-         tab_name = excluded.tab_name,
-         account_name = excluded.account_name,
-         payload = excluded.payload,
-         updated_at = now()`,
-      [orderId, tab, payload.accountName, JSON.stringify(payload), payload.createdAt || null]
-    );
+    if (existing) {
+      await client.query(
+        `update public.sheet_orders
+         set tab_name = $2, account_name = $3, payload = $4::jsonb, updated_at = now()
+         where order_id = $1`,
+        [orderId, tab, payload.accountName, JSON.stringify(payload)]
+      );
+    } else {
+      let inserted = false;
+      let tries = 0;
+      while (!inserted && tries < 8) {
+        try {
+          await client.query(
+            `insert into public.sheet_orders (order_id, tab_name, account_name, payload, created_at, updated_at)
+             values ($1,$2,$3,$4::jsonb,$5,now())`,
+            [orderId, tab, payload.accountName, JSON.stringify(payload), payload.createdAt || null]
+          );
+          inserted = true;
+        } catch (err) {
+          if (String(err && err.code) !== "23505") throw err;
+          tries += 1;
+          orderId = await nextOrderIdValue(client);
+          payload.id = orderId;
+          if (row.length) row[0] = orderId;
+        }
+      }
+      if (!inserted) {
+        return { ok: false, error: "Could not allocate a unique order ID." };
+      }
+    }
     await touchHanif(client, payload);
     return { ok: true, action: "upsertOrder", orderId: orderId, tab: tab, order: payload };
   });
@@ -977,7 +1083,6 @@ async function ensureSchema() {
 }
 
 async function handle(data) {
-  await ensureSchema();
   const action = trim(data.action);
   if (action === "login") return login(data);
   if (action === "listUsers") return listUsers(data);

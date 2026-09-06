@@ -1257,6 +1257,19 @@
     });
   }
 
+  function cloneOrderForSave(order) {
+    try {
+      return JSON.parse(JSON.stringify(order, function (key, value) {
+        if (key === "pendingBlob" || key === "blob" || key === "isNewOrder" || key === "_isNewOrder") return undefined;
+        if (value && typeof Blob !== "undefined" && value instanceof Blob) return undefined;
+        if (value && typeof File !== "undefined" && value instanceof File) return undefined;
+        return value;
+      }));
+    } catch (err) {
+      return null;
+    }
+  }
+
   function allocateSheetOrderId(order) {
     const incoming = order || {};
     const stored = liveOrder(incoming) || incoming;
@@ -1268,13 +1281,7 @@
     const forceNew = Boolean(incoming.isNewOrder || incoming._isNewOrder);
 
     if (isSheetApiUrl(getWebAppUrl())) {
-      if (current.id && !forceNew) return Promise.resolve(current);
-      return fetchNextOrderId().then(function (remoteId) {
-        if (remoteId && (forceNew || !current.id || orderIdNumber(remoteId) > orderIdNumber(current.id))) {
-          return adoptId(current, remoteId);
-        }
-        return current;
-      });
+      return Promise.resolve(current);
     }
 
     return fetchNextOrderId().then(function (remoteId) {
@@ -1814,6 +1821,10 @@
     const run = function () {
       const start = options && options.skipUploads ? Promise.resolve([]) : uploadOrderFiles(liveOrder(order) || order);
       return start.then(function (uploadResults) {
+        const uploadedLive = liveOrder(order) || order;
+        if (store && typeof store.upsertOrder === "function" && uploadedLive && uploadedLive.id) {
+          store.upsertOrder(uploadedLive);
+        }
         function postOnce(current) {
           const tabName = tabNameOf(accountNameOf(current));
           const missing = filesMissingDrive(current).map(function (file) { return file.name; });
@@ -1833,6 +1844,7 @@
             scheduleUpdatedAt: current.scheduleUpdatedAt || "",
             placedAt: current.placedAt || "",
             row: toRow(current),
+            order: cloneOrderForSave(current),
             uploads: []
           }).then(function (result) {
             result = result || { ok: true };
@@ -1842,7 +1854,7 @@
               return item && item.file && item.file.id;
             }).filter(Boolean);
             result.missingDriveFiles = missing;
-            result.orderId = current.id;
+            result.orderId = (result && result.orderId) || current.id;
             return result;
           });
         }
@@ -1875,9 +1887,23 @@
             }
             if (isSheetApiUrl(getWebAppUrl())) {
               if (result && result.ok !== false && result.action === "upsertOrder") {
-                result.ok = true;
-                result.confirmed = true;
+                if (result.orderId && result.orderId !== current.id) {
+                  adoptId(current, result.orderId);
+                }
+                if (result.order && store && typeof store.upsertOrder === "function") {
+                  store.upsertOrder(Object.assign({}, current, result.order, {
+                    id: result.orderId || current.id
+                  }));
+                }
+                const missing = result.missingDriveFiles || [];
+                result.ok = missing.length === 0;
+                result.confirmed = missing.length === 0;
                 result.orderId = result.orderId || current.id;
+                if (missing.length) {
+                  result.error = missing.length === 1
+                    ? missing[0] + " is not in Google Drive. Re-attach it and click Save."
+                    : missing.length + " files are not in Google Drive. Re-attach them and click Save.";
+                }
                 return result;
               }
               result = result || {};
@@ -1959,8 +1985,11 @@
   }
 
   function orderOnCreatedAccountTab(order, allowed) {
-    if (!allowed || !allowed.length) return false;
     if (isLeftoverTab(order && order.tabName)) return false;
+    const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+    const role = String((session && session.role) || "").toLowerCase().replace(/\s+/g, "");
+    if (role === "superadmin" || role === "admin") return true;
+    if (!allowed || !allowed.length) return false;
     if (tabMatchesAllowed(order && order.tabName, allowed)) return true;
     if (order && order.tabName) return false;
     return tabMatchesAllowed(order && order.accountName, allowed);
