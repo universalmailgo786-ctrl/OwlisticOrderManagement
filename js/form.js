@@ -2250,9 +2250,7 @@
     const connected = window.OwlisticSheet.isConfigured();
     panel.classList.toggle("is-connected", connected);
     input.value = window.OwlisticSheet.getWebAppUrl();
-    status.textContent = connected
-      ? "Connected to Ashar Orders Management System. Orders, users, and Hanif Costing save to the database. Requirement files still go to Google Drive."
-      : "Paste /api/sheet to connect the database API.";
+    if (status) status.hidden = true;
   }
 
   refreshSheetConnect();
