@@ -32,6 +32,7 @@
   const toastEl = document.getElementById("chat-toast");
   const lightbox = document.getElementById("chat-image-lightbox");
   const lightboxImg = document.getElementById("chat-image-lightbox-img");
+  const lightboxDownload = document.getElementById("chat-image-download");
   const confirmEl = document.getElementById("chat-confirm");
 
   const state = {
@@ -197,16 +198,39 @@
     return isMine(message) || me.isSuperAdmin;
   }
 
-  function openLightbox(src) {
+  function openLightbox(src, att) {
     if (!lightbox || !lightboxImg || !src) return;
     lightboxImg.src = src;
     lightbox.hidden = false;
+    lightbox._file = att || { signedUrl: src, image_url: src, file_name: "photo.jpg" };
   }
 
   function closeLightbox() {
     if (!lightbox) return;
     lightbox.hidden = true;
+    lightbox._file = null;
     if (lightboxImg) lightboxImg.removeAttribute("src");
+  }
+
+  function saveAttachment(att) {
+    if (!att) return;
+    showError("");
+    chat.downloadAttachment(att).catch(function (err) {
+      showError(err.message || "Could not download that file.");
+    });
+  }
+
+  function downloadButton(att, extraClass) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chat-att-download" + (extraClass ? " " + extraClass : "");
+    btn.textContent = "Download";
+    btn.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      saveAttachment(att);
+    });
+    return btn;
   }
 
   function captionOf(message) {
@@ -291,26 +315,37 @@
       img.src = imageUrl;
       img.alt = caption || "Photo";
       item.querySelector("[data-legacy-image]").addEventListener("click", function () {
-        openLightbox(imageUrl);
+        openLightbox(imageUrl, { image_url: imageUrl, signedUrl: imageUrl, file_name: "photo.jpg" });
       });
+      item.querySelector("[data-legacy-image]").after(downloadButton({
+        image_url: imageUrl,
+        signedUrl: imageUrl,
+        file_name: "photo.jpg"
+      }));
     }
 
     const imageWrap = item.querySelector(".chat-att-images");
     images.forEach(function (att) {
       const src = imageSrc(att);
       if (!src) return;
+      const wrap = document.createElement("div");
+      wrap.className = "chat-att-image";
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "chat-image-btn";
       btn.innerHTML = '<img class="chat-image" alt="">';
       btn.querySelector("img").src = src;
       btn.querySelector("img").alt = att.file_name || "Photo";
-      btn.addEventListener("click", function () { openLightbox(src); });
-      imageWrap.appendChild(btn);
+      btn.addEventListener("click", function () { openLightbox(src, att); });
+      wrap.appendChild(btn);
+      wrap.appendChild(downloadButton(att));
+      imageWrap.appendChild(wrap);
     });
 
     const fileWrap = item.querySelector(".chat-att-files");
     files.forEach(function (att) {
+      const row = document.createElement("div");
+      row.className = "chat-file-row";
       const link = document.createElement("a");
       link.className = "chat-file-card";
       link.href = att.signedUrl || "#";
@@ -325,7 +360,9 @@
           showError("That file is not available right now.");
         });
       }
-      fileWrap.appendChild(link);
+      row.appendChild(link);
+      row.appendChild(downloadButton(att));
+      fileWrap.appendChild(row);
     });
 
     if (editing) {
@@ -827,6 +864,13 @@
   if (lightbox) {
     lightbox.addEventListener("click", function (event) {
       if (event.target === lightbox || event.target.hasAttribute("data-close-lightbox")) closeLightbox();
+    });
+  }
+  if (lightboxDownload) {
+    lightboxDownload.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      saveAttachment(lightbox && lightbox._file);
     });
   }
   if (backBtn) {

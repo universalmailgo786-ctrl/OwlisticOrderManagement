@@ -334,6 +334,58 @@
     return out;
   }
 
+  function triggerSave(url, filename) {
+    const name = filename || "download";
+    return fetch(url).then(function (res) {
+      if (!res.ok) throw new Error("download");
+      return res.blob();
+    }).then(function (blob) {
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(function () { URL.revokeObjectURL(objectUrl); }, 1500);
+    }).catch(function () {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    });
+  }
+
+  async function downloadAttachment(att) {
+    if (!att) throw new Error("No file to download.");
+    const name = String(att.file_name || att.filename || "download").trim() || "download";
+    const path = String(att.storage_path || "").trim();
+    if (path) {
+      const data = await postJson(config.signedUrl || "/api/chat/signed-url", {
+        paths: [path],
+        download: true,
+        names: (function () {
+          const map = {};
+          map[path] = name;
+          return map;
+        })()
+      });
+      if (!data || !data.ok) throw new Error((data && data.error) || "Could not download that file.");
+      const url = data.urls && data.urls[path];
+      if (url) {
+        await triggerSave(url, name);
+        return;
+      }
+    }
+    const src = att.signedUrl || att.image_url || att.url || "";
+    if (!src) throw new Error("That file is not available right now.");
+    await triggerSave(src, name);
+  }
+
   async function hydrateAttachments(messages) {
     const rows = messages || [];
     if (!rows.length) return rows;
@@ -653,6 +705,7 @@
     classifyClientFile: classifyClientFile,
     formatBytes: formatBytes,
     loadAttachments: loadAttachments,
+    downloadAttachment: downloadAttachment,
     markRead: markRead,
     subscribeThread: subscribeThread,
     subscribeInbox: subscribeInbox,

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=chat7" />
+  <link rel="stylesheet" href="css/styles.css?v=chat8" />
 </head>
 <body class="records-page chat-page">
   <nav class="app-nav">
@@ -92,7 +92,10 @@
   <div class="chat-image-lightbox" id="chat-image-lightbox" hidden>
     <div class="chat-image-lightbox-backdrop" data-close-lightbox></div>
     <img id="chat-image-lightbox-img" alt="Chat image" />
-    <button type="button" class="ghost-btn" data-close-lightbox>Close</button>
+    <div class="chat-image-lightbox-actions">
+      <button type="button" class="submit-btn" id="chat-image-download">Download</button>
+      <button type="button" class="ghost-btn" data-close-lightbox>Close</button>
+    </div>
   </div>
 
   <div class="chat-confirm" id="chat-confirm" hidden>
@@ -110,9 +113,9 @@
   <script src="js/sheet-sync.js?v=accountsave2"></script>
   <script src="js/auth.js?v=accountsave2"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.min.js"></script>
-  <script src="js/chat-config.js?v=chat7"></script>
-  <script src="js/chat-client.js?v=chat6"></script>
+  <script src="js/chat-config.js?v=chat8"></script>
+  <script src="js/chat-client.js?v=chat8"></script>
   <script src="js/chat-nav.js?v=chat7"></script>
-  <script src="js/chat-page.js?v=chat7"></script>
+  <script src="js/chat-page.js?v=chat8"></script>
 </body>
 </html>

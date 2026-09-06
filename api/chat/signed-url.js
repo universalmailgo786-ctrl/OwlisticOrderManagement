@@ -24,6 +24,8 @@ module.exports = async function handler(req, res) {
 
   const body = readJson(req);
   const paths = Array.isArray(body.paths) ? body.paths : [];
+  const names = body.names && typeof body.names === "object" ? body.names : {};
+  const forceDownload = Boolean(body.download);
   const unique = Array.from(new Set(paths.map(function (value) { return String(value || "").trim(); }).filter(Boolean)));
   if (!unique.length) {
     return send(res, 200, { ok: true, urls: {} });
@@ -46,7 +48,12 @@ module.exports = async function handler(req, res) {
       const thread = await admin.from("chat_threads").select("id, user_id").eq("id", parsed.threadId).maybeSingle();
       if (thread.error) throw thread.error;
       if (!thread.data || !canAccessThread(user, thread.data)) continue;
-      const signed = await admin.storage.from(BUCKET).createSignedUrl(storagePath, 60 * 60);
+      const options = {};
+      if (forceDownload) {
+        const name = String(names[storagePath] || "").trim();
+        options.download = name || true;
+      }
+      const signed = await admin.storage.from(BUCKET).createSignedUrl(storagePath, forceDownload ? 120 : 60 * 60, options);
       if (signed.data && signed.data.signedUrl) urls[storagePath] = signed.data.signedUrl;
     }
     return send(res, 200, { ok: true, urls: urls });

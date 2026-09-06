@@ -6001,6 +6001,37 @@ body.is-hanif-tab .records-tabs {
   margin-top: 12px;
 }
 
+.chat-image-lightbox-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chat-att-image,
+.chat-file-row {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+}
+
+.chat-att-download {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4e6b52;
+  cursor: pointer;
+}
+
+.chat-att-download:hover {
+  text-decoration: underline;
+}
+
 .chat-retention {
   margin: 0;
   padding: 6px 16px 8px;
