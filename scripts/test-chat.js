@@ -143,7 +143,17 @@ if (pageJs.indexOf("document.hasFocus()") < 0) {
 }
 
 const navJs = fs.readFileSync(path.join(ROOT, "js/chat-nav.js"), "utf8");
-const navRequired = ["is-on", "unreadSummary", "data-chat-badge", "chat-nav-label"];
+const navRequired = [
+  "is-on",
+  "unreadSummary",
+  "data-chat-badge",
+  "chat-nav-label",
+  "applyIncoming",
+  "applyThreadRead",
+  "owlistic-unread",
+  "BroadcastChannel",
+  "subscribeInbox"
+];
 navRequired.forEach(function (token) {
   if (navJs.indexOf(token) < 0) {
     failed += 1;
@@ -152,6 +162,24 @@ navRequired.forEach(function (token) {
     console.log("ok chat-nav has", token);
   }
 });
+
+const clientJs = fs.readFileSync(path.join(ROOT, "js/chat-client.js"), "utf8");
+const clientRequired = ["bindRealtimeAuth", "realtime.setAuth", "isIncomingRow", "postgres_changes"];
+clientRequired.forEach(function (token) {
+  if (clientJs.indexOf(token) < 0) {
+    failed += 1;
+    console.error("FAIL chat-client missing", token);
+  } else {
+    console.log("ok chat-client has", token);
+  }
+});
+
+if (pageJs.indexOf("applyIncoming") < 0 || pageJs.indexOf("owlistic-unread") < 0) {
+  failed += 1;
+  console.error("FAIL chat-page must sync realtime unread with the nav badge");
+} else {
+  console.log("ok chat-page syncs realtime unread");
+}
 
 const css = fs.readFileSync(path.join(ROOT, "css/styles.css"), "utf8");
 if (css.indexOf("#e23c3c") < 0 || css.indexOf(".chat-unread-badge.is-on") < 0 || css.indexOf(".chat-nav-link .chat-unread-badge.is-on") < 0) {

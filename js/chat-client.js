@@ -35,6 +35,29 @@
     return /^(superadmin|admin)$/i.test(String(senderId || "").trim());
   }
 
+  function isIncomingRow(row, me) {
+    if (!row) return false;
+    const sender = String(row.sender_id || "").trim();
+    if (!sender) return false;
+    if (me && me.isSuperAdmin) return !isSuperAdminSender(sender);
+    const mine = String((me && me.username) || "").trim().toLowerCase();
+    return sender.toLowerCase() !== mine;
+  }
+
+  function realtimeRow(payload, which) {
+    if (!payload) return null;
+    if (which === "old") return payload.old || payload.old_record || null;
+    return payload.new || payload.record || payload.old || payload.old_record || null;
+  }
+
+  async function bindRealtimeAuth(db) {
+    const token = currentAccessToken();
+    if (!token || !db || !db.realtime || typeof db.realtime.setAuth !== "function") return token;
+    const result = db.realtime.setAuth(token);
+    if (result && typeof result.then === "function") await result;
+    return token;
+  }
+
   function newId() {
     if (global.crypto && typeof global.crypto.randomUUID === "function") {
       return global.crypto.randomUUID();
@@ -133,9 +156,7 @@
         return Promise.resolve(currentAccessToken() || accessToken);
       }
     });
-    if (next.realtime && typeof next.realtime.setAuth === "function") {
-      next.realtime.setAuth(accessToken);
-    }
+    await bindRealtimeAuth(next);
     return next;
   }
 
@@ -213,14 +234,11 @@
   }
 
   function unreadFor(rows, me) {
-    const mine = String((me && me.username) || "").toLowerCase();
-    const admin = Boolean(me && me.isSuperAdmin);
     const byThread = {};
     let total = 0;
     (rows || []).forEach(function (row) {
-      const sender = String(row.sender_id || "").toLowerCase();
-      const incoming = admin ? !isSuperAdminSender(sender) : sender !== mine;
-      if (!incoming) return;
+      if (row && row.read_at) return;
+      if (!isIncomingRow(row, me)) return;
       byThread[row.thread_id] = (byThread[row.thread_id] || 0) + 1;
       total += 1;
     });
@@ -633,6 +651,7 @@
 
   async function replaceChannel(name, builder) {
     const db = await ensureClient();
+    await bindRealtimeAuth(db);
     if (channels[name]) {
       await db.removeChannel(channels[name]);
       delete channels[name];
@@ -651,7 +670,7 @@
         table: "chat_messages",
         filter: "thread_id=eq." + threadId
       }, function (payload) {
-        if (handlers && handlers.onInsert) handlers.onInsert(payload.new);
+        if (handlers && handlers.onInsert) handlers.onInsert(realtimeRow(payload));
       })
       .on("postgres_changes", {
         event: "UPDATE",
@@ -659,7 +678,7 @@
         table: "chat_messages",
         filter: "thread_id=eq." + threadId
       }, function (payload) {
-        if (handlers && handlers.onUpdate) handlers.onUpdate(payload.new);
+        if (handlers && handlers.onUpdate) handlers.onUpdate(realtimeRow(payload), realtimeRow(payload, "old"));
       })
       .on("postgres_changes", {
         event: "DELETE",
@@ -667,7 +686,7 @@
         table: "chat_messages",
         filter: "thread_id=eq." + threadId
       }, function (payload) {
-        if (handlers && handlers.onDelete) handlers.onDelete(payload.old || payload.new);
+        if (handlers && handlers.onDelete) handlers.onDelete(realtimeRow(payload, "old") || realtimeRow(payload));
       })
       .on("postgres_changes", {
         event: "*",
@@ -689,13 +708,13 @@
         if (handlers && handlers.onThread) handlers.onThread(payload);
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, function (payload) {
-        if (handlers && handlers.onInsert) handlers.onInsert(payload.new);
+        if (handlers && handlers.onInsert) handlers.onInsert(realtimeRow(payload));
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "chat_messages" }, function (payload) {
-        if (handlers && handlers.onUpdate) handlers.onUpdate(payload.new);
+        if (handlers && handlers.onUpdate) handlers.onUpdate(realtimeRow(payload), realtimeRow(payload, "old"));
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "chat_messages" }, function (payload) {
-        if (handlers && handlers.onDelete) handlers.onDelete(payload.old || payload.new);
+        if (handlers && handlers.onDelete) handlers.onDelete(realtimeRow(payload, "old") || realtimeRow(payload));
       })
       .subscribe(function (status) {
         if (handlers && handlers.onStatus) handlers.onStatus(status);
@@ -725,6 +744,7 @@
   global.OwlisticChat = {
     sessionUser: sessionUser,
     isSuperAdminSender: isSuperAdminSender,
+    isIncomingRow: isIncomingRow,
     requestSession: requestSession,
     ensureClient: ensureClient,
     signOut: signOut,

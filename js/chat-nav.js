@@ -5,10 +5,24 @@
   let link = null;
   let started = false;
   let lastTotal = null;
+  let lastByThread = {};
   let lastStamp = "";
   let originalTitle = "";
   let dismissedStamp = "";
   let toastUserId = "";
+  let refreshTimer = null;
+  let listenAttempt = 0;
+  let listenRetry = null;
+  let skipNextToast = false;
+  let fetchGen = 0;
+  const seenIncoming = {};
+  const seenRead = {};
+  let broadcast = null;
+  try {
+    broadcast = new BroadcastChannel("owlistic-unread");
+  } catch (err) {
+    broadcast = null;
+  }
 
   function auth() {
     return global.OwlisticAuth;
@@ -57,10 +71,36 @@
     else link.classList.remove("is-active");
   }
 
-  function renderCount(total) {
+  function viewingThread(threadId) {
+    if (!threadId) return false;
+    if (currentPage() !== "messages.html") return false;
+    if (document.visibilityState !== "visible") return false;
+    if (typeof document.hasFocus === "function" && !document.hasFocus()) return false;
+    return global.OwlisticChatViewingThreadId === threadId;
+  }
+
+  function publishCount(options) {
+    const opts = options || {};
+    const detail = {
+      total: Number(lastTotal || 0),
+      byThread: lastByThread || {}
+    };
+    try {
+      document.dispatchEvent(new CustomEvent("owlistic-unread", { detail: detail }));
+    } catch (err) {}
+    if (!opts.fromBroadcast && broadcast) {
+      try {
+        broadcast.postMessage({ type: "unread", total: detail.total, byThread: detail.byThread });
+      } catch (err) {}
+    }
+  }
+
+  function renderCount(total, options) {
+    const opts = options || {};
     if (!link) ensureLink();
     if (!badge) badge = document.querySelector("[data-chat-badge]");
-    const n = Number(total || 0);
+    const n = Math.max(0, Number(total || 0));
+    lastTotal = n;
     const label = countLabel(n);
     document.querySelectorAll("[data-chat-badge]").forEach(function (el) {
       el.textContent = label;
@@ -78,6 +118,74 @@
     document.title = n > 0 ? "(" + label + ") " + originalTitle : originalTitle;
     updateToastCount(n);
     if (n < 1) hideToast();
+    if (!opts.silent) publishCount(opts);
+  }
+
+  function setSummary(summary, options) {
+    const total = summary && typeof summary.total === "number" ? summary.total : 0;
+    lastByThread = Object.assign({}, (summary && summary.byThread) || {});
+    renderCount(total, options);
+  }
+
+  function refreshSoon() {
+    if (refreshTimer) window.clearTimeout(refreshTimer);
+    refreshTimer = window.setTimeout(function () {
+      refreshTimer = null;
+      refresh();
+    }, 200);
+  }
+
+  function applyIncoming(row) {
+    const api = chat();
+    const me = api && api.sessionUser && api.sessionUser();
+    if (!row || !row.id || row.read_at) return false;
+    if (seenIncoming[row.id] || seenRead[row.id]) return false;
+    const incoming = api && typeof api.isIncomingRow === "function"
+      ? api.isIncomingRow(row, me)
+      : Boolean(me && me.isSuperAdmin && api && !api.isSuperAdminSender(row.sender_id));
+    if (!incoming) return false;
+    if (viewingThread(row.thread_id)) return false;
+    seenIncoming[row.id] = true;
+    fetchGen += 1;
+    if (lastTotal == null) lastTotal = 0;
+    lastByThread = lastByThread || {};
+    lastByThread[row.thread_id] = (lastByThread[row.thread_id] || 0) + 1;
+    renderCount((lastTotal || 0) + 1);
+    skipNextToast = currentPage() === "messages.html";
+    refreshSoon();
+    return true;
+  }
+
+  function applyRead(row) {
+    if (!row || !row.id) return false;
+    if (seenRead[row.id]) return false;
+    const wasUnread = Boolean(seenIncoming[row.id] || (lastByThread && lastByThread[row.thread_id]));
+    if (!row.read_at && wasUnread === false) return false;
+    seenRead[row.id] = true;
+    delete seenIncoming[row.id];
+    fetchGen += 1;
+    const tid = row.thread_id;
+    if (tid && lastByThread[tid] > 0) {
+      lastByThread[tid] -= 1;
+      renderCount(Math.max(0, (lastTotal || 1) - 1));
+    }
+    refreshSoon();
+    return true;
+  }
+
+  function applyThreadRead(threadId) {
+    const tid = String(threadId || "");
+    if (!tid) return false;
+    const n = Number((lastByThread && lastByThread[tid]) || 0);
+    if (n < 1) {
+      refreshSoon();
+      return false;
+    }
+    fetchGen += 1;
+    lastByThread[tid] = 0;
+    renderCount(Math.max(0, (lastTotal || n) - n));
+    refreshSoon();
+    return true;
   }
 
   function playPing() {
@@ -214,9 +322,10 @@
       return;
     }
     try {
+      const gen = ++fetchGen;
       const summary = await api.unreadSummary();
-      renderCount(summary.total);
-      lastTotal = summary.total;
+      if (gen !== fetchGen) return;
+      setSummary(summary);
       let threads = [];
       try {
         threads = typeof api.listThreads === "function" ? await api.listThreads() : [];
@@ -244,6 +353,9 @@
       };
       if (currentPage() === "messages.html") {
         hideToast();
+      } else if (skipNextToast) {
+        skipNextToast = false;
+        if (summary.total > 0 && stamp !== dismissedStamp) showToast(title, body, toastOpts);
       } else if (summary.total > 0 && stamp !== dismissedStamp) {
         if (!first && stamp && stamp !== lastStamp && !fromMe) {
           notifyNew(title, body, toastOpts);
@@ -257,18 +369,42 @@
     }
   }
 
+  function scheduleListenRetry(attempt) {
+    if (listenRetry) return;
+    listenRetry = window.setTimeout(function () {
+      listenRetry = null;
+      if (attempt === listenAttempt) listen();
+    }, 1200);
+  }
+
   async function listen() {
     const api = chat();
     const session = auth() && auth().getSession();
     if (!api || !session || !session.chatAccessToken) return;
+    const attempt = ++listenAttempt;
     try {
       await api.subscribeInbox({
-        onInsert: function () { refresh(); },
-        onUpdate: function () { refresh(); },
-        onDelete: function () { refresh(); },
-        onThread: function () { refresh(); }
+        onInsert: function (row) { applyIncoming(row); },
+        onUpdate: function (row, oldRow) {
+          const becameRead = row && row.read_at && !(oldRow && oldRow.read_at);
+          if (becameRead) applyRead(row);
+          else refreshSoon();
+        },
+        onDelete: function (row) {
+          if (row && !row.read_at) applyRead(row);
+          else refreshSoon();
+        },
+        onThread: function () { refreshSoon(); },
+        onStatus: function (status) {
+          if (attempt !== listenAttempt) return;
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            scheduleListenRetry(attempt);
+          }
+        }
       }, "chat-nav-unread");
-    } catch (err) {}
+    } catch (err) {
+      scheduleListenRetry(attempt);
+    }
   }
 
   function mount() {
@@ -292,12 +428,24 @@
     window.addEventListener("focus", function () {
       refresh();
     });
+    if (broadcast) {
+      broadcast.onmessage = function (event) {
+        const data = event && event.data;
+        if (!data || data.type !== "unread" || typeof data.total !== "number") return;
+        lastByThread = Object.assign({}, data.byThread || {});
+        renderCount(data.total, { fromBroadcast: true });
+      };
+    }
   }
 
   global.OwlisticChatNav = {
     mount: mount,
     refresh: refresh,
     renderCount: renderCount,
+    setSummary: setSummary,
+    applyIncoming: applyIncoming,
+    applyRead: applyRead,
+    applyThreadRead: applyThreadRead,
     notifyNew: notifyNew,
     showToast: showToast,
     openMessages: openMessages
