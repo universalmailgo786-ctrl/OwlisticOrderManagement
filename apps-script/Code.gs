@@ -2344,6 +2344,9 @@ function upsertUser_(data) {
   if (!username) {
     return { ok: false, error: "Username is required." };
   }
+  if (isSuperAdminUsername_(username)) {
+    return { ok: false, error: "SuperAdmin cannot be used as an account login username." };
+  }
   if (!account) {
     return { ok: false, error: "Account is required for a user login." };
   }
@@ -2366,6 +2369,9 @@ function upsertUser_(data) {
   }
   if (found) {
     var existing = padUserRow_(sheet.getRange(found, 1, 1, Math.max(sheet.getLastColumn(), USER_HEADERS.length)).getValues()[0]);
+    if (isSuperAdminUsername_(existing[0]) || normalizeUserRole_(existing[2]) === "superadmin") {
+      return { ok: false, error: "SuperAdmin cannot be used as an account login username." };
+    }
     var savedWhatsapp = whatsapp || existing[6] || "";
     var savedFiverrId = fiverrId || existing[7] || "";
     var savedFiverrGigUrl = fiverrGigUrl || existing[8] || "";
@@ -2617,6 +2623,16 @@ function listAccountProfiles_(params) {
     directory = usersDirectorySheet_(ss);
   }
   var accounts = listAccountProfilesFromSheet_(directory);
+  var cleaned = [];
+  var c;
+  for (c = 0; c < accounts.length; c++) {
+    var profile = accounts[c];
+    if (!profile) continue;
+    if (isSuperAdminUsername_(profile.account) || isSuperAdminUsername_(profile.name)) continue;
+    if (isSuperAdminUsername_(profile.username)) profile.username = profile.account || "";
+    cleaned.push(profile);
+  }
+  accounts = cleaned;
   var forced = "";
   var role = String((params && params.role) || "").toLowerCase().replace(/\s+/g, "");
   if (role === "user" || role === "account") {
@@ -2638,6 +2654,7 @@ function listAccountProfiles_(params) {
 function findAccountProfile_(query) {
   var wantedUser = String((query && query.username) || "").trim().toLowerCase();
   var wantedAccount = tabName_((query && (query.account || query.name || query.tab)) || "").toLowerCase();
+  if (isSuperAdminUsername_(wantedUser)) wantedUser = "";
   try {
     var ss = accountsSpreadsheet_();
     var directory = usersDirectorySheet_(ss);
@@ -2645,8 +2662,12 @@ function findAccountProfile_(query) {
     var i;
     for (i = 0; i < accounts.length; i++) {
       var item = accounts[i];
-      if (wantedUser && String(item.username || "").toLowerCase() === wantedUser) return item;
       if (wantedAccount && String(item.account || "").toLowerCase() === wantedAccount) return item;
+    }
+    for (i = 0; i < accounts.length; i++) {
+      item = accounts[i];
+      if (wantedUser && String(item.username || "").toLowerCase() === wantedUser &&
+          !isSuperAdminUsername_(item.username)) return item;
     }
     if (wantedAccount) {
       var tab = sheetForAccount_(ss, wantedAccount);
@@ -2700,17 +2721,29 @@ function upsertAccountProfileRow_(sheet, profile) {
   var row = profileRow_(profile);
   var username = String(row[0] || "").toLowerCase();
   var account = String(row[1] || "").toLowerCase();
+  if (isSuperAdminUsername_(row[0])) {
+    row[0] = row[1] || "";
+    username = "";
+  }
   var last = Math.max(sheet.getLastRow(), 1);
   var found = 0;
   if (last >= 2) {
     var values = sheet.getRange(2, 1, last, 2).getValues();
     var i;
     for (i = 0; i < values.length; i++) {
-      var existingUser = String(values[i][0] || "").trim().toLowerCase();
       var existingAccount = String(values[i][1] || "").trim().toLowerCase();
-      if ((username && existingUser === username) || (account && existingAccount === account)) {
+      if (account && existingAccount === account) {
         found = i + 2;
         break;
+      }
+    }
+    if (!found && username) {
+      for (i = 0; i < values.length; i++) {
+        var existingUser = String(values[i][0] || "").trim().toLowerCase();
+        if (existingUser && existingUser === username && !isSuperAdminUsername_(existingUser)) {
+          found = i + 2;
+          break;
+        }
       }
     }
   }
@@ -2748,8 +2781,12 @@ function upsertAccountProfile_(data) {
   if (!profile.username && !profile.account) {
     return { ok: false, action: "upsertAccountProfile", error: "Account name is required." };
   }
+  if (isSuperAdminUsername_(profile.username)) profile.username = "";
   if (!profile.username) profile.username = profile.account;
   if (!profile.account) profile.account = tabName_(profile.username);
+  if (isSuperAdminUsername_(profile.username) || isSuperAdminUsername_(profile.account)) {
+    return { ok: false, action: "upsertAccountProfile", error: "SuperAdmin cannot be saved as an account." };
+  }
   var saved = upsertAccountProfileRow_(directory, profile);
   writeProfileTab_(ss, saved);
   ensureOrderTabForAccount_(saved.account);

@@ -449,19 +449,23 @@
       </div>
       <div class="account-modal-grid">
         <div class="account-list" id="account-list"></div>
-        <form class="account-editor" id="account-editor" novalidate>
+          <form class="account-editor" id="account-editor" novalidate autocomplete="off">
+          <div class="sr-only" aria-hidden="true">
+            <input type="text" name="username" autocomplete="username" tabindex="-1" value="" />
+            <input type="password" name="password" autocomplete="current-password" tabindex="-1" value="" />
+          </div>
           <input type="hidden" id="account-edit-id" />
           <label>
             Account Name
-            <input class="line-input" type="text" id="account-name" required />
+            <input class="line-input" type="text" id="account-name" required autocomplete="off" />
           </label>
           <label>
             Login Username
-            <input class="line-input" type="text" id="account-username" autocomplete="off" />
+            <input class="line-input" type="text" id="account-username" name="owlistic-account-login" autocomplete="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true" readonly />
           </label>
           <label>
             Login Password
-            <input class="line-input" type="password" id="account-username-password" autocomplete="new-password" />
+            <input class="line-input" type="password" id="account-username-password" name="owlistic-account-login-password" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" />
             <span class="field-note">Saved to the Users credentials sheet. Required for a new user; leave blank when editing to keep the current password.</span>
           </label>
           <label>
@@ -504,10 +508,10 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="js/storage.js?v=drivefix1"></script>
-  <script src="js/apps-script-source.js?v=createdate1"></script>
-  <script src="js/sheet-sync.js?v=drivefix1"></script>
+  <script src="js/storage.js?v=userlogin1"></script>
+  <script src="js/apps-script-source.js?v=userlogin1"></script>
+  <script src="js/sheet-sync.js?v=userlogin1"></script>
   <script src="js/auth.js?v=userfix3"></script>
-  <script src="js/form.js?v=drivefix1"></script>
+  <script src="js/form.js?v=userlogin1"></script>
 </body>
 </html>

@@ -213,41 +213,167 @@
     return to;
   }
 
+  function isReservedLoginUsername(username) {
+    return /^(superadmin|admin)$/i.test(String(username || "").trim());
+  }
+
+  function sanitizeAccountUsername(username) {
+    const value = String(username || "").trim();
+    if (!value || isReservedLoginUsername(value)) return "";
+    return value;
+  }
+
+  function accountFieldKey(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function accountOwnsField(accounts, skipIndex, key, value) {
+    const wanted = accountFieldKey(value);
+    if (!wanted) return false;
+    return (accounts || []).some(function (item, index) {
+      if (index === skipIndex || !item) return false;
+      return accountFieldKey(item[key]) === wanted;
+    });
+  }
+
+  function findAccountIndex(accounts, incoming) {
+    const list = accounts || [];
+    const data = incoming || {};
+    if (data.id) {
+      const byId = list.findIndex(function (item) { return item && item.id === data.id; });
+      if (byId >= 0) return byId;
+    }
+    if (data.name) {
+      const byName = list.findIndex(function (item) {
+        return item && (sameAccountName(item.name, data.name) || sameAccountName(accountLabel(item), data.name));
+      });
+      if (byName >= 0) return byName;
+      const byFiverrName = list.findIndex(function (item) {
+        return item && sameAccountName(item.fiverrId, data.name);
+      });
+      if (byFiverrName >= 0) return byFiverrName;
+    }
+    if (data.fiverrId) {
+      const namedAfterFiverr = list.findIndex(function (item) {
+        return item && sameAccountName(item.name, data.fiverrId);
+      });
+      if (namedAfterFiverr >= 0) return namedAfterFiverr;
+    }
+    return -1;
+  }
+
+  function collapseDuplicateAccounts() {
+    const accounts = getAccounts();
+    if (accounts.length < 2) {
+      let changedUser = false;
+      accounts.forEach(function (item) {
+        const cleaned = sanitizeAccountUsername(item && item.username);
+        if (item && item.username && cleaned !== String(item.username || "").trim()) {
+          item.username = cleaned;
+          changedUser = true;
+        }
+      });
+      if (changedUser) saveAccounts(accounts);
+      return getAccounts();
+    }
+    const drop = {};
+    let i;
+    let j;
+    for (i = 0; i < accounts.length; i++) {
+      if (drop[i]) continue;
+      const left = accounts[i];
+      const leftName = accountFieldKey(left && left.name);
+      const leftFiverr = accountFieldKey(left && left.fiverrId);
+      for (j = i + 1; j < accounts.length; j++) {
+        if (drop[j]) continue;
+        const right = accounts[j];
+        const rightName = accountFieldKey(right && right.name);
+        const rightFiverr = accountFieldKey(right && right.fiverrId);
+        const linked = (leftFiverr && leftFiverr === rightName) ||
+          (rightFiverr && rightFiverr === leftName);
+        if (!linked) continue;
+        let keepIndex = i;
+        let dropIndex = j;
+        if (rightFiverr && rightFiverr === leftName && !(leftFiverr && leftFiverr === rightName)) {
+          keepIndex = j;
+          dropIndex = i;
+        }
+        const keep = accounts[keepIndex];
+        const extra = accounts[dropIndex];
+        const extraUser = sanitizeAccountUsername(extra && extra.username);
+        if (extraUser && !sanitizeAccountUsername(keep.username)) keep.username = extraUser;
+        if (!String(keep.personName || "").trim() && String((extra && extra.personName) || "").trim() &&
+            !accountOwnsField(accounts, keepIndex, "personName", extra.personName) &&
+            !sameAccountName(extra.personName, extra.name)) {
+          keep.personName = extra.personName;
+        }
+        drop[dropIndex] = true;
+      }
+    }
+    const next = [];
+    accounts.forEach(function (item, index) {
+      if (drop[index] || !item) return;
+      item.username = sanitizeAccountUsername(item.username);
+      next.push(item);
+    });
+    saveAccounts(next);
+    return next;
+  }
+
   function upsertAccount(account) {
     const accounts = getAccounts();
     const stamp = nowIso();
-    const incoming = account || {};
-    let index = -1;
-    if (incoming.id) {
-      index = accounts.findIndex(function (item) { return item.id === incoming.id; });
-    }
-    if (index === -1 && incoming.name) {
-      index = accounts.findIndex(function (item) {
-        return sameAccountName(item.name, incoming.name) || sameAccountName(accountLabel(item), incoming.name);
-      });
-    }
+    const incoming = Object.assign({}, account || {});
+    incoming.username = sanitizeAccountUsername(incoming.username);
+    let index = findAccountIndex(accounts, incoming);
     if (index === -1) {
       incoming.id = incoming.id || uid("acc");
       incoming.createdAt = stamp;
       incoming.updatedAt = stamp;
       accounts.push(incoming);
       saveAccounts(accounts);
-      return incoming;
+      collapseDuplicateAccounts();
+      return getAccount(incoming.id) || incoming;
     }
     const previous = accounts[index];
+    const incomingIsFiverrAlias = sameAccountName(previous.fiverrId, incoming.name) ||
+      sameAccountName(previous.name, incoming.fiverrId);
     const merged = Object.assign({}, previous, incoming, {
       id: previous.id,
+      name: incoming.id && incoming.name ? incoming.name : (incomingIsFiverrAlias ? previous.name : (incoming.name || previous.name)),
       createdAt: previous.createdAt || stamp,
-      updatedAt: stamp
+      updatedAt: stamp,
+      username: incoming.username || sanitizeAccountUsername(previous.username)
     });
-    ["whatsapp", "personName", "fiverrId", "fiverrGigUrl", "paymentStatus", "username"].forEach(function (key) {
-      if (!String(incoming[key] || "").trim() && String(previous[key] || "").trim()) {
+    ["whatsapp", "personName", "fiverrId", "fiverrGigUrl", "paymentStatus"].forEach(function (key) {
+      const nextValue = String(incoming[key] || "").trim();
+      const previousValue = String(previous[key] || "").trim();
+      if (!nextValue && previousValue) {
         merged[key] = previous[key];
+        return;
+      }
+      if ((key === "fiverrId" || key === "fiverrGigUrl") &&
+          nextValue && accountOwnsField(accounts, index, key, nextValue)) {
+        merged[key] = previousValue || "";
       }
     });
     accounts[index] = merged;
+    if (incomingIsFiverrAlias) {
+      merged.personName = previous.personName || merged.personName;
+      merged.whatsapp = previous.whatsapp || merged.whatsapp;
+      merged.fiverrId = previous.fiverrId || merged.fiverrId;
+      merged.fiverrGigUrl = previous.fiverrGigUrl || merged.fiverrGigUrl;
+      merged.paymentStatus = previous.paymentStatus || merged.paymentStatus;
+      if ((merged.fiverrId || "") !== (previous.fiverrId || "") &&
+          accountOwnsField(accounts, index, "fiverrId", merged.fiverrId)) {
+        merged.fiverrId = previous.fiverrId || "";
+        merged.fiverrGigUrl = previous.fiverrGigUrl || "";
+      }
+    }
+    accounts[index] = merged;
     saveAccounts(accounts);
-    return merged;
+    collapseDuplicateAccounts();
+    return getAccount(merged.id) || merged;
   }
 
   function deleteAccount(id) {
@@ -2105,7 +2231,9 @@
     getAccounts: getAccounts,
     getAccount: getAccount,
     upsertAccount: upsertAccount,
-    deleteAccount: deleteAccount,
+    collapseDuplicateAccounts: collapseDuplicateAccounts,
+    sanitizeAccountUsername: sanitizeAccountUsername,
+    isReservedLoginUsername: isReservedLoginUsername,
     deleteAccount: deleteAccount,
     getOrders: getOrders,
     getOrder: getOrder,

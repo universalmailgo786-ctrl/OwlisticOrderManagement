@@ -826,11 +826,16 @@
   function applyAccountProfiles(list) {
     const accounts = list || [];
     accounts.forEach(function (item) {
-      if (!item || (!item.username && !item.name)) return;
+      if (!item || (!item.username && !item.name && !item.account)) return;
+      const username = store && typeof store.sanitizeAccountUsername === "function"
+        ? store.sanitizeAccountUsername(item.username)
+        : String(item.username || "").trim();
+      const name = item.name || item.account || "";
+      if (!name || /^(superadmin|admin)$/i.test(name)) return;
       if (store && typeof store.upsertAccount === "function") {
         store.upsertAccount({
-          username: item.username || "",
-          name: item.name || item.account || item.username,
+          username: username,
+          name: name,
           personName: item.personName || "",
           whatsapp: item.whatsapp || "",
           fiverrId: item.fiverrId || "",
@@ -839,6 +844,9 @@
         });
       }
     });
+    if (store && typeof store.collapseDuplicateAccounts === "function") {
+      store.collapseDuplicateAccounts();
+    }
     return accounts;
   }
 
@@ -887,10 +895,13 @@
     if (!wanted) return Promise.resolve({ ok: false });
     const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
     const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+    const lookupUser = (session && session.role === "superadmin")
+      ? ""
+      : ((session && session.username) || wanted);
     const url = getWebAppUrl() + join +
       "action=getAccountProfile" +
       "&account=" + encodeURIComponent(wanted) +
-      "&username=" + encodeURIComponent((session && session.username) || wanted) +
+      "&username=" + encodeURIComponent(lookupUser) +
       "&role=" + encodeURIComponent((session && session.role) || "") +
       "&userAccount=" + encodeURIComponent((session && session.account) || "") +
       "&_=" + Date.now();
@@ -919,6 +930,9 @@
     if (!user || !user.username) {
       return Promise.resolve({ skipped: true, empty: true });
     }
+    if (/^(superadmin|admin)$/i.test(String(user.username || "").trim())) {
+      return Promise.resolve({ ok: false, error: "SuperAdmin cannot be used as an account login username." });
+    }
     return postJsonPayload({
       action: "upsertUser",
       username: String(user.username || "").trim(),
@@ -939,6 +953,10 @@
       return Promise.resolve({ skipped: true, empty: true });
     }
     const account = tabNameOf(profile.account || profile.name || profile.accountName || "");
+    const username = String(profile.username || "").trim();
+    if (/^(superadmin|admin)$/i.test(username)) {
+      profile = Object.assign({}, profile, { username: "" });
+    }
     if (!account && !profile.username) {
       return Promise.resolve({ skipped: true, empty: true });
     }

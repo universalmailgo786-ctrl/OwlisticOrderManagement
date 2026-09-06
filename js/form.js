@@ -1021,10 +1021,11 @@
     }
     return loadProfile(wanted).then(function (profile) {
       if (profile) return profile;
+      if (auth.isSuperAdmin && auth.isSuperAdmin(session)) return null;
       const fallback = session && session.username && !auth.sameAccount(session.username, wanted)
         ? session.username
         : "";
-      if (!fallback) return null;
+      if (!fallback || reservedLoginUsername(fallback)) return null;
       return loadProfile(fallback);
     }).catch(function () {
       return null;
@@ -1041,10 +1042,28 @@
     growUrlFields();
   }
 
+  function reservedLoginUsername(value) {
+    if (store && typeof store.isReservedLoginUsername === "function") {
+      return store.isReservedLoginUsername(value);
+    }
+    return /^(superadmin|admin)$/i.test(String(value || "").trim());
+  }
+
+  function typedAccountUsername() {
+    const value = document.getElementById("account-username").value.trim();
+    return reservedLoginUsername(value) ? "" : value;
+  }
+
+  function unlockAccountLoginFields() {
+    const usernameField = document.getElementById("account-username");
+    if (usernameField) usernameField.removeAttribute("readonly");
+  }
+
   function fillAccountEditor(account) {
     document.getElementById("account-edit-id").value = account && account.id ? account.id : "";
     document.getElementById("account-name").value = account && account.name ? account.name : "";
-    document.getElementById("account-username").value = account && account.username ? account.username : "";
+    const username = account && account.username ? account.username : "";
+    document.getElementById("account-username").value = reservedLoginUsername(username) ? "" : username;
     document.getElementById("account-username-password").value = "";
     document.getElementById("account-whatsapp").value = account && account.whatsapp ? account.whatsapp : "";
     document.getElementById("account-person-name").value = account && account.personName ? account.personName : "";
@@ -1052,9 +1071,13 @@
     document.getElementById("account-fiverr-url").value = account && account.fiverrGigUrl ? account.fiverrGigUrl : "";
     setPayment("accountPaymentStatus", account && account.paymentStatus ? account.paymentStatus : "");
     growUrlFields();
+    window.setTimeout(unlockAccountLoginFields, 0);
   }
 
   function renderAccountList() {
+    if (store && typeof store.collapseDuplicateAccounts === "function") {
+      store.collapseDuplicateAccounts();
+    }
     const accounts = store.getAccounts();
     const editingId = document.getElementById("account-edit-id").value;
     accountList.innerHTML = "";
@@ -1623,13 +1646,17 @@
     if (!isAdmin()) return;
     const sheet = window.OwlisticSheet;
     if (!sheet) return;
+    if (store && typeof store.collapseDuplicateAccounts === "function") {
+      store.collapseDuplicateAccounts();
+    }
     store.getAccounts().forEach(function (account) {
       if (!account || !account.name) return;
       if (!(account.username || account.whatsapp || account.personName || account.fiverrId || account.fiverrGigUrl || account.paymentStatus)) return;
       pushAccountProfileToSheet(account).catch(function () {});
-      if (!account.username || typeof sheet.upsertUser !== "function") return;
+      const username = typedAccountUsernameFrom(account);
+      if (!username || typeof sheet.upsertUser !== "function") return;
       sheet.upsertUser({
-        username: account.username,
+        username: username,
         password: "",
         account: account.name,
         displayName: account.personName || account.name,
@@ -1640,6 +1667,11 @@
         paymentStatus: account.paymentStatus || ""
       }).catch(function () {});
     });
+  }
+
+  function typedAccountUsernameFrom(account) {
+    const username = account && account.username ? String(account.username).trim() : "";
+    return reservedLoginUsername(username) ? "" : username;
   }
 
   function loadAccountsFromSheet() {
@@ -1755,8 +1787,8 @@
     applyAccount(lockedAccount());
     const session = auth.getSession();
     const account = lockedAccount();
-    const wanted = (account && (account.name || account.username)) ||
-      (session && (session.account || session.username)) ||
+    const wanted = (account && (account.name || (!reservedLoginUsername(account.username) && account.username))) ||
+      (session && session.account) ||
       "";
     if (wanted) {
       return refreshAccountFromSheet(wanted).then(function () {
@@ -1836,6 +1868,7 @@
     if (selected) refreshAccountFromSheet(selected.name || selected.username);
   });
 
+  document.getElementById("account-username").addEventListener("focus", unlockAccountLoginFields);
   document.getElementById("manage-accounts").addEventListener("click", openAccountModal);
   document.getElementById("account-modal-close").addEventListener("click", closeAccountModal);
   accountModal.addEventListener("click", function (event) {
@@ -1854,13 +1887,20 @@
       document.getElementById("account-name").focus();
       return;
     }
-    const username = document.getElementById("account-username").value.trim();
+    const username = typedAccountUsername();
+    const typedRaw = document.getElementById("account-username").value.trim();
     const password = document.getElementById("account-username-password").value;
     const editId = document.getElementById("account-edit-id").value;
     const existingAccount = editId ? store.getAccount(editId) : null;
+    if (typedRaw && reservedLoginUsername(typedRaw)) {
+      showToast("SuperAdmin cannot be used as a user login. Enter that account's own username and password.");
+      document.getElementById("account-username").value = "";
+      document.getElementById("account-username").focus();
+      return;
+    }
     if (username && !password) {
-      const hadUsername = existingAccount && existingAccount.username;
-      if (!hadUsername || String(existingAccount.username).trim().toLowerCase() !== username.toLowerCase()) {
+      const hadUsername = existingAccount && typedAccountUsernameFrom(existingAccount);
+      if (!hadUsername || String(hadUsername).toLowerCase() !== username.toLowerCase()) {
         showToast("Set a login password for this new user.");
         document.getElementById("account-username-password").focus();
         return;
@@ -1869,13 +1909,13 @@
     const payload = {
       id: document.getElementById("account-edit-id").value || undefined,
       name: name,
+      username: username,
       whatsapp: document.getElementById("account-whatsapp").value.trim(),
       personName: document.getElementById("account-person-name").value.trim(),
       paymentStatus: selectedPayment("accountPaymentStatus"),
       fiverrId: document.getElementById("account-fiverr-id").value.trim(),
       fiverrGigUrl: document.getElementById("account-fiverr-url").value.trim()
     };
-    if (username) payload.username = username;
     const saved = store.upsertAccount(payload);
     populateAccounts(saved.id);
     applyAccount(saved);
@@ -1885,9 +1925,9 @@
     const profilePromise = pushAccountProfileToSheet(saved, {
       username: username || saved.username || ""
     });
-    const loginPromise = (username || saved.username) && window.OwlisticSheet && typeof window.OwlisticSheet.upsertUser === "function"
+    const loginPromise = username && window.OwlisticSheet && typeof window.OwlisticSheet.upsertUser === "function"
       ? window.OwlisticSheet.upsertUser({
-        username: username || saved.username,
+        username: username,
         password: password,
         account: saved.name,
         displayName: saved.personName || saved.name,
@@ -1906,7 +1946,11 @@
         return loadAccountsFromSheet();
       }
       if (loginResult && loginResult.created) {
-        showToast("Account and login user saved to the sheet.");
+        showToast("Account and login user saved to the Users sheet.");
+      } else if (loginResult && loginResult.updated) {
+        showToast("Account login updated in the Users sheet.");
+      } else if (!username) {
+        showToast("Account saved. Add a login username and password to create the user.");
       } else if (profileResult && profileResult.ok) {
         showToast("Account profile saved to the Accounts sheet.");
       }
