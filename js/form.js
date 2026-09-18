@@ -2421,7 +2421,7 @@
         const saved = (outcome.saved && outcome.saved.id)
           ? outcome.saved
           : (store.getOrder(document.getElementById("order-id").value) || null);
-        if (saved) applySavedOrder(saved);
+        goToDefaultPage();
         showToast("Order saved" + (saved && saved.id ? " as " + saved.id : "") + ".", 5000);
         return;
       }
