@@ -2273,7 +2273,7 @@
 
   function isFreshUnsyncedOrder(order) {
     if (!order || !order.id || isDeletedOrder(order.id)) return false;
-    const ts = Date.parse(order.updatedAt || order.createdAt || "") || 0;
+    const ts = Date.parse(order.createdAt || "") || 0;
     if (!ts) return false;
     return (Date.now() - ts) < 60000;
   }
