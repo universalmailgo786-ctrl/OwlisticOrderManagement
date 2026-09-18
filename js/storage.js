@@ -1898,7 +1898,7 @@
     if (!order.id) {
       let id = nextOrderId();
       let guard = 0;
-      while (guard < 120 && findOrderInList(orders, id, order)) {
+      while (guard < 120 && (findOrderInList(orders, id, order) || isDeletedOrder(id))) {
         id = nextOrderId();
         guard += 1;
       }
@@ -1909,8 +1909,8 @@
       forgetDeletedOrder(order.id);
       orders.push(order);
     } else {
+      if (isDeletedOrder(order.id)) return existing || order;
       const index = orders.findIndex(function (item) { return sameOrderIdentity(item, order); });
-      forgetDeletedOrder(order.id);
       if (index === -1) {
         order.createdAt = order.createdAt || stamp;
         order.updatedAt = stamp;
@@ -2271,6 +2271,31 @@
     return mergeSchedule(fillOrderAccountProfile(order, previous), previous);
   }
 
+  function isFreshUnsyncedOrder(order) {
+    if (!order || !order.id || isDeletedOrder(order.id)) return false;
+    const ts = Date.parse(order.updatedAt || order.createdAt || "") || 0;
+    if (!ts) return false;
+    return (Date.now() - ts) < 60000;
+  }
+
+  function pruneGoneOrders(liveIds) {
+    const keep = {};
+    (liveIds || []).forEach(function (id) {
+      const key = String(id || "").trim();
+      if (key) keep[key] = true;
+    });
+    const before = getOrders();
+    const next = before.filter(function (item) {
+      if (!item || !item.id) return false;
+      if (isDeletedOrder(item.id)) return false;
+      if (keep[item.id]) return true;
+      return isFreshUnsyncedOrder(item);
+    });
+    if (next.length === before.length) return false;
+    saveOrders(next);
+    return true;
+  }
+
   function importOrders(incoming) {
     const orders = getOrders();
     (incoming || []).forEach(function (order) {
@@ -2290,19 +2315,22 @@
   function replaceOrders(incoming) {
     const previousAll = getOrders();
     const next = [];
+    const seen = {};
     (incoming || []).forEach(function (order) {
       if (!order || !order.id) return;
       if (isDeletedOrder(order.id)) return;
       const previous = previousAll.find(function (item) { return sameOrderIdentity(item, order); }) || null;
       const hydrated = hydrateImportedOrder(order, previous);
       rememberOrderNumber(hydrated.id);
+      seen[hydrated.id] = true;
       next.push(hydrated);
     });
     previousAll.forEach(function (item) {
-      if (!item || !item.id) return;
+      if (!item || !item.id || seen[item.id]) return;
       if (isDeletedOrder(item.id)) return;
-      const already = next.some(function (row) { return sameOrderIdentity(row, item); });
-      if (!already) next.push(item);
+      if (!isFreshUnsyncedOrder(item)) return;
+      seen[item.id] = true;
+      next.push(item);
     });
     saveOrders(next);
     return getOrders();
@@ -2392,6 +2420,7 @@
     forgetDeletedOrder: forgetDeletedOrder,
     isDeletedOrder: isDeletedOrder,
     getDeletedOrderIds: getDeletedOrderIds,
+    pruneGoneOrders: pruneGoneOrders,
     importOrders: importOrders,
     replaceOrders: replaceOrders,
     parseBoardStatus: parseBoardStatus,

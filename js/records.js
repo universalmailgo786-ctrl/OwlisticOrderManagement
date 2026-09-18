@@ -1758,6 +1758,7 @@
     let missing = false;
     incoming.forEach(function (row) {
       if (!row || !row.id) return;
+      if (store.isDeletedOrder && store.isDeletedOrder(row.id)) return;
       const existing = store.getOrder(row.id, row);
       if (!existing) {
         missing = true;
@@ -1798,6 +1799,15 @@
         changed = true;
       }
     });
+    if (store.pruneGoneOrders) {
+      const liveIds = incoming.map(function (row) { return row && row.id; }).filter(Boolean);
+      const localCount = (store.getOrders() || []).length;
+      if (auth.isSuperAdmin && auth.isSuperAdmin() && !liveIds.length && localCount > 2) {
+        missing = true;
+      } else if (store.pruneGoneOrders(liveIds)) {
+        changed = true;
+      }
+    }
     const local = store.getOrders ? store.getOrders() : [];
     if (incoming.length && local.length && incoming.length > local.length) missing = true;
     return { changed: changed, missing: missing };

@@ -771,9 +771,16 @@
       tabName: tabNameOf(accountName),
       tab: tabNameOf(accountName)
     };
-    postPayload(payload).catch(function () {});
-    postJsonPayload(payload, 20000).catch(function () {});
-    return Promise.resolve({ ok: true, removedLocal: true, sheetRemaining: false });
+    return postJsonPayload(payload, 20000).then(function (result) {
+      if (result && result.ok) return result;
+      return postPayload(payload, 20000).then(function (fallback) {
+        if (fallback && fallback.ok) return fallback;
+        return {
+          ok: false,
+          error: (result && result.error) || (fallback && fallback.error) || "Could not delete order."
+        };
+      });
+    });
   }
 
   function parseCsv(text) {

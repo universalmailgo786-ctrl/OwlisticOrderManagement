@@ -1337,7 +1337,7 @@
   }
 
   function refreshFromSheetOrders(list, orderId) {
-    if (!list || !list.length) return;
+    if (!Array.isArray(list)) return;
     store.replaceOrders(list);
     const updated = store.getOrder(orderId);
     if (updated && updated.requirementFiles) {
