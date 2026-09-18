@@ -511,10 +511,18 @@
         '<div class="live-chat-bubble"><p class="live-chat-pending">' + (roleClass === "is-seller" ? "No seller reply yet" : "No client message yet") + "</p></div>" +
       "</div>";
     }
+    const copy = text
+      ? '<button type="button" class="live-chat-copy" data-copy="' + escapeHtml(text) + '" title="Copy message" aria-label="Copy message">' + COPY_ICON + "</button>"
+      : "";
     return '<div class="live-chat-row ' + roleClass + '">' +
       '<span class="live-chat-avatar" aria-hidden="true">' + initial + "</span>" +
       '<div class="live-chat-bubble">' +
-        '<div class="live-chat-meta"><span>' + escapeHtml(who) + "</span>" + (stamp ? "<time>" + escapeHtml(stamp) + "</time>" : "") + "</div>" +
+        '<div class="live-chat-meta"><span>' + escapeHtml(who) + "</span>" +
+          '<span class="live-chat-meta-tools">' +
+            (stamp ? "<time>" + escapeHtml(stamp) + "</time>" : "") +
+            copy +
+          "</span>" +
+        "</div>" +
         (text ? '<p class="live-chat-text">' + escapeHtml(text) + "</p>" : "") +
         attachmentsHtml(files) +
       "</div>" +
@@ -2209,6 +2217,14 @@
     if (copyBtn) {
       event.preventDefault();
       copyText(copyBtn.getAttribute("data-copy"));
+      if (copyBtn.classList.contains("live-chat-copy")) {
+        copyBtn.classList.add("is-copied");
+        copyBtn.setAttribute("title", "Copied");
+        window.setTimeout(function () {
+          copyBtn.classList.remove("is-copied");
+          copyBtn.setAttribute("title", "Copy message");
+        }, 1200);
+      }
       return;
     }
 

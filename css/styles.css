@@ -4110,7 +4110,7 @@ body.modal-open {
 
 .live-chat-meta {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 4px;
@@ -4125,11 +4125,54 @@ body.modal-open {
   color: rgba(255, 255, 255, 0.72);
 }
 
+.live-chat-meta-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .live-chat-meta time {
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
   opacity: 0.85;
+}
+
+.live-chat-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.72;
+  cursor: pointer;
+}
+
+.live-chat-copy svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.live-chat-copy:hover,
+.live-chat-copy:focus-visible {
+  opacity: 1;
+  background: rgba(34, 56, 41, 0.08);
+}
+
+.live-chat-row.is-seller .live-chat-copy:hover,
+.live-chat-row.is-seller .live-chat-copy:focus-visible {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.live-chat-copy.is-copied {
+  opacity: 1;
 }
 
 .live-chat-text,
