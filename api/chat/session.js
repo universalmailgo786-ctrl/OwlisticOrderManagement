@@ -1,4 +1,4 @@
-const { verifyOwlisticLogin } = require("../_lib/owlistic-login");
+const { verifyOwlisticLogin, resolveOwlisticUser } = require("../_lib/owlistic-login");
 const { mintSupabaseJwt, emailForUsername, randomPassword } = require("../_lib/chat-jwt");
 const { adminClient, anonClient, SERVICE_KEY } = require("../_lib/supabase-admin");
 const { JWT_SECRET } = require("../_lib/env");
@@ -100,12 +100,16 @@ module.exports = async function handler(req, res) {
   const body = readJson(req);
   let login;
   try {
-    login = await verifyOwlisticLogin(body.username, body.password);
+    if (String(body.password || "").trim()) {
+      login = await verifyOwlisticLogin(body.username, body.password);
+    } else {
+      login = await resolveOwlisticUser(body.username);
+    }
   } catch (err) {
     return send(res, 502, { ok: false, error: "Could not reach the existing login service." });
   }
   if (!login.ok) {
-    return send(res, 401, { ok: false, error: login.error || "Wrong username or password." });
+    return send(res, 401, { ok: false, error: login.error || "Could not open Messages for this user." });
   }
 
   if (JWT_SECRET) {

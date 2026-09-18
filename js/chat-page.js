@@ -1366,6 +1366,7 @@
     setStatus("Loading…");
     try {
       await chat.ensureClient();
+      showError("");
     } catch (err) {
       showError(err.message || "Messages is not available yet.");
       setStatus("Offline", true);

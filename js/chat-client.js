@@ -130,6 +130,26 @@
     return current && current.chatAccessToken ? current.chatAccessToken : "";
   }
 
+  function tokenNeedsRefresh() {
+    const current = auth() && auth().getSession();
+    if (!current || !current.chatAccessToken) return true;
+    const exp = Number(current.chatExpiresAt || 0);
+    if (exp && exp < Math.floor(Date.now() / 1000) + 120) return true;
+    return false;
+  }
+
+  async function resumeSession() {
+    const current = auth() && auth().getSession();
+    if (!current || !current.username) {
+      throw new Error("Sign in to use Messages.");
+    }
+    const data = await requestSession(current.username, "");
+    if (!data || !data.ok) {
+      throw new Error((data && data.error) || "Messages is not available yet.");
+    }
+    return data;
+  }
+
   async function createClientFromSession() {
     const lib = supabaseLib();
     if (!lib || typeof lib.createClient !== "function") {
@@ -161,6 +181,11 @@
   }
 
   async function ensureClient() {
+    if (tokenNeedsRefresh()) {
+      client = null;
+      starting = null;
+      await resumeSession();
+    }
     if (client) return client;
     if (starting) return starting;
     starting = createClientFromSession().then(function (created) {
@@ -751,6 +776,7 @@
     isSuperAdminSender: isSuperAdminSender,
     isIncomingRow: isIncomingRow,
     requestSession: requestSession,
+    resumeSession: resumeSession,
     ensureClient: ensureClient,
     signOut: signOut,
     getOrCreateThread: getOrCreateThread,

@@ -432,6 +432,46 @@ function sanitizeClientOrder(order) {
   return copy;
 }
 
+async function getChatProfile(username) {
+  const wantedUser = lower(username);
+  if (!wantedUser) return { ok: false, error: "Username is required." };
+  if (isSuperAdminUsername(wantedUser) || wantedUser === "ashar") {
+    return {
+      ok: true,
+      username: SUPERADMIN_USERNAME,
+      role: "superadmin",
+      displayName: SUPERADMIN_DISPLAY_NAME,
+      account: ""
+    };
+  }
+  return withClient(async function (client) {
+    const row = (await client.query(
+      "select * from public.sheet_users where lower(username) = $1 limit 1",
+      [wantedUser]
+    )).rows[0];
+    if (!row) return { ok: false, error: "User was not found." };
+    if (row.active === false) return { ok: false, error: "This user is inactive." };
+    const role = normalizeRole(row.role);
+    const account = tabName(row.account);
+    if (role === "superadmin") {
+      return {
+        ok: true,
+        username: SUPERADMIN_USERNAME,
+        role: "superadmin",
+        displayName: SUPERADMIN_DISPLAY_NAME,
+        account: ""
+      };
+    }
+    return {
+      ok: true,
+      username: row.username,
+      role: role,
+      displayName: row.display_name || account || row.username,
+      account: account
+    };
+  });
+}
+
 async function login(data) {
   const wantedUser = lower(data.username);
   const wantedPass = String(data.password || "");
@@ -1245,6 +1285,7 @@ async function handle(data) {
 module.exports = {
   handle,
   login,
+  getChatProfile,
   listUsers,
   listOrders,
   upsertOrder,

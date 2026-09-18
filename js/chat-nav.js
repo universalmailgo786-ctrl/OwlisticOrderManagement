@@ -375,7 +375,19 @@
   async function refresh() {
     const api = chat();
     const session = auth() && auth().getSession();
-    if (!api || !session || !session.chatAccessToken) {
+    if (!api || !session) {
+      if (lastTotal == null) renderCount(0);
+      return;
+    }
+    if (!session.chatAccessToken && typeof api.ensureClient === "function") {
+      try {
+        await api.ensureClient();
+      } catch (err) {
+        if (lastTotal == null) renderCount(0);
+        return;
+      }
+    }
+    if (!session.chatAccessToken && !(auth().getSession() && auth().getSession().chatAccessToken)) {
       if (lastTotal == null) renderCount(0);
       return;
     }
@@ -441,7 +453,15 @@
   async function listen() {
     const api = chat();
     const session = auth() && auth().getSession();
-    if (!api || !session || !session.chatAccessToken) return;
+    if (!api || !session) return;
+    if (!session.chatAccessToken && typeof api.ensureClient === "function") {
+      try {
+        await api.ensureClient();
+      } catch (err) {
+        return;
+      }
+    }
+    if (!(auth().getSession() && auth().getSession().chatAccessToken)) return;
     const attempt = ++listenAttempt;
     try {
       await api.subscribeInbox({
