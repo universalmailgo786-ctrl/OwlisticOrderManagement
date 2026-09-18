@@ -1190,9 +1190,9 @@
   }
 
   function render() {
-    if (activeTab === "hanif-costing") return;
     const all = auth.visibleOrders();
     updateTabCounts(all);
+    if (activeTab === "hanif-costing") return;
     closeCompletePop();
     const revisionCount = maxRevisionCount(all);
     renderHead(revisionCount);
@@ -1738,6 +1738,139 @@
     }
   }
 
+  let liveTimer = null;
+  let liveInFlight = false;
+  let liveQueued = false;
+  let liveFullQueued = false;
+
+  function applyOrderDigest(result) {
+    if (!result || !result.ok || !result.orders) return { changed: false, missing: false };
+    const incoming = result.orders;
+    let changed = false;
+    let missing = false;
+    incoming.forEach(function (row) {
+      if (!row || !row.id) return;
+      const existing = store.getOrder(row.id, row);
+      if (!existing) {
+        missing = true;
+        store.upsertOrder({
+          id: row.id,
+          accountName: row.accountName || row.tabName || "",
+          tabName: row.tabName || row.accountName || "",
+          boardStatus: row.boardStatus || "in-progress",
+          overallStatus: row.overallStatus || "",
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt
+        });
+        changed = true;
+        return;
+      }
+      const nextTab = tabOf({
+        boardStatus: row.boardStatus,
+        overallStatus: row.overallStatus
+      }) || row.boardStatus || "";
+      const currentTab = tabOf(existing);
+      const incomingTs = Date.parse(row.updatedAt || "") || 0;
+      const localTs = Date.parse(existing.updatedAt || "") || 0;
+      if (nextTab && nextTab !== currentTab && (incomingTs >= localTs || incomingTs === 0)) {
+        if (store.setBoardStatus) store.setBoardStatus(existing, nextTab);
+        else {
+          existing.boardStatus = nextTab;
+          existing.overallStatus = (store.boardStatusLabel && store.boardStatusLabel(nextTab)) || nextTab;
+        }
+        if (row.updatedAt) existing.updatedAt = row.updatedAt;
+        store.upsertOrder(existing);
+        changed = true;
+        return;
+      }
+      if (incomingTs > localTs && row.updatedAt) {
+        existing.updatedAt = row.updatedAt;
+        if (nextTab && store.setBoardStatus) store.setBoardStatus(existing, nextTab);
+        store.upsertOrder(existing);
+        changed = true;
+      }
+    });
+    const local = store.getOrders ? store.getOrders() : [];
+    if (incoming.length && local.length && incoming.length > local.length) missing = true;
+    return { changed: changed, missing: missing };
+  }
+
+  function paintLiveOrders(result, fromDigest) {
+    if (fromDigest) {
+      const applied = applyOrderDigest(result);
+      if (applied.missing) {
+        refreshLive(true);
+        if (applied.changed) render();
+        return;
+      }
+      if (applied.changed) render();
+      return;
+    }
+    applySheetOrders(result);
+    renderAccountFilter();
+    render();
+    if (result && result.error && !auth.visibleOrders().length) {
+      body.innerHTML =
+        '<tr><td colspan="' + columnCount(0) + '"><div class="empty-state">' +
+          "<strong>Could not load sheet orders</strong>" +
+          "<p>" + escapeHtml(result.error) + "</p>" +
+        "</div></td></tr>";
+    }
+  }
+
+  function refreshLive(forceFull) {
+    const sheet = window.OwlisticSheet;
+    if (!sheet) return;
+    if (liveInFlight) {
+      liveQueued = true;
+      if (forceFull) liveFullQueued = true;
+      return;
+    }
+    const useFull = forceFull || typeof sheet.fetchOrderDigest !== "function";
+    const request = useFull
+      ? (typeof sheet.fetchOrders === "function" ? sheet.fetchOrders() : Promise.resolve(null))
+      : sheet.fetchOrderDigest();
+    if (!request) return;
+    liveInFlight = true;
+    request.then(function (result) {
+      paintLiveOrders(result, !useFull && result && result.ok);
+      if (!useFull && result && result.ok === false) {
+        refreshLive(true);
+      }
+    }).catch(function () {
+      render();
+    }).then(function () {
+      liveInFlight = false;
+      if (liveQueued) {
+        const full = liveFullQueued;
+        liveQueued = false;
+        liveFullQueued = false;
+        refreshLive(full);
+      }
+    });
+  }
+
+  function startLiveRefresh() {
+    if (liveTimer) window.clearInterval(liveTimer);
+    let fullTick = 0;
+    liveTimer = window.setInterval(function () {
+      if (document.hidden) return;
+      fullTick += 1;
+      refreshLive(fullTick % 10 === 0);
+    }, 1500);
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) refreshLive(false);
+    });
+    window.addEventListener("focus", function () {
+      refreshLive(false);
+    });
+    window.addEventListener("storage", function (event) {
+      if (event.key && event.key !== "owlistic.orders") return;
+      render();
+      refreshLive(false);
+    });
+  }
+
   function loadFromSheet() {
     if (!window.OwlisticSheet || typeof window.OwlisticSheet.fetchOrders !== "function") {
       render();
@@ -1747,39 +1880,23 @@
     if (cachedOrders.length) {
       renderAccountFilter();
       render();
-      countEl.textContent = "Refreshing…";
     } else {
       countEl.textContent = "Loading…";
       body.innerHTML =
         '<tr><td colspan="' + columnCount(0) + '"><div class="empty-state"><strong>Loading orders from Google Sheet</strong></div></td></tr>';
     }
-    const preloadTasks = [];
-    if (auth.fetchUserProfile) preloadTasks.push(auth.fetchUserProfile());
-    if (window.OwlisticSheet && typeof window.OwlisticSheet.fetchAccounts === "function") {
-      preloadTasks.push(window.OwlisticSheet.fetchAccounts());
+    if (auth.fetchUserProfile) auth.fetchUserProfile().catch(function () {});
+    if (window.OwlisticSheet.fetchAccounts) {
+      window.OwlisticSheet.fetchAccounts().then(function () {
+        renderAccountFilter();
+      }).catch(function () {});
     }
-    const preload = preloadTasks.length ? Promise.all(preloadTasks) : Promise.resolve();
-    const ordersPromise = window.OwlisticSheet.fetchOrders();
     if (window.OwlisticSheet.ensureScheduleColumns) {
       window.OwlisticSheet.ensureScheduleColumns().then(function (ensureResult) {
         refreshSheetUpgradeBanner(ensureResult);
       }).catch(function () {});
     }
-    Promise.all([preload, ordersPromise]).then(function (results) {
-      const result = results[1];
-      applySheetOrders(result);
-      renderAccountFilter();
-      render();
-      if (result && result.error && !auth.visibleOrders().length) {
-        body.innerHTML =
-          '<tr><td colspan="' + columnCount(0) + '"><div class="empty-state">' +
-            "<strong>Could not load sheet orders</strong>" +
-            "<p>" + escapeHtml(result.error) + "</p>" +
-          "</div></td></tr>";
-      }
-    }).catch(function () {
-      render();
-    });
+    refreshLive(true);
   }
 
   function showToast(message) {
@@ -2408,4 +2525,5 @@
     window.OwlisticHanifCosting.mount({ showToast: showToast });
   }
   loadFromSheet();
+  startLiveRefresh();
 })();

@@ -233,6 +233,12 @@ function isoFrom(datePart, timePart) {
   return isNaN(parsed.getTime()) ? "" : parsed.toISOString();
 }
 
+function isoStamp(value) {
+  if (!value) return "";
+  const parsed = value instanceof Date ? value : new Date(value);
+  return isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+}
+
 function orderFromRow(row, tab, files) {
   const r = (row || []).slice();
   while (r.length < HEADERS_LEN) r.push("");
@@ -564,6 +570,39 @@ async function getUserProfile(data) {
   });
 }
 
+async function listOrderDigest(data) {
+  const forced = forcedAccount(data);
+  const allowed = forced
+    ? [forced]
+    : String(data.tabs || "").split(",").map(tabName).filter(Boolean);
+  return withClient(async function (client) {
+    const result = await client.query(`
+      select order_id, tab_name, account_name, created_at, updated_at,
+             payload->>'boardStatus' as board_status,
+             payload->>'overallStatus' as overall_status
+      from public.sheet_orders
+      order by updated_at desc
+    `);
+    const filter = forced ? allowed : null;
+    const orders = [];
+    result.rows.forEach(function (row) {
+      const tab = row.tab_name || "";
+      const account = row.account_name || tab;
+      if (filter && !sheetMatchesAny(tab, filter) && !sheetMatchesAny(account, filter)) return;
+      orders.push({
+        id: row.order_id,
+        tabName: tab,
+        accountName: account,
+        boardStatus: row.board_status || "",
+        overallStatus: row.overall_status || "",
+        createdAt: isoStamp(row.created_at),
+        updatedAt: isoStamp(row.updated_at)
+      });
+    });
+    return { ok: true, action: "listOrderDigest", count: orders.length, orders: orders };
+  });
+}
+
 async function listOrders(data) {
   const forced = forcedAccount(data);
   const allowed = forced
@@ -583,6 +622,13 @@ async function listOrders(data) {
       payload.id = row.order_id;
       payload.tabName = tab;
       payload.accountName = account;
+      const stamped = isoStamp(row.updated_at);
+      if (stamped) {
+        const prev = Date.parse(payload.updatedAt || "") || 0;
+        const next = Date.parse(stamped) || 0;
+        if (next >= prev) payload.updatedAt = stamped;
+      }
+      if (!payload.createdAt && row.created_at) payload.createdAt = isoStamp(row.created_at);
       if (!payload.messageThread && payload.messageText) payload.messageThread = [];
       orders.push(payload);
     });
@@ -1159,6 +1205,7 @@ async function handle(data) {
   if (action === "listAccounts") return listAccounts(data);
   if (action === "getUserProfile" || action === "getAccountProfile") return getUserProfile(data);
   if (action === "listOrders") return listOrders(data);
+  if (action === "listOrderDigest") return listOrderDigest(data);
   if (action === "getOrder") return getOrder(data);
   if (action === "hasOrder") return hasOrder(data);
   if (action === "nextOrderId") return nextOrderId(data);

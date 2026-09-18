@@ -2248,7 +2248,7 @@
     const previousStatus = parseBoardStatus(previous.boardStatus) || parseBoardStatus(previous.overallStatus);
     const incomingUpdatedAt = Date.parse(order.updatedAt || "") || 0;
     const previousUpdatedAt = Date.parse(previous.updatedAt || "") || 0;
-    if (previousUpdatedAt > incomingUpdatedAt && previousStatus) {
+    if (incomingStatus && previousUpdatedAt > incomingUpdatedAt && incomingUpdatedAt > 0) {
       order.boardStatus = previous.boardStatus || previousStatus;
       order.overallStatus = previous.overallStatus || boardStatusLabel(previousStatus);
     } else {

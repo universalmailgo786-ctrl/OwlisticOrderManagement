@@ -2036,6 +2036,35 @@
     });
   }
 
+  function fetchOrderDigest() {
+    if (!isConfigured()) {
+      return Promise.resolve({ skipped: true, orders: [] });
+    }
+    const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+    const tabs = fetchTabNames(session);
+    const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+    const url = getWebAppUrl() + join +
+      "action=listOrderDigest" +
+      "&role=" + encodeURIComponent((session && session.role) || "") +
+      "&userAccount=" + encodeURIComponent((session && session.account) || "") +
+      "&username=" + encodeURIComponent((session && session.username) || "") +
+      "&tabs=" + encodeURIComponent(tabs.join(",")) +
+      "&_=" + Date.now();
+    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 12000).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      const data = parseJson(text);
+      if (!data) return { ok: false, error: "Could not read order updates.", orders: [] };
+      if (!data.ok) return { ok: false, error: data.error || "Could not load order updates.", orders: [] };
+      if (data.action && data.action !== "listOrderDigest") {
+        return { ok: false, error: "Order digest is not available.", orders: [] };
+      }
+      return { ok: true, orders: data.orders || [] };
+    }).catch(function () {
+      return { ok: false, error: "Could not reach order updates.", orders: [] };
+    });
+  }
+
   global.OwlisticSheet = {
     HEADERS: HEADERS,
     SPREADSHEET_ID: SPREADSHEET_ID,
@@ -2049,6 +2078,7 @@
     filesNeedingDrive: filesNeedingDrive,
     filesMissingDrive: filesMissingDrive,
     fetchOrders: fetchOrders,
+    fetchOrderDigest: fetchOrderDigest,
     updateOrderNames: updateOrderNames,
     updateOrderSchedule: updateOrderSchedule,
     ensureScheduleColumns: ensureScheduleColumns,

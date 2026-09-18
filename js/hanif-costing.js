@@ -823,17 +823,22 @@
 
   function onOrdersLoaded(orders) {
     if (!auth.isSuperAdmin()) return;
-    const panel = el("hanif-costing-panel");
-    if (panel && !panel.hidden) {
-      load(orders);
-    } else {
-      scheduleBackgroundSync(orders);
-    }
+    const source = orders || [];
     const countEl = document.querySelector('[data-tab-count="hanif-costing"]');
     if (countEl) {
-      const total = (orders || []).length;
-      countEl.textContent = String(total);
+      countEl.textContent = String(source.length);
     }
+    const panel = el("hanif-costing-panel");
+    if (panel && !panel.hidden) {
+      records = mergeOrders(source, records);
+      populateAccountFilter();
+      populateMonthYearFilters();
+      loading = false;
+      renderTable();
+      scheduleBackgroundSync(source);
+      return;
+    }
+    scheduleBackgroundSync(source);
   }
 
   function onOrderDeleted(orderId) {
