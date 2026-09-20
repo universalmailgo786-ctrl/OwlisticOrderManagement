@@ -1690,25 +1690,9 @@
 
   function applySheetOrders(result) {
     if (!result || result.skipped) return;
-    let list = result.orders || [];
-    if (store.getDeletedOrderIds && store.getDeletedOrderIds().length) {
-      const lingering = [];
-      list = list.filter(function (order) {
-        if (!order || !order.id) return false;
-        if (store.isDeletedOrder && store.isDeletedOrder(order.id)) {
-          lingering.push(order);
-          return false;
-        }
-        return true;
-      });
-      if (lingering.length && window.OwlisticSheet && typeof window.OwlisticSheet.deleteOrder === "function") {
-        lingering.forEach(function (order) {
-          window.OwlisticSheet.deleteOrder(order).then(function (deleted) {
-            if (deleted && deleted.ok && store.deleteOrder) store.deleteOrder(order.id);
-          }).catch(function () {});
-        });
-      }
-    }
+    const list = result.orders || [];
+    // If the server still has an ID this browser once deleted, the row is live
+    // again (or was never removed). Never push deleteOrder from a poll.
     const repairBefore = {};
     list.forEach(function (order) {
       if (!order || !order.id) return;
@@ -1725,6 +1709,7 @@
       if (window.OwlisticSheet && typeof window.OwlisticSheet.sync === "function") {
         store.getOrders().forEach(function (order) {
           const before = repairBefore[order.id];
+          if (!before) return;
           const needsRepair = store.orderNeedsProfileRepair
             ? store.orderNeedsProfileRepair(before, order)
             : (!String(before.fiverrId || "").trim() && String(order.fiverrId || "").trim());
@@ -1769,7 +1754,8 @@
           boardStatus: row.boardStatus || "in-progress",
           overallStatus: row.overallStatus || "",
           createdAt: row.createdAt,
-          updatedAt: row.updatedAt
+          updatedAt: row.updatedAt,
+          pendingSave: false
         });
         changed = true;
         return;
@@ -1799,14 +1785,10 @@
         changed = true;
       }
     });
-    if (store.pruneGoneOrders) {
+    if (auth.isSuperAdmin && auth.isSuperAdmin()) {
       const liveIds = incoming.map(function (row) { return row && row.id; }).filter(Boolean);
       const localCount = (store.getOrders() || []).length;
-      if (auth.isSuperAdmin && auth.isSuperAdmin() && !liveIds.length && localCount > 2) {
-        missing = true;
-      } else if (store.pruneGoneOrders(liveIds)) {
-        changed = true;
-      }
+      if (!liveIds.length && localCount > 2) missing = true;
     }
     const local = store.getOrders ? store.getOrders() : [];
     if (incoming.length && local.length && incoming.length > local.length) missing = true;

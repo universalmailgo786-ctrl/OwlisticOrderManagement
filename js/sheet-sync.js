@@ -1903,13 +1903,17 @@
                 }
                 if (result.order && store && typeof store.upsertOrder === "function") {
                   store.upsertOrder(Object.assign({}, current, result.order, {
-                    id: result.orderId || current.id
+                    id: result.orderId || current.id,
+                    pendingSave: false
                   }));
                 }
                 const missing = result.missingDriveFiles || [];
                 result.ok = missing.length === 0;
                 result.confirmed = missing.length === 0;
                 result.orderId = result.orderId || current.id;
+                if (result.confirmed && store && typeof store.markOrderSaved === "function") {
+                  store.markOrderSaved(result.orderId);
+                }
                 if (missing.length) {
                   result.error = missing.length === 1
                     ? missing[0] + " is not in Google Drive. Re-attach it and click Save."
@@ -1929,6 +1933,9 @@
                 result.confirmed = true;
                 result.orderId = current.id;
                 result.tab = confirm.tab || "";
+                if (store && typeof store.markOrderSaved === "function") {
+                  store.markOrderSaved(current.id);
+                }
                 return result;
               }
               return retry();

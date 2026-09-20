@@ -1895,6 +1895,12 @@
       order.messageText = formatMessageThread(order.messageThread);
     }
     fillOrderAccountProfile(order, existing);
+    // A local tombstone must never swallow a save. Server rows revive the ID;
+    // a form save that still carries a deleted ID gets a new live ID instead.
+    if (order.id && isDeletedOrder(order.id)) {
+      if (order.pendingSave === false) forgetDeletedOrder(order.id);
+      else order.id = "";
+    }
     if (!order.id) {
       let id = nextOrderId();
       let guard = 0;
@@ -1905,24 +1911,41 @@
       order.id = id;
       order.createdAt = stamp;
       order.updatedAt = stamp;
+      if (order.pendingSave == null) order.pendingSave = true;
       rememberOrderNumber(order.id);
       forgetDeletedOrder(order.id);
       orders.push(order);
     } else {
-      if (isDeletedOrder(order.id)) return existing || order;
       const index = orders.findIndex(function (item) { return sameOrderIdentity(item, order); });
       if (index === -1) {
         order.createdAt = order.createdAt || stamp;
         order.updatedAt = stamp;
+        if (order.pendingSave == null) order.pendingSave = true;
         orders.push(order);
       } else {
         order.createdAt = orders[index].createdAt || stamp;
         order.updatedAt = stamp;
+        if (order.pendingSave == null) order.pendingSave = Boolean(orders[index].pendingSave);
         orders[index] = order;
       }
     }
     saveOrders(orders);
     return order;
+  }
+
+  function markOrderSaved(id) {
+    const wanted = String(id || "").trim();
+    if (!wanted) return;
+    const orders = getOrders();
+    let changed = false;
+    orders.forEach(function (item) {
+      if (!item || item.id !== wanted) return;
+      if (item.pendingSave) {
+        item.pendingSave = false;
+        changed = true;
+      }
+    });
+    if (changed) saveOrders(orders);
   }
 
   function getDeletedOrderIds() {
@@ -2273,37 +2296,27 @@
 
   function isFreshUnsyncedOrder(order) {
     if (!order || !order.id || isDeletedOrder(order.id)) return false;
+    if (order.pendingSave) return true;
     const ts = Date.parse(order.createdAt || "") || 0;
     if (!ts) return false;
     return (Date.now() - ts) < 60000;
   }
 
-  function pruneGoneOrders(liveIds) {
-    const keep = {};
-    (liveIds || []).forEach(function (id) {
-      const key = String(id || "").trim();
-      if (key) keep[key] = true;
-    });
-    const before = getOrders();
-    const next = before.filter(function (item) {
-      if (!item || !item.id) return false;
-      if (isDeletedOrder(item.id)) return false;
-      if (keep[item.id]) return true;
-      return isFreshUnsyncedOrder(item);
-    });
-    if (next.length === before.length) return false;
-    saveOrders(next);
-    return true;
+  function pruneGoneOrders() {
+    // Live lists can be account-filtered or briefly stale. Never drop a saved
+    // order just because this poll did not include it.
+    return false;
   }
 
   function importOrders(incoming) {
     const orders = getOrders();
     (incoming || []).forEach(function (order) {
       if (!order || !order.id) return;
-      if (isDeletedOrder(order.id)) return;
+      if (isDeletedOrder(order.id)) forgetDeletedOrder(order.id);
       const index = orders.findIndex(function (item) { return sameOrderIdentity(item, order); });
       const previous = index === -1 ? null : orders[index];
       const next = hydrateImportedOrder(order, previous);
+      next.pendingSave = false;
       rememberOrderNumber(next.id);
       if (index === -1) orders.push(next);
       else orders[index] = next;
@@ -2318,9 +2331,10 @@
     const seen = {};
     (incoming || []).forEach(function (order) {
       if (!order || !order.id) return;
-      if (isDeletedOrder(order.id)) return;
+      if (isDeletedOrder(order.id)) forgetDeletedOrder(order.id);
       const previous = previousAll.find(function (item) { return sameOrderIdentity(item, order); }) || null;
       const hydrated = hydrateImportedOrder(order, previous);
+      hydrated.pendingSave = false;
       rememberOrderNumber(hydrated.id);
       seen[hydrated.id] = true;
       next.push(hydrated);
@@ -2328,7 +2342,7 @@
     previousAll.forEach(function (item) {
       if (!item || !item.id || seen[item.id]) return;
       if (isDeletedOrder(item.id)) return;
-      if (!isFreshUnsyncedOrder(item)) return;
+      if (!(item.pendingSave || isFreshUnsyncedOrder(item))) return;
       seen[item.id] = true;
       next.push(item);
     });
@@ -2401,6 +2415,7 @@
     sameOrderIdentity: sameOrderIdentity,
     accountKeyOf: accountKeyOf,
     upsertOrder: upsertOrder,
+    markOrderSaved: markOrderSaved,
     fillOrderAccountProfile: fillOrderAccountProfile,
     orderNeedsProfileRepair: orderNeedsProfileRepair,
     applyManualSchedule: applyManualSchedule,

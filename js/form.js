@@ -1402,7 +1402,7 @@
       applySavedOrder(live);
       if (syncResult && syncResult.skipped) {
         showToast("Order " + saved.id + " saved locally. Connect Google Sheet to sync.");
-        return { saved: saved, sheet: syncResult };
+        return { saved: saved, sheet: syncResult, confirmed: false };
       }
       if (syncResult && (syncResult.ok === false || syncResult.confirmed === false)) {
         return { saved: saved, sheet: syncResult, confirmed: false, sheetFailed: true };
@@ -1410,10 +1410,12 @@
       if (syncResult && syncResult.missingDriveFiles && syncResult.missingDriveFiles.length) {
         return { saved: saved, sheet: syncResult, confirmed: false, sheetFailed: true };
       }
+      const confirmed = Boolean(syncResult && (syncResult.confirmed || syncResult.ok));
+      if (confirmed && store.markOrderSaved) store.markOrderSaved(saved.id);
       return {
         saved: saved,
         sheet: syncResult,
-        confirmed: Boolean(syncResult && syncResult.confirmed),
+        confirmed: confirmed,
         duplicate: false
       };
     }).catch(function (err) {
@@ -2421,8 +2423,9 @@
         const saved = (outcome.saved && outcome.saved.id)
           ? outcome.saved
           : (store.getOrder(document.getElementById("order-id").value) || null);
+        const idLabel = saved && saved.id ? saved.id : "";
+        showToast(idLabel ? ("Order " + idLabel + " is saved.") : "Order is saved.", 5000);
         goToDefaultPage();
-        showToast("Order saved" + (saved && saved.id ? " as " + saved.id : "") + ".", 5000);
         return;
       }
       showToast((outcome.sheet && outcome.sheet.error) || "Could not save this order. Try Save again.", 5000);
