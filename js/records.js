@@ -1705,11 +1705,13 @@
       };
     });
     if (result.ok && typeof store.replaceOrders === "function") {
+      if (!list.length && store.getOrders && store.getOrders().length) return;
       store.replaceOrders(list);
       if (window.OwlisticSheet && typeof window.OwlisticSheet.sync === "function") {
         store.getOrders().forEach(function (order) {
           const before = repairBefore[order.id];
           if (!before) return;
+          if (order.pendingSave) return;
           const needsRepair = store.orderNeedsProfileRepair
             ? store.orderNeedsProfileRepair(before, order)
             : (!String(before.fiverrId || "").trim() && String(order.fiverrId || "").trim());
@@ -1743,7 +1745,10 @@
     let missing = false;
     incoming.forEach(function (row) {
       if (!row || !row.id) return;
-      if (store.isDeletedOrder && store.isDeletedOrder(row.id)) return;
+      if (store.isDeletedOrder && store.isDeletedOrder(row.id)) {
+        missing = true;
+        return;
+      }
       const existing = store.getOrder(row.id, row);
       if (!existing) {
         missing = true;

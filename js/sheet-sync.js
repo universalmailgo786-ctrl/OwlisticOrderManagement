@@ -1291,13 +1291,16 @@
 
     return fetchNextOrderId().then(function (remoteId) {
       return hasOrder(current).then(function (result) {
+        if (result && (result.skipped || result.unsupported)) {
+          return current;
+        }
         if (result && result.found) {
-          if (forceNew && remoteId) {
+          if (forceNew && remoteId && remoteId !== current.id) {
             return adoptId(current, remoteId);
           }
           return current;
         }
-        if (remoteId && (!current.id || forceNew || orderIdNumber(remoteId) > orderIdNumber(current.id))) {
+        if (!current.id && remoteId) {
           return adoptId(current, remoteId);
         }
         return current;
@@ -1343,7 +1346,7 @@
       }
       return { ok: Boolean(data.ok), found: Boolean(data.found), tab: data.tab || "" };
     }).catch(function () {
-      return { ok: false, found: false };
+      return { ok: false, found: false, skipped: true };
     });
   }
 

@@ -1365,6 +1365,7 @@
   function claimFreeOrderId(saved) {
     const sheet = window.OwlisticSheet;
     if (!sheet || !saved) return Promise.resolve(saved);
+    if (!saved.isNewOrder) return Promise.resolve(saved);
     const nextIdPromise = typeof sheet.fetchNextOrderId === "function"
       ? sheet.fetchNextOrderId()
       : Promise.resolve("");
@@ -1374,7 +1375,7 @@
     return Promise.all([nextIdPromise, hasPromise]).then(function (parts) {
       const remoteId = String(parts[0] || "").trim();
       const has = parts[1] || {};
-      if (has.found || has.skipped) return saved;
+      if (has.skipped || !has.found) return saved;
       if (!remoteId || remoteId === saved.id) return saved;
       if (store.adoptOrderId) store.adoptOrderId(saved.id, remoteId, saved);
       saved.id = remoteId;
@@ -1510,12 +1511,7 @@
       const tab = saved.tabName || saved.accountName || "";
       window.history.replaceState({}, "", "index.html?order=" + encodeURIComponent(saved.id) + (tab ? "&tab=" + encodeURIComponent(tab) : ""));
     }
-    if (lastClaimedOrderId !== saved.id) {
-      lastClaimedOrderId = saved.id;
-      claimFreeOrderId(saved).then(function (next) {
-        if (next && next.id) lastClaimedOrderId = next.id;
-      });
-    }
+    lastClaimedOrderId = saved.id;
     return saved;
   }
 
@@ -1896,7 +1892,10 @@
     Promise.all([ordersPromise, profilePromise, accountsPromise]).then(function (parts) {
       const result = parts[0];
       if (result && result.ok && typeof store.replaceOrders === "function") {
-        store.replaceOrders(result.orders || []);
+        const incoming = result.orders || [];
+        if (incoming.length || !(store.getOrders && store.getOrders().length)) {
+          store.replaceOrders(incoming);
+        }
       } else if (result && result.orders && result.orders.length) {
         store.importOrders(result.orders);
       }

@@ -1925,7 +1925,7 @@
       } else {
         order.createdAt = orders[index].createdAt || stamp;
         order.updatedAt = stamp;
-        if (order.pendingSave == null) order.pendingSave = Boolean(orders[index].pendingSave);
+        if (order.pendingSave == null) order.pendingSave = true;
         orders[index] = order;
       }
     }
@@ -2297,15 +2297,28 @@
   function isFreshUnsyncedOrder(order) {
     if (!order || !order.id || isDeletedOrder(order.id)) return false;
     if (order.pendingSave) return true;
-    const ts = Date.parse(order.createdAt || "") || 0;
+    const created = Date.parse(order.createdAt || "") || 0;
+    const updated = Date.parse(order.updatedAt || "") || 0;
+    const ts = Math.max(created, updated);
     if (!ts) return false;
-    return (Date.now() - ts) < 60000;
+    return (Date.now() - ts) < 120000;
   }
 
   function pruneGoneOrders() {
     // Live lists can be account-filtered or briefly stale. Never drop a saved
     // order just because this poll did not include it.
     return false;
+  }
+
+  function keepPendingSave(previous, incoming, hydrated) {
+    if (!previous || !previous.pendingSave) {
+      hydrated.pendingSave = false;
+      return hydrated;
+    }
+    const incomingTs = Date.parse((incoming && incoming.updatedAt) || "") || 0;
+    const previousTs = Date.parse(previous.updatedAt || "") || 0;
+    hydrated.pendingSave = previousTs >= incomingTs;
+    return hydrated;
   }
 
   function importOrders(incoming) {
@@ -2315,8 +2328,7 @@
       if (isDeletedOrder(order.id)) forgetDeletedOrder(order.id);
       const index = orders.findIndex(function (item) { return sameOrderIdentity(item, order); });
       const previous = index === -1 ? null : orders[index];
-      const next = hydrateImportedOrder(order, previous);
-      next.pendingSave = false;
+      const next = keepPendingSave(previous, order, hydrateImportedOrder(order, previous));
       rememberOrderNumber(next.id);
       if (index === -1) orders.push(next);
       else orders[index] = next;
@@ -2327,14 +2339,15 @@
 
   function replaceOrders(incoming) {
     const previousAll = getOrders();
+    const rows = incoming || [];
+    if (!rows.length && previousAll.length) return previousAll;
     const next = [];
     const seen = {};
-    (incoming || []).forEach(function (order) {
+    rows.forEach(function (order) {
       if (!order || !order.id) return;
       if (isDeletedOrder(order.id)) forgetDeletedOrder(order.id);
       const previous = previousAll.find(function (item) { return sameOrderIdentity(item, order); }) || null;
-      const hydrated = hydrateImportedOrder(order, previous);
-      hydrated.pendingSave = false;
+      const hydrated = keepPendingSave(previous, order, hydrateImportedOrder(order, previous));
       rememberOrderNumber(hydrated.id);
       seen[hydrated.id] = true;
       next.push(hydrated);
