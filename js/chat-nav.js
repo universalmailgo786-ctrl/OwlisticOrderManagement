@@ -501,8 +501,11 @@
     askPermission();
     refresh();
     listen();
-    const pollMs = Number(config.pollMs || 4000);
-    timer = window.setInterval(refresh, pollMs);
+    const pollMs = Number(config.pollMs || 15000);
+    timer = window.setInterval(function () {
+      if (document.hidden) return;
+      refresh();
+    }, pollMs);
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) refresh();
     });

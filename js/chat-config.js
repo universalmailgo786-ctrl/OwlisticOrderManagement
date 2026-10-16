@@ -9,7 +9,8 @@ window.OwlisticChatConfig = {
   deleteUrl: "/api/chat/delete-message",
   purgeUrl: "/api/chat/purge-files",
   pageSize: 40,
-  pollMs: 4000,
+  // Fallback only — Realtime + focus/visibility keep chat live.
+  pollMs: 15000,
   maxAttachmentBytes: 10 * 1024 * 1024,
   maxPending: 8,
   adminName: "Ashar",

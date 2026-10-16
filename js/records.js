@@ -1857,12 +1857,16 @@
 
   function startLiveRefresh() {
     if (liveTimer) window.clearInterval(liveTimer);
+    // Background sync only — focus/visibility still refresh immediately.
+    // ~8s digests cut egress vs the old 1.5s loop without feeling stale.
+    const LIVE_POLL_MS = 8000;
+    const FULL_EVERY_TICKS = 4;
     let fullTick = 0;
     liveTimer = window.setInterval(function () {
       if (document.hidden) return;
       fullTick += 1;
-      refreshLive(fullTick % 10 === 0);
-    }, 1500);
+      refreshLive(fullTick % FULL_EVERY_TICKS === 0);
+    }, LIVE_POLL_MS);
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) refreshLive(false);
     });

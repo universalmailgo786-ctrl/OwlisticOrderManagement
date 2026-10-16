@@ -1413,9 +1413,10 @@
       await openThread(me.username, false);
     }
     window.setInterval(function () {
+      if (document.hidden) return;
       if (me.isSuperAdmin) loadInbox({ silent: true });
       syncOpenMessages();
-    }, Number(config.pollMs || 4000));
+    }, Number(config.pollMs || 15000));
   }
 
   boot();
