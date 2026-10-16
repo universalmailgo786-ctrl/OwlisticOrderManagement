@@ -161,20 +161,34 @@ function preserveSlimOnUpsert(prev, incoming) {
   return next;
 }
 
+async function fetchWithTimeout(url, options, ms) {
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = setTimeout(function () {
+    if (controller) controller.abort();
+  }, ms);
+  try {
+    return await fetch(url, Object.assign({}, options || {}, controller ? { signal: controller.signal } : {}));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function tryDeleteDriveFiles(ids) {
-  const result = { attempted: ids.length, deleted: 0, skipped: 0, errors: [] };
-  if (!ids.length) return result;
+  const result = { attempted: 0, deleted: 0, skipped: 0, errors: [] };
+  const list = (ids || []).slice(0, 25);
+  if (!list.length) return result;
   const driveUrl =
     process.env.OWLISTIC_DRIVE_URL ||
     "https://script.google.com/macros/s/AKfycbwlWvSU1b8SJ42_3xdrrl1w7GhUiezAjBN85w9MvD-uFc-jg8m6OGJdGJRLm-fLIdl2/exec";
-  for (let i = 0; i < ids.length; i++) {
-    const fileId = ids[i];
+  for (let i = 0; i < list.length; i++) {
+    const fileId = list[i];
+    result.attempted += 1;
     try {
-      const response = await fetch(driveUrl, {
+      const response = await fetchWithTimeout(driveUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "deleteDriveFile", fileId: fileId, id: fileId })
-      });
+      }, 5000);
       const text = await response.text();
       let data = null;
       try { data = JSON.parse(text); } catch (err) { data = null; }
@@ -241,7 +255,8 @@ async function purgeCompletedOrders(options) {
         [orderId]
       )).rows[0];
       const hanif = (hanifRow && hanifRow.payload) || {};
-      const driveIds = collectDriveIds(item.payload);
+      const skipDrive = Boolean(options && options.skipDrive);
+      const driveIds = skipDrive ? [] : collectDriveIds(item.payload);
       if (driveIds.length) {
         const removed = await tryDeleteDriveFiles(driveIds);
         drive.attempted += removed.attempted;

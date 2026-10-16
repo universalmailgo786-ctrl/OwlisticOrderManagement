@@ -57,7 +57,25 @@ module.exports = async function handler(req, res) {
 
   try {
     if (POSTGRES_URL) {
-      out.completedOrders = await runCompletedOrderCleanup();
+      // Hobby cron is 60s: archive text fields in DB first (removes media from the app).
+      // Drive trash is attempted with short timeouts on a small batch afterward.
+      out.completedOrders = await runCompletedOrderCleanup({
+        maxRounds: 4,
+        limit: 30,
+        skipDrive: true
+      });
+      try {
+        out.completedOrdersDrive = await runCompletedOrderCleanup({
+          maxRounds: 1,
+          limit: 4,
+          skipDrive: false
+        });
+      } catch (driveErr) {
+        out.completedOrdersDrive = {
+          ok: false,
+          error: driveErr.message || "Drive cleanup skipped"
+        };
+      }
     } else {
       out.completedOrders = { ok: false, skipped: true, error: "Postgres is not configured." };
     }

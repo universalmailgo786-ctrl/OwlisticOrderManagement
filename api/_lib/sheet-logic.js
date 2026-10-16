@@ -1278,9 +1278,16 @@ async function handle(data) {
   if (action === "deleteOrder") return deleteOrder(data);
   if (action === "updateOrderStatus") return updateOrderStatus(data);
   if (action === "purgeCompletedOrders") {
-    if (isRestricted(data)) return { ok: false, error: "Only Super Admin can purge completed orders." };
+    const role = normalizeRole(data.role);
+    if (role !== "superadmin" && !isSuperAdminUsername(data.username)) {
+      return { ok: false, error: "Only Super Admin can purge completed orders." };
+    }
     if (data.dryRun) return purgeCompletedOrders({ dryRun: true, limit: data.limit });
-    return runCompletedOrderCleanup({ limit: data.limit, maxRounds: data.maxRounds });
+    return runCompletedOrderCleanup({
+      limit: data.limit,
+      maxRounds: data.maxRounds,
+      skipDrive: data.skipDrive === true || data.skipDrive === "1"
+    });
   }
   if (action === "updateOrderSchedule") return updateOrderSchedule(data);
   if (action === "updateOrderNames") return updateOrderNames(data);
