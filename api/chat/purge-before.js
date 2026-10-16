@@ -3,15 +3,19 @@ const { JWT_SECRET, SERVICE_KEY } = require("../_lib/env");
 const { adminClient } = require("../_lib/supabase-admin");
 const { cors, readJson, send, bearer, queryOf } = require("../_lib/http");
 const {
+  RETENTION_DAYS,
+  cutoffIso,
+  runChatCleanup,
   cleanupExpiredMessages,
   cleanupOrphanAttachments,
   cleanupOrphanLegacyImages
 } = require("../_lib/chat-cleanup");
 
-const DEFAULT_CUTOFF = "2026-10-01T00:00:00.000Z";
-
 function parseCutoff(value) {
-  const raw = String(value || DEFAULT_CUTOFF).trim() || DEFAULT_CUTOFF;
+  if (value == null || String(value).trim() === "") {
+    return cutoffIso();
+  }
+  const raw = String(value).trim();
   const date = new Date(raw);
   if (isNaN(date.getTime())) return null;
   return date.toISOString();
@@ -80,9 +84,31 @@ module.exports = async function handler(req, res) {
       return send(res, 200, {
         ok: true,
         dryRun: true,
+        retentionDays: RETENTION_DAYS,
         cutoff: cutoff,
         messagesBeforeCutoff: before,
         messagesToKeep: keep
+      });
+    }
+
+    const full = body.full === true || String(query.full || "") === "1";
+    if (full) {
+      const result = await runChatCleanup({
+        admin: admin,
+        cutoff: cutoff,
+        limit: limit,
+        maxRounds: Number(body.maxRounds || query.maxRounds || 20)
+      });
+      return send(res, 200, {
+        ok: true,
+        retentionDays: RETENTION_DAYS,
+        cutoff: cutoff,
+        before: { messagesBeforeCutoff: before, messagesToKeep: keep },
+        result: result,
+        after: {
+          messagesBeforeCutoff: await countBefore(admin, cutoff),
+          messagesToKeep: await countKeep(admin, cutoff)
+        }
       });
     }
 
@@ -96,6 +122,7 @@ module.exports = async function handler(req, res) {
 
     return send(res, 200, {
       ok: true,
+      retentionDays: RETENTION_DAYS,
       cutoff: cutoff,
       before: { messagesBeforeCutoff: before, messagesToKeep: keep },
       expired: expired,

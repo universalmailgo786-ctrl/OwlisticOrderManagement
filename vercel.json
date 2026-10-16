@@ -20,7 +20,7 @@
   "crons": [
     {
       "path": "/api/cron/chat-cleanup",
-      "schedule": "0 3 * * *"
+      "schedule": "0 3,15 * * *"
     }
   ]
 }

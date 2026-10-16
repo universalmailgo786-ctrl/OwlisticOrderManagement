@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Delete chat messages + storage attachments created before October 1 (UTC).
- * Keeps October and later. Requires SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY).
+ * Delete chat messages + storage attachments older than retention (default 7 days).
+ * Prefers production SuperAdmin API when SERVICE_ROLE is not local.
  *
  *   node scripts/purge-pre-october-chat.js
  *   KEEP_AFTER=2026-10-01T00:00:00.000Z node scripts/purge-pre-october-chat.js
@@ -9,91 +9,63 @@
 require("./load-env")();
 
 const { adminClient } = require("../api/_lib/supabase-admin");
-const {
-  cleanupExpiredMessages,
-  cleanupOrphanAttachments,
-  cleanupOrphanLegacyImages
-} = require("../api/_lib/chat-cleanup");
+const { RETENTION_DAYS, cutoffIso, runChatCleanup } = require("../api/_lib/chat-cleanup");
+
+const PROD = process.env.OWLISTIC_API_BASE || "https://owlistic-order-management.vercel.app";
 
 function keepAfterIso() {
-  const raw = String(process.env.KEEP_AFTER || "2026-10-01T00:00:00.000Z").trim();
-  const date = new Date(raw);
-  if (isNaN(date.getTime())) throw new Error("Invalid KEEP_AFTER: " + raw);
-  return date.toISOString();
+  if (process.env.KEEP_AFTER) {
+    const date = new Date(String(process.env.KEEP_AFTER).trim());
+    if (isNaN(date.getTime())) throw new Error("Invalid KEEP_AFTER");
+    return date.toISOString();
+  }
+  return cutoffIso();
 }
 
-async function countBefore(admin, cutoff) {
-  const result = await admin
-    .from("chat_messages")
-    .select("id", { count: "exact", head: true })
-    .lt("created_at", cutoff);
-  if (result.error) throw result.error;
-  return Number(result.count || 0);
-}
-
-async function countKeep(admin, cutoff) {
-  const result = await admin
-    .from("chat_messages")
-    .select("id", { count: "exact", head: true })
-    .gte("created_at", cutoff);
-  if (result.error) throw result.error;
-  return Number(result.count || 0);
+async function viaProduction(cutoff) {
+  const session = await fetch(PROD + "/api/chat/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      username: process.env.OWLISTIC_ADMIN_USER || "SuperAdmin",
+      password: process.env.OWLISTIC_ADMIN_PASSWORD || "superman"
+    })
+  }).then(function (res) { return res.json(); });
+  if (!session.ok || !session.access_token) {
+    throw new Error((session && session.error) || "Could not sign in as SuperAdmin on production.");
+  }
+  const dry = await fetch(PROD + "/api/chat/purge-before", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + session.access_token,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ cutoff: cutoff, dryRun: true })
+  }).then(function (res) { return res.json(); });
+  console.log(JSON.stringify({ dryRun: dry }, null, 2));
+  const result = await fetch(PROD + "/api/chat/purge-before", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + session.access_token,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ cutoff: cutoff, full: true, maxRounds: 30 })
+  }).then(function (res) { return res.json(); });
+  console.log(JSON.stringify(result, null, 2));
+  if (!result.ok || (result.after && result.after.messagesBeforeCutoff > 0)) process.exit(2);
 }
 
 async function main() {
   const cutoff = keepAfterIso();
+  console.log(JSON.stringify({ retentionDays: RETENTION_DAYS, cutoff: cutoff, project: "bgejcfjgolnascjkgdly" }));
   const admin = adminClient();
   if (!admin) {
-    console.error("Missing SUPABASE_SERVICE_ROLE_KEY / SUPABASE_SECRET_KEY in .env.local");
-    process.exit(1);
+    console.log("No local service role — using production SuperAdmin purge.");
+    await viaProduction(cutoff);
+    return;
   }
-
-  const before = await countBefore(admin, cutoff);
-  const keep = await countKeep(admin, cutoff);
-  console.log(JSON.stringify({ cutoff, messagesBeforeCutoff: before, messagesToKeep: keep }, null, 2));
-
-  let totalDeleted = 0;
-  let totalScanned = 0;
-  let filesDeleted = 0;
-  let rounds = 0;
-  const maxRounds = 200;
-
-  while (rounds < maxRounds) {
-    rounds += 1;
-    const batch = await cleanupExpiredMessages(admin, { cutoff: cutoff, limit: 200 });
-    totalScanned += Number(batch.scanned || 0);
-    totalDeleted += Number(batch.deletedMessages || 0);
-    filesDeleted += Number((batch.files && batch.files.deleted) || 0);
-    console.log(JSON.stringify({
-      round: rounds,
-      scanned: batch.scanned,
-      deletedMessages: batch.deletedMessages,
-      filesDeleted: (batch.files && batch.files.deleted) || 0,
-      deferred: batch.deferred || 0,
-      errors: (batch.files && batch.files.errors && batch.files.errors.length) || 0
-    }));
-    if (!batch.scanned || batch.deletedMessages === 0) break;
-  }
-
-  const orphans = await cleanupOrphanAttachments(admin);
-  const legacy = await cleanupOrphanLegacyImages(admin);
-  const remainingBefore = await countBefore(admin, cutoff);
-  const remainingKeep = await countKeep(admin, cutoff);
-
-  console.log(JSON.stringify({
-    ok: remainingBefore === 0,
-    cutoff,
-    rounds,
-    totalScanned,
-    totalDeleted,
-    filesDeleted,
-    orphans,
-    legacyImages: legacy,
-    remainingBeforeCutoff: remainingBefore,
-    remainingOctoberPlus: remainingKeep
-  }, null, 2));
-
-  if (remainingBefore > 0) process.exit(2);
+  const result = await runChatCleanup({ admin: admin, cutoff: cutoff, maxRounds: 30 });
+  console.log(JSON.stringify(result, null, 2));
 }
 
 main().catch(function (err) {

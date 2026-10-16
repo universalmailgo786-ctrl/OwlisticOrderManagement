@@ -7,8 +7,9 @@ const {
   deleteStorageObjects
 } = require("./chat-files");
 
-const RETENTION_DAYS = 10;
+const RETENTION_DAYS = 7;
 const MESSAGE_BATCH = 200;
+const CLEANUP_MAX_ROUNDS = 15;
 const ORPHAN_AGE_MS = 24 * 60 * 60 * 1000;
 
 function cutoffIso(now) {
@@ -188,13 +189,40 @@ async function runChatCleanup(options) {
   if (!admin) {
     throw new Error("Server storage credentials are not configured.");
   }
-  const expired = await cleanupExpiredMessages(admin, options);
+  const maxRounds = Math.max(
+    1,
+    Math.min(40, Number((options && options.maxRounds) || CLEANUP_MAX_ROUNDS))
+  );
+  const totals = {
+    scanned: 0,
+    deletedMessages: 0,
+    deferred: 0,
+    files: { deleted: 0, missing: 0, errors: [] },
+    rounds: 0,
+    cutoff: (options && options.cutoff) || cutoffIso()
+  };
+  for (let round = 0; round < maxRounds; round++) {
+    const batch = await cleanupExpiredMessages(admin, options);
+    totals.rounds += 1;
+    totals.cutoff = batch.cutoff || totals.cutoff;
+    totals.scanned += Number(batch.scanned || 0);
+    totals.deletedMessages += Number(batch.deletedMessages || 0);
+    totals.deferred += Number(batch.deferred || 0);
+    if (batch.files) {
+      totals.files.deleted += Number(batch.files.deleted || 0);
+      totals.files.missing += Number(batch.files.missing || 0);
+      if (batch.files.errors && batch.files.errors.length) {
+        totals.files.errors = totals.files.errors.concat(batch.files.errors);
+      }
+    }
+    if (!batch.scanned || !batch.deletedMessages) break;
+  }
   const orphans = await cleanupOrphanAttachments(admin);
   const legacy = await cleanupOrphanLegacyImages(admin);
   return {
     ok: true,
     retentionDays: RETENTION_DAYS,
-    expired: expired,
+    expired: totals,
     orphans: orphans,
     legacyImages: legacy
   };
@@ -203,6 +231,7 @@ async function runChatCleanup(options) {
 module.exports = {
   RETENTION_DAYS,
   MESSAGE_BATCH,
+  CLEANUP_MAX_ROUNDS,
   cutoffIso,
   storageItemsForMessage,
   deleteMessageStorage,

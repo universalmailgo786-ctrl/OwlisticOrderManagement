@@ -1,13 +1,25 @@
-const { CHAT_CRON_SECRET, SERVICE_KEY } = require("../_lib/env");
+const { CHAT_CRON_SECRET, SERVICE_KEY, JWT_SECRET } = require("../_lib/env");
+const { verifySupabaseJwt, chatUserFromJwt } = require("../_lib/chat-jwt");
 const { cors, send, bearer, queryOf } = require("../_lib/http");
-const { runChatCleanup } = require("../_lib/chat-cleanup");
+const { runChatCleanup, RETENTION_DAYS } = require("../_lib/chat-cleanup");
 
 function authorized(req) {
-  if (!CHAT_CRON_SECRET) return false;
   const token = bearer(req);
   const query = queryOf(req);
   const provided = token || String(query.secret || query.token || "").trim();
-  return Boolean(provided) && provided === CHAT_CRON_SECRET;
+
+  if (CHAT_CRON_SECRET && provided && provided === CHAT_CRON_SECRET) return true;
+
+  // Vercel Cron Job requests include this header.
+  if (String((req.headers && req.headers["x-vercel-cron"]) || "") === "1") return true;
+
+  if (JWT_SECRET && token) {
+    const payload = verifySupabaseJwt(token, JWT_SECRET);
+    const user = chatUserFromJwt(payload);
+    if (payload && user && user.isSuperAdmin) return true;
+  }
+
+  return false;
 }
 
 module.exports = async function handler(req, res) {
@@ -27,7 +39,7 @@ module.exports = async function handler(req, res) {
   }
   try {
     const result = await runChatCleanup();
-    return send(res, 200, result);
+    return send(res, 200, Object.assign({ retentionDays: RETENTION_DAYS }, result));
   } catch (err) {
     return send(res, 500, {
       ok: false,

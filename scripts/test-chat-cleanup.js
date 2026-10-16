@@ -54,7 +54,7 @@ async function main() {
   });
   if (uploaded.error) throw uploaded.error;
 
-  const createdAt = new Date(Date.now() - 11 * 24 * 60 * 60 * 1000).toISOString();
+  const createdAt = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
   const inserted = await db.from("chat_messages").insert({
     id: messageId,
     thread_id: threadRow.id,
