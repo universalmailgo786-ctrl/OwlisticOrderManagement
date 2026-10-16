@@ -1629,6 +1629,10 @@
   function followWithFullSync(order, result) {
     if (!order || !order.id) return Promise.resolve(result);
     if (result && result.skipped) return Promise.resolve(result);
+    // Archived completed orders are text-only — do not push local media back.
+    if (order.archivedSlim || order.mediaPurgedAt || (result && result.order && (result.order.archivedSlim || result.order.mediaPurgedAt))) {
+      return Promise.resolve(result);
+    }
     if (!isConfigured() || typeof sync !== "function") return Promise.resolve(result);
     return sync(order, { skipUploads: true, bypassQueue: true }).then(function (syncResult) {
       if (result && result.ok === false) return syncResult || result;
@@ -1827,6 +1831,9 @@
   function sync(order, options) {
     if (!order) {
       return Promise.resolve({ skipped: true });
+    }
+    if (order.archivedSlim || order.mediaPurgedAt) {
+      return Promise.resolve({ ok: true, skipped: true, archivedSlim: true });
     }
     const run = function () {
       const start = options && options.skipUploads ? Promise.resolve([]) : uploadOrderFiles(liveOrder(order) || order);

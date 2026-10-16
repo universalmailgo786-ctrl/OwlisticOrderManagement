@@ -121,6 +121,9 @@ function doGet(e) {
   if (action === "driveStatus") {
     return json_(driveStatus_());
   }
+  if (action === "deleteDriveFile") {
+    return json_(deleteDriveFile_(params));
+  }
   if (action === "updateOrderNames") {
     return json_(updateOrderNames_(SpreadsheetApp.openById(SPREADSHEET_ID), params));
   }
@@ -165,6 +168,9 @@ function doPost(e) {
     var data = JSON.parse((e.postData && e.postData.contents) || "{}");
     if (data.action === "uploadFile") {
       return json_(uploadFile_(data));
+    }
+    if (data.action === "deleteDriveFile") {
+      return json_(deleteDriveFile_(data));
     }
     if (data.action === "login") {
       return json_(login_(data.username, data.password));
@@ -559,6 +565,23 @@ function driveStatus_() {
     folderError: folderError,
     lastError: PropertiesService.getScriptProperties().getProperty("driveLastError") || ""
   };
+}
+
+function deleteDriveFile_(data) {
+  var fileId = String((data && (data.fileId || data.id)) || "").trim();
+  if (!fileId) {
+    return { ok: false, action: "deleteDriveFile", error: "File ID is required." };
+  }
+  try {
+    DriveApp.getFileById(fileId).setTrashed(true);
+    return { ok: true, action: "deleteDriveFile", fileId: fileId, deleted: true };
+  } catch (err) {
+    var message = String(err || "");
+    if (/not found|No item with the given ID|does not exist/i.test(message)) {
+      return { ok: true, action: "deleteDriveFile", fileId: fileId, missing: true, deleted: false };
+    }
+    return { ok: false, action: "deleteDriveFile", fileId: fileId, error: message };
+  }
 }
 
 function uploadFile_(data) {

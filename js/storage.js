@@ -1183,6 +1183,11 @@
     order.overallStatus = boardStatusLabel(next);
     order.readyToApprove = next === "completed" || next === "ready-to-approve";
     order.status = computeStatus(order);
+    if (next === "completed") {
+      if (!order.completedAt) order.completedAt = nowIso();
+    } else if (order.completedAt) {
+      delete order.completedAt;
+    }
     return order;
   }
 

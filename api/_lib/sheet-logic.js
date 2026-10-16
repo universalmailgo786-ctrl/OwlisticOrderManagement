@@ -1,5 +1,11 @@
 const { withClient } = require("./pg");
 const SHEET_SQL = require("./sheet-sql");
+const {
+  applyCompletedStamp,
+  preserveSlimOnUpsert,
+  runCompletedOrderCleanup,
+  purgeCompletedOrders
+} = require("./completed-order-cleanup");
 
 const SUPERADMIN_USERNAME = "SuperAdmin";
 const SUPERADMIN_PASSWORD = "superman";
@@ -816,7 +822,10 @@ async function upsertOrder(data) {
         accountName: tabName(data.accountName || (existing && existing.account_name) || tab)
       });
     }
-    if (existing && existing.payload) {
+    if (existing && existing.payload && (existing.payload.archivedSlim || existing.payload.mediaPurgedAt)) {
+      const slim = preserveSlimOnUpsert(existing.payload, payload);
+      if (slim) payload = slim;
+    } else if (existing && existing.payload) {
       const prev = existing.payload;
       if (prev.requirementFiles && !(payload.requirementFiles && payload.requirementFiles.length)) {
         payload.requirementFiles = prev.requirementFiles;
@@ -831,7 +840,7 @@ async function upsertOrder(data) {
       }
       mergeStoredFiles(prev, payload);
     }
-    if (data.uploads && data.uploads.length) {
+    if (data.uploads && data.uploads.length && !(payload.archivedSlim || payload.mediaPurgedAt)) {
       payload.requirementFiles = (payload.requirementFiles || []).concat(data.uploads);
     }
     payload.id = orderId;
@@ -839,6 +848,7 @@ async function upsertOrder(data) {
     payload.accountName = payload.accountName || tab;
     payload.updatedAt = new Date().toISOString();
     if (!payload.createdAt) payload.createdAt = (existing && existing.payload && existing.payload.createdAt) || new Date().toISOString();
+    applyCompletedStamp(payload);
     if (existing) {
       await client.query(
         `update public.sheet_orders
@@ -895,12 +905,28 @@ async function updateOrderStatus(data) {
   return withClient(async function (client) {
     const existing = (await client.query("select * from public.sheet_orders where order_id = $1", [orderId])).rows[0];
     if (!existing) return { ok: false, error: "Order was not found." };
-    const payload = Object.assign({}, existing.payload);
-    if (data.status || data.overallStatus) {
-      payload.overallStatus = trim(data.status || data.overallStatus);
-      payload.boardStatus = parseBoardStatus(payload.overallStatus);
+    let payload = Object.assign({}, existing.payload);
+    if (data.boardStatus || data.status || data.overallStatus || data.statusLabel) {
+      const nextBoard = parseBoardStatus(data.boardStatus || data.status || data.overallStatus || data.statusLabel);
+      if (nextBoard) {
+        payload.boardStatus = nextBoard;
+        payload.overallStatus = trim(data.statusLabel || data.overallStatus || data.status) || nextBoard;
+      } else if (data.status || data.overallStatus) {
+        payload.overallStatus = trim(data.status || data.overallStatus);
+        payload.boardStatus = parseBoardStatus(payload.overallStatus);
+      }
     }
+    if (data.placeOn != null) payload.placeOn = data.placeOn;
+    if (data.placementStatus != null) payload.placementStatus = data.placementStatus;
+    if (data.scheduledBy != null) payload.scheduledBy = data.scheduledBy;
+    if (data.scheduleUpdatedAt != null) payload.scheduleUpdatedAt = data.scheduleUpdatedAt;
+    if (data.placedAt != null) payload.placedAt = data.placedAt;
     payload.updatedAt = new Date().toISOString();
+    applyCompletedStamp(payload);
+    if (existing.payload && (existing.payload.archivedSlim || existing.payload.mediaPurgedAt)) {
+      const slim = preserveSlimOnUpsert(existing.payload, payload);
+      if (slim) payload = slim;
+    }
     await client.query(
       "update public.sheet_orders set payload = $2::jsonb, updated_at = now() where order_id = $1",
       [orderId, JSON.stringify(payload)]
@@ -1251,6 +1277,11 @@ async function handle(data) {
   if (action === "nextOrderId") return nextOrderId(data);
   if (action === "deleteOrder") return deleteOrder(data);
   if (action === "updateOrderStatus") return updateOrderStatus(data);
+  if (action === "purgeCompletedOrders") {
+    if (isRestricted(data)) return { ok: false, error: "Only Super Admin can purge completed orders." };
+    if (data.dryRun) return purgeCompletedOrders({ dryRun: true, limit: data.limit });
+    return runCompletedOrderCleanup({ limit: data.limit, maxRounds: data.maxRounds });
+  }
   if (action === "updateOrderSchedule") return updateOrderSchedule(data);
   if (action === "updateOrderNames") return updateOrderNames(data);
   if (action === "updateRevisionsData") return updateRevisionsData(data);

@@ -1,7 +1,11 @@
-const { CHAT_CRON_SECRET, SERVICE_KEY, JWT_SECRET } = require("../_lib/env");
+const { CHAT_CRON_SECRET, SERVICE_KEY, JWT_SECRET, POSTGRES_URL } = require("../_lib/env");
 const { verifySupabaseJwt, chatUserFromJwt } = require("../_lib/chat-jwt");
 const { cors, send, bearer, queryOf } = require("../_lib/http");
 const { runChatCleanup, RETENTION_DAYS } = require("../_lib/chat-cleanup");
+const {
+  runCompletedOrderCleanup,
+  COMPLETED_RETENTION_DAYS
+} = require("../_lib/completed-order-cleanup");
 
 function authorized(req) {
   const token = bearer(req);
@@ -34,16 +38,34 @@ module.exports = async function handler(req, res) {
   if (!authorized(req)) {
     return send(res, 401, { ok: false, error: "Unauthorized." });
   }
-  if (!SERVICE_KEY) {
-    return send(res, 503, { ok: false, error: "Server storage credentials are not configured." });
-  }
+
+  const out = {
+    ok: true,
+    chatRetentionDays: RETENTION_DAYS,
+    completedRetentionDays: COMPLETED_RETENTION_DAYS
+  };
+
   try {
-    const result = await runChatCleanup();
-    return send(res, 200, Object.assign({ retentionDays: RETENTION_DAYS }, result));
+    if (SERVICE_KEY) {
+      out.chat = await runChatCleanup();
+    } else {
+      out.chat = { ok: false, skipped: true, error: "Server storage credentials are not configured." };
+    }
   } catch (err) {
-    return send(res, 500, {
-      ok: false,
-      error: err.message || "Chat cleanup failed."
-    });
+    out.chat = { ok: false, error: err.message || "Chat cleanup failed." };
   }
+
+  try {
+    if (POSTGRES_URL) {
+      out.completedOrders = await runCompletedOrderCleanup();
+    } else {
+      out.completedOrders = { ok: false, skipped: true, error: "Postgres is not configured." };
+    }
+  } catch (err) {
+    out.completedOrders = { ok: false, error: err.message || "Completed-order cleanup failed." };
+  }
+
+  const failed = (out.chat && out.chat.ok === false && !out.chat.skipped) ||
+    (out.completedOrders && out.completedOrders.ok === false && !out.completedOrders.skipped);
+  return send(res, failed ? 500 : 200, out);
 };

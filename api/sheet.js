@@ -8,7 +8,8 @@ const DRIVE_URL =
 const DRIVE_ACTIONS = {
   uploadFile: true,
   getUpload: true,
-  driveStatus: true
+  driveStatus: true,
+  deleteDriveFile: true
 };
 
 function queryParams(req) {
