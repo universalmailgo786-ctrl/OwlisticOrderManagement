@@ -616,19 +616,66 @@ async function getUserProfile(data) {
   });
 }
 
+function mapOrderRow(row) {
+  const payload = Object.assign({}, row.payload || {});
+  const tab = row.tab_name || payload.tabName || "";
+  const account = row.account_name || payload.accountName || tab;
+  payload.id = row.order_id;
+  payload.tabName = tab;
+  payload.accountName = account;
+  const stamped = isoStamp(row.updated_at);
+  if (stamped) {
+    const prev = Date.parse(payload.updatedAt || "") || 0;
+    const next = Date.parse(stamped) || 0;
+    if (next >= prev) payload.updatedAt = stamped;
+  }
+  if (!payload.createdAt && row.created_at) payload.createdAt = isoStamp(row.created_at);
+  if (!payload.messageThread && payload.messageText) payload.messageThread = [];
+  return payload;
+}
+
+function parseOrderIdList(data) {
+  const raw = Array.isArray(data.orderIds)
+    ? data.orderIds
+    : Array.isArray(data.ids)
+      ? data.ids
+      : String(data.orderIds || data.ids || "").split(",");
+  const out = [];
+  const seen = {};
+  raw.forEach(function (value) {
+    const id = trim(value);
+    if (!id || seen[id]) return;
+    seen[id] = true;
+    out.push(id);
+  });
+  return out.slice(0, 40);
+}
+
 async function listOrderDigest(data) {
   const forced = forcedAccount(data);
   const allowed = forced
     ? [forced]
     : String(data.tabs || "").split(",").map(tabName).filter(Boolean);
   return withClient(async function (client) {
-    const result = await client.query(`
-      select order_id, tab_name, account_name, created_at, updated_at,
-             payload->>'boardStatus' as board_status,
-             payload->>'overallStatus' as overall_status
-      from public.sheet_orders
-      order by updated_at desc
-    `);
+    let result;
+    if (forced) {
+      result = await client.query(`
+        select order_id, tab_name, account_name, created_at, updated_at,
+               payload->>'boardStatus' as board_status,
+               payload->>'overallStatus' as overall_status
+        from public.sheet_orders
+        where lower(tab_name) = lower($1) or lower(account_name) = lower($1)
+        order by updated_at desc
+      `, [forced]);
+    } else {
+      result = await client.query(`
+        select order_id, tab_name, account_name, created_at, updated_at,
+               payload->>'boardStatus' as board_status,
+               payload->>'overallStatus' as overall_status
+        from public.sheet_orders
+        order by updated_at desc
+      `);
+    }
     const filter = forced ? allowed : null;
     const orders = [];
     result.rows.forEach(function (row) {
@@ -649,33 +696,59 @@ async function listOrderDigest(data) {
   });
 }
 
+async function listOrdersByIds(data) {
+  const ids = parseOrderIdList(data);
+  if (!ids.length) {
+    return { ok: true, action: "listOrdersByIds", count: 0, orders: [] };
+  }
+  const forced = forcedAccount(data);
+  return withClient(async function (client) {
+    const result = await client.query(
+      `select order_id, tab_name, account_name, payload, created_at, updated_at
+       from public.sheet_orders
+       where order_id = any($1::text[])`,
+      [ids]
+    );
+    const orders = [];
+    result.rows.forEach(function (row) {
+      if (forced && !tabMatches(row.tab_name, forced) && !tabMatches(row.account_name, forced)) return;
+      orders.push(mapOrderRow(row));
+    });
+    return { ok: true, action: "listOrdersByIds", count: orders.length, orders: orders };
+  });
+}
+
 async function listOrders(data) {
   const forced = forcedAccount(data);
   const allowed = forced
     ? [forced]
     : String(data.tabs || "").split(",").map(tabName).filter(Boolean);
   return withClient(async function (client) {
-    const result = await client.query("select * from public.sheet_orders order by order_id");
+    let result;
+    if (forced) {
+      result = await client.query(
+        `select order_id, tab_name, account_name, payload, created_at, updated_at
+         from public.sheet_orders
+         where lower(tab_name) = lower($1) or lower(account_name) = lower($1)
+         order by order_id`,
+        [forced]
+      );
+    } else {
+      result = await client.query(
+        `select order_id, tab_name, account_name, payload, created_at, updated_at
+         from public.sheet_orders
+         order by order_id`
+      );
+    }
     const orders = [];
     const tabs = {};
     const filter = forced ? allowed : null;
     result.rows.forEach(function (row) {
-      const payload = row.payload || {};
-      const tab = row.tab_name || payload.tabName || "";
-      const account = row.account_name || payload.accountName || tab;
+      const payload = mapOrderRow(row);
+      const tab = payload.tabName || "";
+      const account = payload.accountName || tab;
       if (filter && !sheetMatchesAny(tab, filter) && !sheetMatchesAny(account, filter)) return;
       tabs[tab] = true;
-      payload.id = row.order_id;
-      payload.tabName = tab;
-      payload.accountName = account;
-      const stamped = isoStamp(row.updated_at);
-      if (stamped) {
-        const prev = Date.parse(payload.updatedAt || "") || 0;
-        const next = Date.parse(stamped) || 0;
-        if (next >= prev) payload.updatedAt = stamped;
-      }
-      if (!payload.createdAt && row.created_at) payload.createdAt = isoStamp(row.created_at);
-      if (!payload.messageThread && payload.messageText) payload.messageThread = [];
       orders.push(payload);
     });
     const known = await workbookTabs(client);
@@ -698,7 +771,8 @@ async function getOrder(data) {
   if (!orderId) return { ok: false, action: "getOrder", found: false, error: "Order ID is required." };
   return withClient(async function (client) {
     const row = (await client.query(
-      "select * from public.sheet_orders where order_id = $1 limit 1",
+      `select order_id, tab_name, account_name, payload, created_at, updated_at
+       from public.sheet_orders where order_id = $1 limit 1`,
       [orderId]
     )).rows[0];
     const forced = forcedAccount(data);
@@ -712,7 +786,7 @@ async function getOrder(data) {
       found: true,
       orderId: orderId,
       tab: row.tab_name,
-      order: Object.assign({}, row.payload, { id: row.order_id, tabName: row.tab_name, accountName: row.account_name })
+      order: mapOrderRow(row)
     };
   });
 }
@@ -1272,6 +1346,7 @@ async function handle(data) {
   if (action === "getUserProfile" || action === "getAccountProfile") return getUserProfile(data);
   if (action === "listOrders") return listOrders(data);
   if (action === "listOrderDigest") return listOrderDigest(data);
+  if (action === "listOrdersByIds") return listOrdersByIds(data);
   if (action === "getOrder") return getOrder(data);
   if (action === "hasOrder") return hasOrder(data);
   if (action === "nextOrderId") return nextOrderId(data);
@@ -1326,6 +1401,8 @@ module.exports = {
   getChatProfile,
   listUsers,
   listOrders,
+  listOrderDigest,
+  listOrdersByIds,
   upsertOrder,
   normalizeRole,
   HEADERS_LEN,

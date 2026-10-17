@@ -2023,21 +2023,29 @@
     return tabMatchesAllowed(order && order.accountName, allowed);
   }
 
+  let ordersInFlight = null;
+  let digestInFlight = null;
+  const ordersByIdsInFlight = {};
+
+  function sessionQuery(session, tabs) {
+    return "role=" + encodeURIComponent((session && session.role) || "") +
+      "&userAccount=" + encodeURIComponent((session && session.account) || "") +
+      "&username=" + encodeURIComponent((session && session.username) || "") +
+      "&tabs=" + encodeURIComponent((tabs || []).join(","));
+  }
+
   function fetchOrders() {
     if (!isConfigured()) {
       return Promise.resolve({ skipped: true, orders: [] });
     }
+    if (ordersInFlight) return ordersInFlight;
     const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
     const tabs = fetchTabNames(session);
     const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
     const url = getWebAppUrl() + join +
-      "action=listOrders" +
-      "&role=" + encodeURIComponent((session && session.role) || "") +
-      "&userAccount=" + encodeURIComponent((session && session.account) || "") +
-      "&username=" + encodeURIComponent((session && session.username) || "") +
-      "&tabs=" + encodeURIComponent(tabs.join(",")) +
+      "action=listOrders&" + sessionQuery(session, tabs) +
       "&_=" + Date.now();
-    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 30000).then(function (response) {
+    ordersInFlight = fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 30000).then(function (response) {
       return response.text();
     }).then(function (text) {
       const data = parseJson(text);
@@ -2057,24 +2065,25 @@
       return { ok: true, orders: orders, sheetColumns: data.sheetColumns || 0, workbookTabs: data.workbookTabs || [] };
     }).catch(function () {
       return { ok: false, error: "Could not reach Google Sheet.", orders: [] };
+    }).then(function (result) {
+      ordersInFlight = null;
+      return result;
     });
+    return ordersInFlight;
   }
 
   function fetchOrderDigest() {
     if (!isConfigured()) {
       return Promise.resolve({ skipped: true, orders: [] });
     }
+    if (digestInFlight) return digestInFlight;
     const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
     const tabs = fetchTabNames(session);
     const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
     const url = getWebAppUrl() + join +
-      "action=listOrderDigest" +
-      "&role=" + encodeURIComponent((session && session.role) || "") +
-      "&userAccount=" + encodeURIComponent((session && session.account) || "") +
-      "&username=" + encodeURIComponent((session && session.username) || "") +
-      "&tabs=" + encodeURIComponent(tabs.join(",")) +
+      "action=listOrderDigest&" + sessionQuery(session, tabs) +
       "&_=" + Date.now();
-    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 12000).then(function (response) {
+    digestInFlight = fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 12000).then(function (response) {
       return response.text();
     }).then(function (text) {
       const data = parseJson(text);
@@ -2086,7 +2095,48 @@
       return { ok: true, orders: data.orders || [] };
     }).catch(function () {
       return { ok: false, error: "Could not reach order updates.", orders: [] };
+    }).then(function (result) {
+      digestInFlight = null;
+      return result;
     });
+    return digestInFlight;
+  }
+
+  function fetchOrdersByIds(orderIds) {
+    const ids = Array.from(new Set((orderIds || []).map(function (id) {
+      return String(id || "").trim();
+    }).filter(Boolean))).slice(0, 40);
+    if (!ids.length) return Promise.resolve({ ok: true, orders: [], action: "listOrdersByIds" });
+    if (!isConfigured()) return Promise.resolve({ skipped: true, orders: [] });
+    const key = ids.slice().sort().join(",");
+    if (ordersByIdsInFlight[key]) return ordersByIdsInFlight[key];
+    const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+    const tabs = fetchTabNames(session);
+    const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
+    const url = getWebAppUrl() + join +
+      "action=listOrdersByIds&" + sessionQuery(session, tabs) +
+      "&orderIds=" + encodeURIComponent(ids.join(",")) +
+      "&_=" + Date.now();
+    ordersByIdsInFlight[key] = fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 30000).then(function (response) {
+      return response.text();
+    }).then(function (text) {
+      const data = parseJson(text);
+      if (!data) return { ok: false, error: "Could not read selected orders.", orders: [] };
+      if (!data.ok) return { ok: false, error: data.error || "Could not load selected orders.", orders: [] };
+      if (data.action && data.action !== "listOrdersByIds") {
+        return { ok: false, error: "Targeted order sync is not available.", orders: [] };
+      }
+      const orders = (data.orders || []).filter(function (order) {
+        return orderOnCreatedAccountTab(order, tabs);
+      });
+      return { ok: true, action: "listOrdersByIds", orders: orders };
+    }).catch(function () {
+      return { ok: false, error: "Could not reach selected orders.", orders: [] };
+    }).then(function (result) {
+      delete ordersByIdsInFlight[key];
+      return result;
+    });
+    return ordersByIdsInFlight[key];
   }
 
   global.OwlisticSheet = {
@@ -2103,6 +2153,7 @@
     filesMissingDrive: filesMissingDrive,
     fetchOrders: fetchOrders,
     fetchOrderDigest: fetchOrderDigest,
+    fetchOrdersByIds: fetchOrdersByIds,
     updateOrderNames: updateOrderNames,
     updateOrderSchedule: updateOrderSchedule,
     ensureScheduleColumns: ensureScheduleColumns,

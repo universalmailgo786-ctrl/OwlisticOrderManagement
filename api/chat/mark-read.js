@@ -31,7 +31,7 @@ module.exports = async function handler(req, res) {
     return send(res, 400, { ok: false, error: "Missing conversation." });
   }
   try {
-    const thread = await admin.from("chat_threads").select("*").eq("id", threadId).maybeSingle();
+    const thread = await admin.from("chat_threads").select("id, user_id").eq("id", threadId).maybeSingle();
     if (thread.error) throw thread.error;
     if (!thread.data || !canAccessThread(user, thread.data)) {
       return send(res, 403, { ok: false, error: "You cannot open that conversation." });

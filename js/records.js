@@ -1737,79 +1737,133 @@
   let liveInFlight = false;
   let liveQueued = false;
   let liveFullQueued = false;
+  let liveFocusBound = false;
+  let lastDigestFingerprint = "";
 
-  function applyOrderDigest(result) {
-    if (!result || !result.ok || !result.orders) return { changed: false, missing: false };
-    const incoming = result.orders;
-    let changed = false;
-    let missing = false;
-    incoming.forEach(function (row) {
+  function digestFingerprint(orders) {
+    return (orders || []).map(function (row) {
+      return String(row && row.id || "") + ":" + String(row && row.updatedAt || "") + ":" + String(row && (row.boardStatus || row.overallStatus) || "");
+    }).sort().join("|");
+  }
+
+  function collectChangedOrderIds(incoming) {
+    const needFull = [];
+    const seen = {};
+    (incoming || []).forEach(function (row) {
       if (!row || !row.id) return;
-      if (store.isDeletedOrder && store.isDeletedOrder(row.id)) {
-        missing = true;
-        return;
-      }
+      if (store.isDeletedOrder && store.isDeletedOrder(row.id)) return;
       const existing = store.getOrder(row.id, row);
+      const incomingTs = Date.parse(row.updatedAt || "") || 0;
+      const localTs = Date.parse(existing && existing.updatedAt || "") || 0;
       if (!existing) {
-        missing = true;
-        store.upsertOrder({
-          id: row.id,
-          accountName: row.accountName || row.tabName || "",
-          tabName: row.tabName || row.accountName || "",
-          boardStatus: row.boardStatus || "in-progress",
-          overallStatus: row.overallStatus || "",
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-          pendingSave: false
-        });
-        changed = true;
+        needFull.push(row.id);
         return;
       }
+      if (existing.pendingSave) return;
       const nextTab = tabOf({
         boardStatus: row.boardStatus,
         overallStatus: row.overallStatus
       }) || row.boardStatus || "";
       const currentTab = tabOf(existing);
-      const incomingTs = Date.parse(row.updatedAt || "") || 0;
-      const localTs = Date.parse(existing.updatedAt || "") || 0;
-      if (nextTab && nextTab !== currentTab && (incomingTs >= localTs || incomingTs === 0)) {
-        if (store.setBoardStatus) store.setBoardStatus(existing, nextTab);
-        else {
-          existing.boardStatus = nextTab;
-          existing.overallStatus = (store.boardStatusLabel && store.boardStatusLabel(nextTab)) || nextTab;
-        }
-        if (row.updatedAt) existing.updatedAt = row.updatedAt;
-        store.upsertOrder(existing);
-        changed = true;
-        return;
-      }
-      if (incomingTs > localTs && row.updatedAt) {
-        existing.updatedAt = row.updatedAt;
-        if (nextTab && store.setBoardStatus) store.setBoardStatus(existing, nextTab);
-        store.upsertOrder(existing);
-        changed = true;
+      if (incomingTs > localTs || (nextTab && nextTab !== currentTab && incomingTs >= localTs)) {
+        needFull.push(row.id);
+        seen[row.id] = true;
       }
     });
-    if (auth.isSuperAdmin && auth.isSuperAdmin()) {
-      const liveIds = incoming.map(function (row) { return row && row.id; }).filter(Boolean);
-      const localCount = (store.getOrders() || []).length;
-      if (!liveIds.length && localCount > 2) missing = true;
+    return needFull.filter(function (id, index, list) {
+      return list.indexOf(id) === index;
+    });
+  }
+
+  function pruneMissingFromDigest(incoming) {
+    if (!store.getOrders || typeof store.replaceOrders !== "function") return false;
+    const liveIds = {};
+    (incoming || []).forEach(function (row) {
+      if (row && row.id) liveIds[row.id] = true;
+    });
+    if (!Object.keys(liveIds).length) return false;
+    const local = store.getOrders() || [];
+    const liveLocal = [];
+    let removed = false;
+    local.forEach(function (order) {
+      if (!order || !order.id) return;
+      if (liveIds[order.id]) {
+        liveLocal.push(order);
+        return;
+      }
+      if (order.pendingSave || (store.isFreshUnsyncedOrder && store.isFreshUnsyncedOrder(order))) {
+        // replaceOrders re-attaches pending/fresh rows missing from incoming.
+        return;
+      }
+      removed = true;
+    });
+    if (!removed) return false;
+    store.replaceOrders(liveLocal);
+    return true;
+  }
+
+  function applyOrderDigest(result) {
+    if (!result || !result.ok || !result.orders) {
+      return { changed: false, needFullIds: [], needReconcile: true };
     }
-    const local = store.getOrders ? store.getOrders() : [];
-    if (incoming.length && local.length && incoming.length > local.length) missing = true;
-    return { changed: changed, missing: missing };
+    const incoming = result.orders;
+    const fingerprint = digestFingerprint(incoming);
+    const unchanged = fingerprint && fingerprint === lastDigestFingerprint;
+    lastDigestFingerprint = fingerprint;
+    const needFullIds = unchanged ? [] : collectChangedOrderIds(incoming);
+    let pruned = false;
+    if (!unchanged) pruned = pruneMissingFromDigest(incoming);
+    // Soft status paint for ids we are about to fetch (optional UX); full fetch follows.
+    let changed = pruned || needFullIds.length > 0;
+    if (!needFullIds.length && !pruned) {
+      // Still apply board status from digest when timestamps equal but tab label drifted.
+      incoming.forEach(function (row) {
+        if (!row || !row.id) return;
+        const existing = store.getOrder(row.id, row);
+        if (!existing || existing.pendingSave) return;
+        const nextTab = tabOf({
+          boardStatus: row.boardStatus,
+          overallStatus: row.overallStatus
+        }) || row.boardStatus || "";
+        const currentTab = tabOf(existing);
+        if (nextTab && nextTab !== currentTab) {
+          if (store.setBoardStatus) store.setBoardStatus(existing, nextTab);
+          store.upsertOrder(existing);
+          changed = true;
+        }
+      });
+    }
+    const needReconcile = Boolean(
+      auth.isSuperAdmin && auth.isSuperAdmin() &&
+      !incoming.length && (store.getOrders() || []).length > 2
+    );
+    return { changed: changed, needFullIds: needFullIds, needReconcile: needReconcile };
   }
 
   function paintLiveOrders(result, fromDigest) {
     if (fromDigest) {
       const applied = applyOrderDigest(result);
-      if (applied.missing) {
+      const sheet = window.OwlisticSheet;
+      if (applied.needReconcile) {
         refreshLive(true);
-        if (applied.changed) render();
-        return;
+        return Promise.resolve();
+      }
+      if (applied.needFullIds && applied.needFullIds.length && sheet && typeof sheet.fetchOrdersByIds === "function") {
+        return sheet.fetchOrdersByIds(applied.needFullIds).then(function (detail) {
+          if (detail && detail.ok && detail.orders && detail.orders.length) {
+            if (typeof store.importOrders === "function") store.importOrders(detail.orders);
+            else applySheetOrders(detail);
+            renderAccountFilter();
+            render();
+            return;
+          }
+          // Fallback only when targeted fetch fails.
+          if (!detail || detail.ok === false) refreshLive(true);
+          else if (applied.changed) render();
+        });
       }
       if (applied.changed) render();
-      return;
+      return Promise.resolve();
     }
     applySheetOrders(result);
     renderAccountFilter();
@@ -1821,6 +1875,7 @@
           "<p>" + escapeHtml(result.error) + "</p>" +
         "</div></td></tr>";
     }
+    return Promise.resolve();
   }
 
   function refreshLive(forceFull) {
@@ -1838,10 +1893,10 @@
     if (!request) return;
     liveInFlight = true;
     request.then(function (result) {
-      paintLiveOrders(result, !useFull && result && result.ok);
       if (!useFull && result && result.ok === false) {
-        refreshLive(true);
+        return refreshLive(true);
       }
+      return paintLiveOrders(result, !useFull && result && result.ok);
     }).catch(function () {
       render();
     }).then(function () {
@@ -1857,27 +1912,29 @@
 
   function startLiveRefresh() {
     if (liveTimer) window.clearInterval(liveTimer);
-    // Background sync only — focus/visibility still refresh immediately.
-    // ~8s digests cut egress vs the old 1.5s loop without feeling stale.
-    const LIVE_POLL_MS = 8000;
-    const FULL_EVERY_TICKS = 4;
+    // Digest ~25s; full reconcile ~5 minutes. Changed rows load via listOrdersByIds.
+    const LIVE_POLL_MS = 25000;
+    const FULL_EVERY_TICKS = 12;
     let fullTick = 0;
     liveTimer = window.setInterval(function () {
       if (document.hidden) return;
       fullTick += 1;
       refreshLive(fullTick % FULL_EVERY_TICKS === 0);
     }, LIVE_POLL_MS);
-    document.addEventListener("visibilitychange", function () {
-      if (!document.hidden) refreshLive(false);
-    });
-    window.addEventListener("focus", function () {
-      refreshLive(false);
-    });
-    window.addEventListener("storage", function (event) {
-      if (event.key && event.key !== "owlistic.orders") return;
-      render();
-      refreshLive(false);
-    });
+    if (!liveFocusBound) {
+      liveFocusBound = true;
+      document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) refreshLive(false);
+      });
+      window.addEventListener("focus", function () {
+        refreshLive(false);
+      });
+      window.addEventListener("storage", function (event) {
+        if (event.key && event.key !== "owlistic.orders") return;
+        render();
+        refreshLive(false);
+      });
+    }
   }
 
   function loadFromSheet() {

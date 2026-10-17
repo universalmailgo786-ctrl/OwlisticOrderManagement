@@ -2452,6 +2452,7 @@
     rememberDeletedOrder: rememberDeletedOrder,
     forgetDeletedOrder: forgetDeletedOrder,
     isDeletedOrder: isDeletedOrder,
+    isFreshUnsyncedOrder: isFreshUnsyncedOrder,
     getDeletedOrderIds: getDeletedOrderIds,
     pruneGoneOrders: pruneGoneOrders,
     importOrders: importOrders,

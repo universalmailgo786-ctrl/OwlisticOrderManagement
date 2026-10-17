@@ -220,15 +220,16 @@
     const wanted = String(userId || (me && !me.isSuperAdmin ? me.username : "")).trim();
     if (!wanted) throw new Error("No chat user selected.");
     if (/^(superadmin|admin)$/i.test(wanted)) throw new Error("Cannot open a chat as SuperAdmin.");
-    const listed = await db.from("chat_threads").select("*");
+    const threadCols = "id, user_id, created_at, updated_at, last_message, last_sender_id";
+    const listed = await db.from("chat_threads").select(threadCols);
     if (listed.error) throw listed.error;
     const existing = (listed.data || []).find(function (row) {
       return String(row.user_id || "").toLowerCase() === wanted.toLowerCase();
     });
     if (existing) return existing;
-    const created = await db.from("chat_threads").insert({ user_id: wanted }).select("*").single();
+    const created = await db.from("chat_threads").insert({ user_id: wanted }).select(threadCols).single();
     if (created.error && (created.error.code === "23505" || /duplicate/i.test(created.error.message || ""))) {
-      const retry = await db.from("chat_threads").select("*");
+      const retry = await db.from("chat_threads").select(threadCols);
       if (retry.error) throw retry.error;
       const found = (retry.data || []).find(function (row) {
         return String(row.user_id || "").toLowerCase() === wanted.toLowerCase();
@@ -242,7 +243,9 @@
 
   async function listThreads() {
     const db = await ensureClient();
-    const result = await db.from("chat_threads").select("*").order("updated_at", { ascending: false });
+    const result = await db.from("chat_threads")
+      .select("id, user_id, created_at, updated_at, last_message, last_sender_id")
+      .order("updated_at", { ascending: false });
     if (result.error) throw result.error;
     return result.data || [];
   }
@@ -443,7 +446,9 @@
     if (!rows.length) return rows;
     const db = await ensureClient();
     const ids = rows.map(function (row) { return row.id; });
-    const result = await db.from("chat_attachments").select("*").in("message_id", ids);
+    const result = await db.from("chat_attachments")
+      .select("id, message_id, storage_path, file_name, mime_type, size_bytes, attachment_type")
+      .in("message_id", ids);
     if (result.error) {
       rows.forEach(function (row) {
         row.attachments = row.attachments || [];
@@ -477,7 +482,7 @@
   async function listMessages(threadId, before) {
     const db = await ensureClient();
     let query = db.from("chat_messages")
-      .select("*")
+      .select("id, thread_id, sender_id, message, created_at, read_at, edited_at, image_url, has_files")
       .eq("thread_id", threadId)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
@@ -494,7 +499,9 @@
 
   async function loadAttachments(messageId) {
     const db = await ensureClient();
-    const result = await db.from("chat_attachments").select("*").eq("message_id", messageId);
+    const result = await db.from("chat_attachments")
+      .select("id, message_id, storage_path, file_name, mime_type, size_bytes, attachment_type")
+      .eq("message_id", messageId);
     if (result.error) throw result.error;
     const rows = result.data || [];
     const urls = await signUrls(rows.map(function (row) { return row.storage_path; }));
@@ -530,7 +537,10 @@
       message: message
     };
     if (hasFile) row.has_files = true;
-    const inserted = await db.from("chat_messages").insert(row).select("*").single();
+    const inserted = await db.from("chat_messages")
+      .insert(row)
+      .select("id, thread_id, sender_id, message, created_at, read_at, edited_at, image_url, has_files")
+      .single();
     if (inserted.error) throw inserted.error;
     if (files.length) {
       const payload = files.map(function (file) {
@@ -543,7 +553,9 @@
           attachment_type: file.attachmentType || "file"
         };
       });
-      const atts = await db.from("chat_attachments").insert(payload).select("*");
+      const atts = await db.from("chat_attachments")
+        .insert(payload)
+        .select("id, message_id, storage_path, file_name, mime_type, size_bytes, attachment_type");
       if (atts.error) {
         await db.from("chat_messages").delete().eq("id", messageId);
         throw atts.error;
@@ -568,7 +580,11 @@
     const db = await ensureClient();
     const message = String(text || "").trim();
     if (!message) throw new Error("Message cannot be empty.");
-    const result = await db.from("chat_messages").update({ message: message }).eq("id", id).select("*").single();
+    const result = await db.from("chat_messages")
+      .update({ message: message })
+      .eq("id", id)
+      .select("id, thread_id, sender_id, message, created_at, read_at, edited_at, image_url, has_files")
+      .single();
     if (result.error) throw result.error;
     return result.data;
   }

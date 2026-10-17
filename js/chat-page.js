@@ -1372,6 +1372,42 @@
       setStatus("Offline", true);
       return;
     }
+
+    let pageRealtimeOk = false;
+    let pagePollTick = 0;
+    const healthyMs = Number(config.pollMs || 60000);
+    const downMs = Number(config.pollMsRealtimeDown || 20000);
+    const reconcileMs = Math.max(healthyMs * 3, 180000);
+    const tickMs = Math.min(healthyMs, downMs, 20000);
+    function markRealtimeStatus(status) {
+      if (status === "SUBSCRIBED") pageRealtimeOk = true;
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") pageRealtimeOk = false;
+    }
+    const prevSubscribe = chat.subscribeThread;
+    if (typeof prevSubscribe === "function") {
+      chat.subscribeThread = function (threadId, handlers) {
+        const next = Object.assign({}, handlers || {});
+        const userStatus = next.onStatus;
+        next.onStatus = function (status) {
+          markRealtimeStatus(status);
+          if (typeof userStatus === "function") userStatus(status);
+        };
+        return prevSubscribe.call(chat, threadId, next);
+      };
+    }
+    const prevInbox = chat.subscribeInbox;
+    if (typeof prevInbox === "function") {
+      chat.subscribeInbox = function (handlers, key) {
+        const next = Object.assign({}, handlers || {});
+        const userStatus = next.onStatus;
+        next.onStatus = function (status) {
+          markRealtimeStatus(status);
+          if (typeof userStatus === "function") userStatus(status);
+        };
+        return prevInbox.call(chat, next, key);
+      };
+    }
+
     loadDirectory();
     if (me.isSuperAdmin) {
       await loadInbox();
@@ -1414,9 +1450,13 @@
     }
     window.setInterval(function () {
       if (document.hidden) return;
+      pagePollTick += 1;
+      const interval = pageRealtimeOk ? reconcileMs : downMs;
+      const every = Math.max(1, Math.round(interval / tickMs));
+      if (pagePollTick % every !== 0) return;
       if (me.isSuperAdmin) loadInbox({ silent: true });
       syncOpenMessages();
-    }, Number(config.pollMs || 15000));
+    }, tickMs);
   }
 
   boot();
