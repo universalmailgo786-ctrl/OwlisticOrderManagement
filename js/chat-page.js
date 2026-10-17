@@ -1373,24 +1373,48 @@
       return;
     }
 
-    let pageRealtimeOk = false;
+    // Per-channel health: one SUBSCRIBED channel must not hide another that failed.
+    const channelHealth = { inbox: false, thread: false };
     let pagePollTick = 0;
     const healthyMs = Number(config.pollMs || 60000);
     const downMs = Number(config.pollMsRealtimeDown || 20000);
     const reconcileMs = Math.max(healthyMs * 3, 180000);
     const tickMs = Math.min(healthyMs, downMs, 20000);
-    function markRealtimeStatus(status) {
-      if (status === "SUBSCRIBED") pageRealtimeOk = true;
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") pageRealtimeOk = false;
+    function pageRealtimeOk() {
+      if (state.thread) {
+        // Open conversation requires the thread channel; inbox alone is not enough.
+        if (!channelHealth.thread) return false;
+        if (me.isSuperAdmin) return channelHealth.inbox && channelHealth.thread;
+        return true;
+      }
+      if (me.isSuperAdmin) return channelHealth.inbox;
+      return false;
+    }
+    function markRealtimeStatus(status, meta) {
+      const channel = meta && meta.channel ? String(meta.channel) : "";
+      const key = channel.indexOf("inbox") >= 0 || channel === "chat-page-inbox" || channel === "chat-nav-unread"
+        ? "inbox"
+        : (channel.indexOf("thread") >= 0 || channel === "chat-thread" ? "thread" : "");
+      if (!key) return;
+      if (status === "SUBSCRIBED") {
+        channelHealth[key] = true;
+        return;
+      }
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        channelHealth[key] = false;
+        // Partial disconnect: poll immediately so unread/messages stay current.
+        if (me.isSuperAdmin) loadInbox({ silent: true });
+        if (state.thread) syncOpenMessages();
+      }
     }
     const prevSubscribe = chat.subscribeThread;
     if (typeof prevSubscribe === "function") {
       chat.subscribeThread = function (threadId, handlers) {
         const next = Object.assign({}, handlers || {});
         const userStatus = next.onStatus;
-        next.onStatus = function (status) {
-          markRealtimeStatus(status);
-          if (typeof userStatus === "function") userStatus(status);
+        next.onStatus = function (status, meta) {
+          markRealtimeStatus(status, meta || { channel: "chat-thread" });
+          if (typeof userStatus === "function") userStatus(status, meta);
         };
         return prevSubscribe.call(chat, threadId, next);
       };
@@ -1400,9 +1424,9 @@
       chat.subscribeInbox = function (handlers, key) {
         const next = Object.assign({}, handlers || {});
         const userStatus = next.onStatus;
-        next.onStatus = function (status) {
-          markRealtimeStatus(status);
-          if (typeof userStatus === "function") userStatus(status);
+        next.onStatus = function (status, meta) {
+          markRealtimeStatus(status, meta || { channel: key || "chat-inbox" });
+          if (typeof userStatus === "function") userStatus(status, meta);
         };
         return prevInbox.call(chat, next, key);
       };
@@ -1451,7 +1475,7 @@
     window.setInterval(function () {
       if (document.hidden) return;
       pagePollTick += 1;
-      const interval = pageRealtimeOk ? reconcileMs : downMs;
+      const interval = pageRealtimeOk() ? reconcileMs : downMs;
       const every = Math.max(1, Math.round(interval / tickMs));
       if (pagePollTick % every !== 0) return;
       if (me.isSuperAdmin) loadInbox({ silent: true });

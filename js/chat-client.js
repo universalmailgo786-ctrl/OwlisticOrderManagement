@@ -742,13 +742,16 @@
         if (handlers && handlers.onAttachment) handlers.onAttachment(payload);
       })
       .subscribe(function (status) {
-        if (handlers && handlers.onStatus) handlers.onStatus(status);
+        if (handlers && handlers.onStatus) {
+          handlers.onStatus(status, { channel: "chat-thread", threadId: threadId });
+        }
       });
     });
   }
 
   async function subscribeInbox(handlers, channelName) {
-    return replaceChannel(channelName || "chat-inbox", function (named) {
+    const channel = channelName || "chat-inbox";
+    return replaceChannel(channel, function (named) {
       return named
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_threads" }, function (payload) {
         if (handlers && handlers.onThread) handlers.onThread(payload);
@@ -763,7 +766,9 @@
         if (handlers && handlers.onDelete) handlers.onDelete(realtimeRow(payload, "old") || realtimeRow(payload));
       })
       .subscribe(function (status) {
-        if (handlers && handlers.onStatus) handlers.onStatus(status);
+        if (handlers && handlers.onStatus) {
+          handlers.onStatus(status, { channel: channel });
+        }
       });
     });
   }

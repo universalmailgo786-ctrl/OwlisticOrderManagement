@@ -634,6 +634,9 @@ function mapOrderRow(row) {
   return payload;
 }
 
+// Per-request cap; clients batch larger change sets into multiple calls.
+const ORDERS_BY_IDS_LIMIT = 80;
+
 function parseOrderIdList(data) {
   const raw = Array.isArray(data.orderIds)
     ? data.orderIds
@@ -648,7 +651,7 @@ function parseOrderIdList(data) {
     seen[id] = true;
     out.push(id);
   });
-  return out.slice(0, 40);
+  return out.slice(0, ORDERS_BY_IDS_LIMIT);
 }
 
 async function listOrderDigest(data) {

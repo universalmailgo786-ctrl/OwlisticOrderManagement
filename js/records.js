@@ -1850,16 +1850,24 @@
       }
       if (applied.needFullIds && applied.needFullIds.length && sheet && typeof sheet.fetchOrdersByIds === "function") {
         return sheet.fetchOrdersByIds(applied.needFullIds).then(function (detail) {
-          if (detail && detail.ok && detail.orders && detail.orders.length) {
+          if (!detail || detail.ok === false) {
+            refreshLive(true);
+            return;
+          }
+          if (detail.orders && detail.orders.length) {
             if (typeof store.importOrders === "function") store.importOrders(detail.orders);
             else applySheetOrders(detail);
             renderAccountFilter();
             render();
+            // If many ids were requested but few returned, reconcile fully so
+            // deletes/reassignments are not stuck behind a partial batch.
+            const requested = Number(detail.requested || applied.needFullIds.length) || applied.needFullIds.length;
+            if (requested > 0 && detail.orders.length < Math.min(requested, applied.needFullIds.length) * 0.5) {
+              refreshLive(true);
+            }
             return;
           }
-          // Fallback only when targeted fetch fails.
-          if (!detail || detail.ok === false) refreshLive(true);
-          else if (applied.changed) render();
+          if (applied.changed) render();
         });
       }
       if (applied.changed) render();

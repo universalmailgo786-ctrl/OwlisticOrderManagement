@@ -2102,22 +2102,15 @@
     return digestInFlight;
   }
 
-  function fetchOrdersByIds(orderIds) {
-    const ids = Array.from(new Set((orderIds || []).map(function (id) {
-      return String(id || "").trim();
-    }).filter(Boolean))).slice(0, 40);
-    if (!ids.length) return Promise.resolve({ ok: true, orders: [], action: "listOrdersByIds" });
-    if (!isConfigured()) return Promise.resolve({ skipped: true, orders: [] });
-    const key = ids.slice().sort().join(",");
-    if (ordersByIdsInFlight[key]) return ordersByIdsInFlight[key];
-    const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
-    const tabs = fetchTabNames(session);
+  const ORDERS_BY_IDS_BATCH = 80;
+
+  function fetchOrdersByIdsBatch(ids, session, tabs) {
     const join = getWebAppUrl().indexOf("?") >= 0 ? "&" : "?";
     const url = getWebAppUrl() + join +
       "action=listOrdersByIds&" + sessionQuery(session, tabs) +
       "&orderIds=" + encodeURIComponent(ids.join(",")) +
       "&_=" + Date.now();
-    ordersByIdsInFlight[key] = fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 30000).then(function (response) {
+    return fetchWithTimeout(url, { method: "GET", credentials: "omit", cache: "no-store" }, 30000).then(function (response) {
       return response.text();
     }).then(function (text) {
       const data = parseJson(text);
@@ -2132,6 +2125,54 @@
       return { ok: true, action: "listOrdersByIds", orders: orders };
     }).catch(function () {
       return { ok: false, error: "Could not reach selected orders.", orders: [] };
+    });
+  }
+
+  function fetchOrdersByIds(orderIds) {
+    const ids = Array.from(new Set((orderIds || []).map(function (id) {
+      return String(id || "").trim();
+    }).filter(Boolean)));
+    if (!ids.length) return Promise.resolve({ ok: true, orders: [], action: "listOrdersByIds", requested: 0 });
+    if (!isConfigured()) return Promise.resolve({ skipped: true, orders: [], requested: ids.length });
+    const key = ids.slice().sort().join(",");
+    if (ordersByIdsInFlight[key]) return ordersByIdsInFlight[key];
+    const session = global.OwlisticAuth && global.OwlisticAuth.getSession && global.OwlisticAuth.getSession();
+    const tabs = fetchTabNames(session);
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += ORDERS_BY_IDS_BATCH) {
+      chunks.push(ids.slice(i, i + ORDERS_BY_IDS_BATCH));
+    }
+    // Sequential batches keep payload/URL size bounded and avoid thundering herds.
+    ordersByIdsInFlight[key] = chunks.reduce(function (chain, chunk) {
+      return chain.then(function (acc) {
+        if (!acc.ok) return acc;
+        return fetchOrdersByIdsBatch(chunk, session, tabs).then(function (part) {
+          if (!part || part.ok === false) {
+            return { ok: false, error: (part && part.error) || "Could not load selected orders.", orders: acc.orders };
+          }
+          return {
+            ok: true,
+            action: "listOrdersByIds",
+            orders: acc.orders.concat(part.orders || [])
+          };
+        });
+      });
+    }, Promise.resolve({ ok: true, action: "listOrdersByIds", orders: [] })).then(function (result) {
+      if (!result || result.ok === false) return result;
+      const seen = {};
+      const merged = [];
+      (result.orders || []).forEach(function (order) {
+        if (!order || !order.id || seen[order.id]) return;
+        seen[order.id] = true;
+        merged.push(order);
+      });
+      return {
+        ok: true,
+        action: "listOrdersByIds",
+        orders: merged,
+        requested: ids.length,
+        batches: chunks.length
+      };
     }).then(function (result) {
       delete ordersByIdsInFlight[key];
       return result;

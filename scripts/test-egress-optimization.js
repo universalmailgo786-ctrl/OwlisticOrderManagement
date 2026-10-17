@@ -62,9 +62,11 @@ assert(records.indexOf("isFreshUnsyncedOrder") >= 0, "records preserves fresh un
 
 const sheetSync = fs.readFileSync(path.join(ROOT, "js/sheet-sync.js"), "utf8");
 assert(sheetSync.indexOf("fetchOrdersByIds") >= 0, "sheet-sync exposes fetchOrdersByIds");
+assert(sheetSync.indexOf("ORDERS_BY_IDS_BATCH") >= 0, "sheet-sync batches large by-id requests");
 assert(sheetSync.indexOf("ordersInFlight") >= 0, "sheet-sync dedupes full order fetches");
 assert(sheetSync.indexOf("digestInFlight") >= 0, "sheet-sync dedupes digest fetches");
 assert(sheetSync.indexOf("ordersByIdsInFlight") >= 0, "sheet-sync dedupes by-id fetches");
+assert(sheetLogic.indexOf("ORDERS_BY_IDS_LIMIT") >= 0, "server caps each by-id request");
 
 const chatConfig = fs.readFileSync(path.join(ROOT, "js/chat-config.js"), "utf8");
 assert(chatConfig.indexOf("pollMs: 60000") >= 0, "chat healthy poll is 60s");

@@ -484,7 +484,7 @@
           else refreshSoon();
         },
         onThread: function () { refreshSoon(); },
-        onStatus: function (status) {
+        onStatus: function (status, meta) {
           if (attempt !== listenAttempt) return;
           if (status === "SUBSCRIBED") {
             inboxRealtimeOk = true;
@@ -492,6 +492,8 @@
           }
           if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
             inboxRealtimeOk = false;
+            // Partial / dropped Realtime: refresh unread immediately, then resubscribe.
+            refreshSoon();
             scheduleListenRetry(attempt);
           }
         }
