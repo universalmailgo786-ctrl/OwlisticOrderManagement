@@ -188,7 +188,8 @@ node scripts/measure-egress-model.js      → 12.95 GB → 1.55 GB (88%)
 
 - **Branch:** `optimize/supabase-egress-reduction`  
 - **Base (pre-change):** `b093ee3` — *Keep completed-order cron under the Hobby time limit.*  
-- **Optimization commit:** see `git log` on this branch after commit (message: reduce Supabase egress via digest sync and chat polling).
+- **Optimization commit:** `92a9bbd` — *Reduce Supabase egress with digest sync and leaner chat polling.*  
+- **Remote:** pushed to `origin/optimize/supabase-egress-reduction` (not merged to `main`).
 
 ### Rollback
 
