@@ -35,18 +35,26 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const messageRes = await admin.from("chat_messages").select("*").eq("id", id).maybeSingle();
+    const messageRes = await admin.from("chat_messages")
+      .select("id, thread_id, sender_id, image_url")
+      .eq("id", id)
+      .maybeSingle();
     if (messageRes.error) throw messageRes.error;
     const message = messageRes.data;
     if (!message) {
       return send(res, 200, { ok: true, alreadyGone: true });
     }
-    const threadRes = await admin.from("chat_threads").select("*").eq("id", message.thread_id).maybeSingle();
+    const threadRes = await admin.from("chat_threads")
+      .select("id, user_id")
+      .eq("id", message.thread_id)
+      .maybeSingle();
     if (threadRes.error) throw threadRes.error;
     if (!canDeleteMessage(user, message, threadRes.data)) {
       return send(res, 403, { ok: false, error: "You cannot delete that message." });
     }
-    const atts = await admin.from("chat_attachments").select("*").eq("message_id", id);
+    const atts = await admin.from("chat_attachments")
+      .select("id, message_id, storage_path")
+      .eq("message_id", id);
     if (atts.error) throw atts.error;
     const files = await deleteMessageStorage(admin, message, atts.data || []);
     const removed = await admin.from("chat_messages").delete().eq("id", id).select("id");

@@ -16,6 +16,8 @@
   let listenAttempt = 0;
   let listenRetry = null;
   let skipNextToast = false;
+  let inboxRealtimeOk = false;
+  let pollTick = 0;
   let fetchGen = 0;
   const seenIncoming = {};
   const seenRead = {};
@@ -396,18 +398,24 @@
       const summary = await api.unreadSummary();
       if (gen !== fetchGen) return;
       setSummary(summary);
+      // Avoid listThreads on every poll when Realtime is healthy (toast can use unread map).
       let threads = [];
-      try {
-        threads = typeof api.listThreads === "function" ? await api.listThreads() : [];
-      } catch (err) {}
-      (threads || []).forEach(function (thread) {
-        rememberThreadUser(thread.id, thread.user_id);
-      });
+      const wantThreads = !inboxRealtimeOk || lastStamp === "" || summary.total > 0;
+      if (wantThreads) {
+        try {
+          threads = typeof api.listThreads === "function" ? await api.listThreads() : [];
+        } catch (err) {}
+        (threads || []).forEach(function (thread) {
+          rememberThreadUser(thread.id, thread.user_id);
+        });
+      }
       const latest = (threads && threads[0]) || null;
       const unreadThread = (threads || []).find(function (thread) {
         return summary.byThread && summary.byThread[thread.id];
       }) || latest;
-      const stamp = latest ? String(latest.id) + ":" + String(latest.updated_at || "") + ":" + String(latest.last_message || "") : "";
+      const stamp = latest
+        ? String(latest.id) + ":" + String(latest.updated_at || "") + ":" + String(latest.last_message || "")
+        : (summary.total ? "unread:" + String(summary.total) : lastStamp);
       const me = api.sessionUser && api.sessionUser();
       const fromMe = latest && me && (
         me.isSuperAdmin
@@ -416,10 +424,10 @@
       );
       const first = lastStamp === "";
       const who = me && me.isSuperAdmin
-        ? ((unreadThread && unreadThread.user_id) || "A user")
+        ? ((unreadThread && unreadThread.user_id) || Object.keys(summary.byUser || {})[0] || "A user")
         : (config.adminName || "Ashar");
       const title = "Message from " + who;
-      const body = (unreadThread && unreadThread.last_message) || "You have unread messages.";
+      const body = (unreadThread && unreadThread.last_message) || (summary.total ? "You have unread messages." : "");
       const toastOpts = {
         userId: unreadThread && unreadThread.user_id,
         total: totalFromMaps()
@@ -432,11 +440,11 @@
       } else if (summary.total > 0 && stamp !== dismissedStamp) {
         if (!first && stamp && stamp !== lastStamp && !fromMe) {
           notifyNew(title, body, toastOpts);
-        } else {
+        } else if (!inboxRealtimeOk || first) {
           showToast(title, body, toastOpts);
         }
       }
-      lastStamp = stamp;
+      if (latest || summary.total) lastStamp = stamp;
     } catch (err) {
       if (lastTotal == null) renderCount(0);
     }
@@ -476,14 +484,22 @@
           else refreshSoon();
         },
         onThread: function () { refreshSoon(); },
-        onStatus: function (status) {
+        onStatus: function (status, meta) {
           if (attempt !== listenAttempt) return;
+          if (status === "SUBSCRIBED") {
+            inboxRealtimeOk = true;
+            return;
+          }
           if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            inboxRealtimeOk = false;
+            // Partial / dropped Realtime: refresh unread immediately, then resubscribe.
+            refreshSoon();
             scheduleListenRetry(attempt);
           }
         }
       }, "chat-nav-unread");
     } catch (err) {
+      inboxRealtimeOk = false;
       scheduleListenRetry(attempt);
     }
   }
@@ -501,16 +517,23 @@
     askPermission();
     refresh();
     listen();
-    const pollMs = Number(config.pollMs || 15000);
+    const healthyMs = Number(config.pollMs || 60000);
+    const downMs = Number(config.pollMsRealtimeDown || 20000);
+    const tickMs = Math.min(healthyMs, downMs, 20000);
+    if (timer) window.clearInterval(timer);
     timer = window.setInterval(function () {
       if (document.hidden) return;
+      pollTick += 1;
+      const interval = inboxRealtimeOk ? healthyMs : downMs;
+      const every = Math.max(1, Math.round(interval / tickMs));
+      if (pollTick % every !== 0) return;
       refresh();
-    }, pollMs);
+    }, tickMs);
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) refresh();
     });
     window.addEventListener("focus", function () {
-      refresh();
+      if (!inboxRealtimeOk) refresh();
     });
     if (broadcast) {
       broadcast.onmessage = function (event) {

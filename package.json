@@ -4,8 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node scripts/test-chat.js",
+    "test": "node scripts/test-chat.js && node scripts/test-egress-optimization.js && node scripts/test-sync-scenarios.js",
     "test:chat": "node scripts/test-chat.js",
+    "test:egress": "node scripts/test-egress-optimization.js",
+    "test:sync": "node scripts/test-sync-scenarios.js",
+    "measure:egress": "node scripts/measure-egress-model.js",
     "test:chat-cleanup": "node scripts/test-chat-cleanup.js",
     "chat:migrate": "node scripts/apply-chat-migration.js --latest"
   },
